@@ -65,6 +65,10 @@ export default function Eb() {
     handleApprove,
     handleReject,
     getQueueAssessment,
+    publishFormatDialog,
+    setPublishFormatDialog,
+    selectedPublishFormat,
+    setSelectedPublishFormat,
   } = useEbWorkspace();
 
   function handleLogout() { logout(); navigate("/login"); }
@@ -453,6 +457,50 @@ export default function Eb() {
                 onClick={confirmDialog.onConfirm}
               >
                 Xác nhận
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Publish Format Dialog */}
+      {publishFormatDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border bg-background p-6 shadow-xl space-y-4 mx-4">
+            <h3 className="text-base font-semibold">Chọn định dạng phát hành</h3>
+            <p className="text-sm text-muted-foreground">
+              Tác phẩm "{publishFormatDialog.title}" đạt yêu cầu. Chọn định dạng phát hành:
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                  selectedPublishFormat === "Monthly"
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:bg-muted"
+                }`}
+                onClick={() => setSelectedPublishFormat("Monthly")}
+              >
+                <span className="font-medium">📅 Theo tháng (Monthly)</span>
+                <p className="text-xs text-muted-foreground mt-0.5">Phát hành 1 chapter/tuần trong tháng</p>
+              </button>
+              <button
+                type="button"
+                className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                  selectedPublishFormat === "Weekly"
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:bg-muted"
+                }`}
+                onClick={() => setSelectedPublishFormat("Weekly")}
+              >
+                <span className="font-medium">📆 Theo tuần (Weekly)</span>
+                <p className="text-xs text-muted-foreground mt-0.5">Phát hành 1 chapter/tuần quanh năm</p>
+              </button>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={publishFormatDialog.onCancel}>Huỷ</Button>
+              <Button onClick={() => publishFormatDialog.onSelect(selectedPublishFormat)}>
+                Xác nhận phát hành
               </Button>
             </div>
           </div>

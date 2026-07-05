@@ -148,6 +148,25 @@ export function useTantouWorkspace() {
       }))
   }, [reviewPagesRaw])
 
+  // MỚI: Gộp sẵn "submission" đầy đủ cho TantouPageReview — trước đây component
+  // cha (TantouEditor.jsx) tự ráp lại field chapterNum/pageLabel/pipeline từ nhiều
+  // nguồn khác nhau và bị thiếu (gây ra "Ch. —" và trang trống). Giờ hook trả về
+  // sẵn 1 object đầy đủ, component cha chỉ cần dùng thẳng làm prop `submission`.
+  const reviewSubmission = useMemo(() => {
+    if (!selectedSub) return null
+    const st = normalizeStatus(selectedSub.status)
+    const pipeline = isDebutStatus(st) ? 'debut' : 'recurring'
+    const currentPage = reviewPages[reviewPageIndex] ?? null
+    return {
+      seriesid: selectedSub.seriesid,
+      seriesTitle: selectedSub.title ?? selectedSub.seriesTitle ?? '—',
+      chapterNum: reviewChapterNumber,
+      pageLabel: currentPage?.name ?? (reviewPages.length ? `Trang ${reviewPageIndex + 1}` : '—'),
+      pipeline,
+      mangakaImageUrl: currentPage?.url ?? null,
+    }
+  }, [selectedSub, reviewChapterNumber, reviewPages, reviewPageIndex])
+
   // ── Handlers ──────────────────────────────────────────────────────────────
   function openReview(sub) {
     setSelectedSub({ ...sub, __kind: 'series' })
@@ -226,6 +245,7 @@ export function useTantouWorkspace() {
     handleRefreshStudio,
     // review
     selectedSub,
+    reviewSubmission, // ← MỚI: dùng thẳng làm prop `submission` cho TantouPageReview
     reviewOpen,
     editorialComment,
     setEditorialComment,

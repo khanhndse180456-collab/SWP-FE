@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { ArrowLeft, CheckCircle2, MessageSquarePlus, Send, Trash2, XCircle } from 'lucide-react'
+import { useMemo, useState, useRef } from 'react'
+import { ArrowLeft, CheckCircle2, Eraser, MessageSquarePlus, MousePointer2, Square, Send, Trash2, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { noteTaskLabel } from '@/constants/workspaceTasks.js'
 import { LABEL_EDITOR_BOARD } from '@/constants/roleTerminology.js'
@@ -21,45 +21,30 @@ import '@/styles/mangaPage.css'
 //   pageid, createdById, assignedToId, issueType, workCategory,
 //   boxX, boxY, boxWidth, boxHeight, description, deadline
 // Không có chapterId — mọi issue gắn theo 1 pageid cụ thể.
-// issueType riêng cho nhận xét chung của Tantou (không gắn vị trí, box = 0).
 const TANTOU_COMMENT_TYPE = 'TantouComment'
-// issueType cho ghi chú gốc của Mangaka (tạo trong ChapterAnnotator)
 const MANGAKA_NOTE_TYPE = 'MangakaNote'
+const TANTOU_REPLY_TYPE = 'TantouReply'
 
 function issueField(issue, camelKey, lowerKey) {
   return issue?.[camelKey] ?? issue?.[lowerKey] ?? issue?.[camelKey?.toLowerCase()] ?? null
 }
-
 function tantouCommentAuthor(issue) {
   return issueField(issue, 'createdByName', 'created_by_name') ?? 'Tantou Editor'
 }
-
 function tantouCommentText(issue) {
   return issueField(issue, 'description', 'description') ?? ''
 }
-
 function tantouCommentDate(issue) {
   const raw = issueField(issue, 'createdat', 'createdAt')
   if (!raw) return ''
-  try {
-    return new Date(raw).toLocaleString('vi-VN')
-  } catch {
-    return ''
-  }
+  try { return new Date(raw).toLocaleString('vi-VN') } catch { return '' }
 }
-
-function issueId(issue) {
-  return issueField(issue, 'issueid', 'issueId')
-}
-
-function issueType(issue) {
-  return issueField(issue, 'issueType', 'issue_type')
-}
+function issueId(issue) { return issueField(issue, 'issueid', 'issueId') }
+function issueType(issue) { return issueField(issue, 'issueType', 'issue_type') }
 
 /**
  * Panel nhận xét riêng của Tantou — không sửa/đè ghi chú gốc (Mangaka/Assistant),
  * chỉ thêm record mới qua PageIssues với issueType = 'TantouComment'.
- * Schema thật chỉ filter theo pageid (không có chapterId) → cần pageId cụ thể của trang đang xem.
  */
 function TantouCommentPanel({ pageId, title = 'Nhận xét của Tantou' }) {
   const [draft, setDraft] = useState('')
@@ -82,14 +67,8 @@ function TantouCommentPanel({ pageId, title = 'Nhận xét của Tantou' }) {
 
   async function handleAdd() {
     const text = draft.trim()
-    if (!text) {
-      toast.error('Nhập nội dung nhận xét trước khi gửi.')
-      return
-    }
-    if (!pageId) {
-      toast.error('Chưa xác định được trang để gắn nhận xét.')
-      return
-    }
+    if (!text) { toast.error('Nhập nội dung nhận xét trước khi gửi.'); return }
+    if (!pageId) { toast.error('Chưa xác định được trang để gắn nhận xét.'); return }
     try {
       await createIssue.mutateAsync({
         pageid: pageId,
@@ -97,10 +76,7 @@ function TantouCommentPanel({ pageId, title = 'Nhận xét của Tantou' }) {
         assignedToId: null,
         issueType: TANTOU_COMMENT_TYPE,
         workCategory: 'review',
-        boxX: 0,
-        boxY: 0,
-        boxWidth: 0,
-        boxHeight: 0,
+        boxX: 0, boxY: 0, boxWidth: 0, boxHeight: 0,
         description: text,
         deadline: null,
       })
@@ -150,9 +126,7 @@ function TantouCommentPanel({ pageId, title = 'Nhận xét của Tantou' }) {
                 {createIssue.isPending ? 'Đang gửi...' : 'Gửi nhận xét'}
               </Button>
             </div>
-
             <Separator />
-
             {isLoading ? (
               <p className="text-xs text-muted-foreground">Đang tải nhận xét...</p>
             ) : tantouComments.length === 0 ? (
@@ -206,15 +180,45 @@ export default function TantouPageReview({
   pageIndex = 0,
   onPageIndexChange,
 }) {
+  const session = getSession()
   const [selectedMangakaId, setSelectedMangakaId] = useState(null)
+  const [replyDraft, setReplyDraft] = useState('')
+  const [replyOpen, setReplyOpen] = useState(false)
 
-  // pageId thật của trang đang xem — lấy từ pages[pageIndex] do TantouEditor truyền xuống
-  // (mảng reviewPages, mỗi item có serverPageId)
+  // === Giống hệt ChapterAnnotator.jsx (Mangaka) ===
+  // Mặc định 'draw' để kéo được NGAY khi vào trang, không cần bấm nút nào trước.
+  // Click vào 1 ô có sẵn sẽ tự set về 'select' (xem onBoxClick) — giống hành vi
+  // của Mangaka: đã chọn ô thì tạm ngưng vẽ, muốn vẽ tiếp thì bấm lại "Tạo ô nhận xét".
+  const [tool, setTool] = useState('draw')
+  const [drawStart, setDrawStart] = useState(null)
+  const [drawCurrent, setDrawCurrent] = useState(null)
+  const [selectedTantouBoxId, setSelectedTantouBoxId] = useState(null)
+  const [newBoxDraft, setNewBoxDraft] = useState('')
+  const [showNewBoxPanel, setShowNewBoxPanel] = useState(false)
+  const [tempBox, setTempBox] = useState(null)
+
+  const boardRef = useRef(null)
+
   const currentPage = pages[pageIndex] ?? null
   const currentPageId = currentPage?.serverPageId ?? null
 
-  // Ghi chú Mangaka thật từ PageIssues (issueType = 'MangakaNote'), lọc theo trang đang xem
   const { data: pageIssuesRaw = [] } = usePageIssues({ pageId: currentPageId })
+  const createIssue = useCreatePageIssue()
+  const deleteIssue = useDeletePageIssue()
+
+  const tantouBoxes = useMemo(() => {
+    if (!Array.isArray(pageIssuesRaw)) return []
+    return pageIssuesRaw
+      .filter(i => issueType(i) === TANTOU_COMMENT_TYPE)
+      .map(i => ({
+        id: String(issueId(i)),
+        x: issueField(i, 'boxX', 'box_x') ?? 0,
+        y: issueField(i, 'boxY', 'box_y') ?? 0,
+        w: issueField(i, 'boxWidth', 'box_width') ?? 0,
+        h: issueField(i, 'boxHeight', 'box_height') ?? 0,
+        text: issueField(i, 'description', 'description') ?? '',
+      }))
+  }, [pageIssuesRaw])
 
   const mangakaNotes = useMemo(() => {
     if (!Array.isArray(pageIssuesRaw)) return []
@@ -236,16 +240,183 @@ export default function TantouPageReview({
     return mangakaNotes.find((n, i) => (n.id || `m-${i}`) === selectedMangakaId) ?? null
   }, [mangakaNotes, selectedMangakaId])
 
+  const { data: tantouRepliesRaw = [] } = usePageIssues({ pageId: currentPageId })
+
+  const tantouReplies = useMemo(() => {
+    if (!Array.isArray(tantouRepliesRaw)) return []
+    return tantouRepliesRaw
+      .filter(i => issueType(i) === TANTOU_REPLY_TYPE)
+      .map(i => ({
+        id: String(issueId(i)),
+        parentNoteId: issueField(i, 'parentNoteId', 'parent_note_id') ?? null,
+        text: issueField(i, 'description', 'description') ?? '',
+        author: issueField(i, 'createdByName', 'created_by_name') ?? 'Tantou Editor',
+        date: (() => {
+          const raw = issueField(i, 'createdat', 'createdAt')
+          if (!raw) return ''
+          try { return new Date(raw).toLocaleString('vi-VN') } catch { return '' }
+        })(),
+      }))
+  }, [tantouRepliesRaw])
+
+  const selectedNoteReplies = useMemo(() => {
+    if (!selectedMangakaId) return []
+    return tantouReplies.filter(r => r.parentNoteId === selectedMangakaId)
+  }, [tantouReplies, selectedMangakaId])
+
+  async function handleSendReply() {
+    const text = replyDraft.trim()
+    if (!text || !selectedMangakaId || !currentPageId) {
+      toast.error('Vui lòng nhập nội dung phản hồi.')
+      return
+    }
+    try {
+      await createIssue.mutateAsync({
+        pageid: currentPageId,
+        createdById: session?.id ?? session?.userid ?? null,
+        assignedToId: null,
+        issueType: TANTOU_REPLY_TYPE,
+        workCategory: 'review',
+        boxX: 0, boxY: 0, boxWidth: 0, boxHeight: 0,
+        description: text,
+        deadline: null,
+        parentNoteId: selectedMangakaId,
+      })
+      setReplyDraft('')
+      toast.success('Đã gửi phản hồi.')
+    } catch (err) {
+      toast.error(err?.response?.data?.message ?? 'Không gửi được phản hồi.')
+    }
+  }
+
+  async function handleDeleteReply(id) {
+    if (!window.confirm('Xóa phản hồi này?')) return
+    try {
+      await deleteIssue.mutateAsync(id)
+      toast.success('Đã xóa phản hồi.')
+    } catch {
+      toast.error('Không xóa được phản hồi.')
+    }
+  }
+
+  // === getPercent — giống Mangaka: nhận vào REF OBJECT (không phải .current) ===
+  function getPercent(e, ref) {
+    const el = ref?.current
+    if (!el) return { x: 0, y: 0 }
+    const rect = el.getBoundingClientRect()
+    const x = ((e.clientX - rect.left) / rect.width) * 100
+    const y = ((e.clientY - rect.top) / rect.height) * 100
+    return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }
+  }
+
+  // === Y HỆT onBoardMouseDown của Mangaka (ChapterAnnotator.jsx) ===
+  // SỬA: khi chưa có currentPageId mà đang ở tool "draw" thì báo lỗi rõ ràng
+  // thay vì im lặng không phản ứng gì (trước đây user bấm/kéo hoài không hiểu vì sao).
+  function onBoardMouseDown(e, ref) {
+    if (!currentPageId) {
+      if (tool === 'draw') toast.error('Chưa có trang để tạo ô nhận xét.')
+      return
+    }
+    if (tool === 'delete') { setSelectedTantouBoxId(null); return }
+    if (tool !== 'draw') return
+    const pt = getPercent(e, ref)
+    setDrawStart(pt)
+    setDrawCurrent(pt)
+    setSelectedTantouBoxId(null)
+    setShowNewBoxPanel(false)
+    setTempBox(null)
+  }
+
+  function onBoardMouseMove(e, ref) {
+    if (!drawStart) return
+    setDrawCurrent(getPercent(e, ref))
+  }
+
+  // === Giống onBoardMouseUp của Mangaka — không cần isDraggingRef,
+  // chỉ cần check w<2/h<2 là đủ để phân biệt "click" với "kéo thật" ===
+  function onBoardMouseUp() {
+    if (!drawStart || !drawCurrent) return
+    const boxX = Math.min(drawStart.x, drawCurrent.x)
+    const boxY = Math.min(drawStart.y, drawCurrent.y)
+    const w = Math.abs(drawCurrent.x - drawStart.x)
+    const h = Math.abs(drawCurrent.y - drawStart.y)
+    setDrawStart(null)
+    setDrawCurrent(null)
+    if (w < 2 || h < 2) return
+
+    setTempBox({ x: boxX, y: boxY, w, h })
+    setSelectedTantouBoxId(null)
+    setNewBoxDraft('')
+    setShowNewBoxPanel(true)
+  }
+
+  function onBoxClick(e, bid) {
+    e.stopPropagation()
+    if (tool === 'delete') {
+      handleDeleteBox(bid)
+      return
+    }
+    setSelectedTantouBoxId(bid)
+    setSelectedMangakaId(null)
+    setTool('select')
+  }
+
+  function onMangakaNoteClick(e, mid) {
+    e.stopPropagation()
+    setSelectedMangakaId(mid)
+    setSelectedTantouBoxId(null)
+  }
+
+  async function handleCreateBox(x, y, w, h) {
+    const text = newBoxDraft.trim()
+    if (!text || !currentPageId) {
+      toast.error('Vui lòng nhập nội dung nhận xét.')
+      return
+    }
+    try {
+      await createIssue.mutateAsync({
+        pageid: currentPageId,
+        createdById: session?.id ?? session?.userid ?? null,
+        assignedToId: null,
+        issueType: TANTOU_COMMENT_TYPE,
+        workCategory: 'review',
+        boxX: x, boxY: y, boxWidth: w, boxHeight: h,
+        description: text,
+        deadline: null,
+      })
+      setNewBoxDraft('')
+      setShowNewBoxPanel(false)
+      setTempBox(null) // SỬA: dọn sạch ô nháp sau khi đã tạo thật xong
+      setTool('draw') // giống Mangaka: sau khi tạo xong quay lại chế độ vẽ luôn
+      toast.success('Đã thêm nhận xét.')
+    } catch (err) {
+      toast.error(err?.response?.data?.message ?? 'Không tạo được nhận xét.')
+    }
+  }
+
+  async function handleDeleteBox(id) {
+    if (!window.confirm('Xóa nhận xét này?')) return
+    try {
+      await deleteIssue.mutateAsync(id)
+      toast.success('Đã xóa nhận xét.')
+      setSelectedTantouBoxId(null)
+    } catch {
+      toast.error('Không xóa được nhận xét.')
+    }
+  }
+
+  function handleCancelNewBox() {
+    setShowNewBoxPanel(false)
+    setTempBox(null)
+  }
+
   if (!submission) return null
 
-  // Lần đầu (pipeline === 'debut') → cần chuyển EB.
-  // Đã qua EB (recurring / EB-approved) → chỉ cần Tantou duyệt nhanh.
   const isDebut = submission.pipeline === 'debut'
   const hasComment = editorialComment.trim().length > 0
   const pageImageUrl = currentPage?.url ?? submission.mangakaImageUrl ?? null
 
   return (
-    // pb-24 chừa chỗ cho thanh nút sticky ở cuối trang, tránh che nội dung
     <div className="space-y-4 pb-24">
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}>
@@ -266,73 +437,195 @@ export default function TantouPageReview({
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <Card className="overflow-hidden py-0">
-          <CardHeader className="border-b bg-muted/30 py-4">
-            <div className="flex items-center justify-between gap-2">
+          <CardHeader className="border-b bg-muted/30 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <CardTitle className="text-base">Trang truyện</CardTitle>
-                <CardDescription>Ô đỏ = ghi chú Mangaka (chỉ xem)</CardDescription>
+                <CardDescription>Ô đỏ = Mangaka · Ô xanh = Nhận xét của bạn</CardDescription>
               </div>
-              {pages.length > 1 && onPageIndexChange ? (
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    size="icon-sm"
-                    variant="outline"
-                    disabled={pageIndex === 0}
-                    onClick={() => onPageIndexChange(pageIndex - 1)}
-                  >
-                    ‹
-                  </Button>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {pageIndex + 1}/{pages.length}
-                  </span>
-                  <Button
-                    size="icon-sm"
-                    variant="outline"
-                    disabled={pageIndex >= pages.length - 1}
-                    onClick={() => onPageIndexChange(pageIndex + 1)}
-                  >
-                    ›
-                  </Button>
-                </div>
-              ) : null}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={tool === 'draw' ? 'default' : 'outline'}
+                  onClick={e => { e.stopPropagation(); setTool('draw') }}
+                  disabled={!currentPageId}
+                  className="gap-1"
+                >
+                  <Square className="size-3.5" />
+                  Tạo ô nhận xét
+                </Button>
+                <Button
+                  size="sm"
+                  variant={tool === 'select' ? 'default' : 'outline'}
+                  onClick={e => { e.stopPropagation(); setTool('select') }}
+                >
+                  <MousePointer2 className="size-3.5" />
+                  Chọn
+                </Button>
+                <Button
+                  size="sm"
+                  variant={tool === 'delete' ? 'destructive' : 'outline'}
+                  onClick={e => { e.stopPropagation(); setTool(tool === 'delete' ? 'draw' : 'delete') }}
+                  className="gap-1"
+                >
+                  <Eraser className="size-3.5" />
+                  Xóa
+                </Button>
+                {pages.length > 1 && onPageIndexChange ? (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="icon-sm"
+                      variant="outline"
+                      disabled={pageIndex === 0}
+                      onClick={e => { e.stopPropagation(); onPageIndexChange(pageIndex - 1) }}
+                    >
+                      ‹
+                    </Button>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {pageIndex + 1}/{pages.length}
+                    </span>
+                    <Button
+                      size="icon-sm"
+                      variant="outline"
+                      disabled={pageIndex >= pages.length - 1}
+                      onClick={e => { e.stopPropagation(); onPageIndexChange(pageIndex + 1) }}
+                    >
+                      ›
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="flex justify-center bg-zinc-950 p-4 md:p-6">
             <div className="relative w-full max-w-[728px]">
-              <div className="mk-board manga-page manga-page--canvas relative mx-auto aspect-[728/1030] bg-zinc-900">
+              <div
+                ref={boardRef}
+                className={`mk-board manga-page manga-page--canvas relative mx-auto aspect-[728/1030] bg-zinc-900 select-none border-2 border-zinc-700 rounded ${
+                  tool === 'draw' ? 'cursor-crosshair' : tool === 'delete' ? 'cursor-not-allowed' : 'cursor-pointer'
+                }`}
+                onMouseDown={e => onBoardMouseDown(e, boardRef)}
+                onMouseMove={e => onBoardMouseMove(e, boardRef)}
+                onMouseUp={onBoardMouseUp}
+                onMouseLeave={onBoardMouseUp}
+              >
                 {pageImageUrl ? (
                   <img
                     src={pageImageUrl}
                     alt=""
-                    className="mk-board__img manga-page__media absolute inset-0 size-full object-contain"
+                    className="mk-board__img manga-page__media absolute inset-0 size-full object-contain pointer-events-none"
                     draggable={false}
                     width={728}
                     height={1030}
-                    // Ảnh lỗi (domain CDN chưa resolve được / 404...) → ẩn ảnh,
-                    // giữ nguyên khung zinc-900 + các ô ghi chú đỏ định vị theo %
                     onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
                   />
                 ) : null}
+
+                {/* Tantou comment boxes */}
+                {tantouBoxes.map((box, idx) => {
+                  const bid = box.id || `tb-${idx}`
+                  return (
+                    <div
+                      key={bid}
+                      className={`absolute box-border rounded border-2 border-sky-500 bg-sky-500/15 cursor-pointer transition-shadow ${
+                        selectedTantouBoxId === bid ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : ''
+                      }`}
+                      style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.w}%`, height: `${box.h}%` }}
+                      onClick={e => onBoxClick(e, bid)}
+                      title={box.text || 'Nhận xét của Tantou'}
+                    >
+                      <span className="absolute left-1 top-0.5 rounded bg-sky-600 px-1 text-[10px] font-bold text-white">
+                        T{idx + 1}
+                      </span>
+                    </div>
+                  )
+                })}
+
+                {/* Mangaka notes (read-only) */}
                 {mangakaNotes.map((n, idx) => {
                   const mid = n.id || `m-${idx}`
                   return (
-                    <button
+                    <div
                       key={mid}
-                      type="button"
                       className={`absolute box-border cursor-pointer rounded border-2 border-dashed border-rose-500 bg-rose-500/15 transition-shadow ${
                         selectedMangakaId === mid ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : ''
                       }`}
                       style={{ left: `${n.x}%`, top: `${n.y}%`, width: `${n.w}%`, height: `${n.h}%` }}
-                      onClick={() => setSelectedMangakaId(mid)}
+                      onClick={e => onMangakaNoteClick(e, mid)}
                       title={n.text || 'Ghi chú Mangaka'}
                     >
                       <span className="absolute left-1 top-0.5 rounded bg-rose-600 px-1 text-[10px] font-bold text-white">
                         M{idx + 1}
                       </span>
-                    </button>
+                    </div>
                   )
                 })}
+
+                {/* Drawing preview — trong lúc đang kéo chuột */}
+                {drawStart && drawCurrent && (
+                  <div
+                    className="absolute border-2 border-dashed border-sky-400 bg-sky-500/20"
+                    style={{
+                      left: `${Math.min(drawStart.x, drawCurrent.x)}%`,
+                      top: `${Math.min(drawStart.y, drawCurrent.y)}%`,
+                      width: `${Math.abs(drawCurrent.x - drawStart.x)}%`,
+                      height: `${Math.abs(drawCurrent.y - drawStart.y)}%`,
+                    }}
+                  />
+                )}
+
+                {/* MỚI: giữ nguyên ô tại chỗ sau khi thả chuột, trong lúc chờ nhập nhận xét —
+                    y như mk-note-box--draft của Mangaka, tránh ô "biến mất" gây mất định vị */}
+                {tempBox && showNewBoxPanel && (
+                  <div
+                    className="absolute box-border rounded border-2 border-dashed border-sky-400 bg-sky-500/20 animate-pulse"
+                    style={{
+                      left: `${tempBox.x}%`,
+                      top: `${tempBox.y}%`,
+                      width: `${tempBox.w}%`,
+                      height: `${tempBox.h}%`,
+                    }}
+                  >
+                    <span className="absolute left-1 top-0.5 rounded bg-sky-500 px-1 text-[10px] font-bold text-white">
+                      Mới
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {/* New box input panel */}
+              {showNewBoxPanel && tempBox && (
+                <div className="absolute inset-x-0 bottom-0 bg-background/95 p-4 backdrop-blur">
+                  <div className="mx-auto max-w-lg rounded-lg border bg-background p-4 shadow-xl">
+                    <h4 className="mb-2 font-medium">Nhận xét cho ô mới</h4>
+                    <Textarea
+                      rows={3}
+                      placeholder="Nhập nhận xét của bạn..."
+                      value={newBoxDraft}
+                      onChange={e => setNewBoxDraft(e.target.value)}
+                      className="mb-3"
+                      autoFocus
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelNewBox}
+                      >
+                        Hủy
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleCreateBox(tempBox.x, tempBox.y, tempBox.w, tempBox.h)}
+                        disabled={createIssue.isPending || !newBoxDraft.trim()}
+                      >
+                        <Send className="size-3" />
+                        {createIssue.isPending ? 'Đang gửi...' : 'Tạo nhận xét'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -342,36 +635,94 @@ export default function TantouPageReview({
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Ghi chú Mangaka</CardTitle>
+                <CardDescription>Click vào ô trên trang hoặc danh sách bên dưới để xem chi tiết & nhận xét lại</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <ScrollArea className="max-h-40">
+                <ScrollArea className="max-h-48">
                   <div className="space-y-2 pr-3">
                     {mangakaNotes.map((n, i) => {
                       const mid = n.id || `m-${i}`
+                      const replyCount = tantouReplies.filter(r => r.parentNoteId === mid).length
                       return (
                         <button
                           key={mid}
                           type="button"
-                          onClick={() => setSelectedMangakaId(mid)}
+                          onClick={() => { setSelectedMangakaId(mid); setReplyDraft('') }}
                           className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
                             selectedMangakaId === mid ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
                           }`}
                         >
-                          <Badge variant="outline" className="mb-1 border-rose-200 text-rose-700">
-                            M{i + 1}
-                          </Badge>
-                          <p className="line-clamp-2 text-muted-foreground">{n.text || '—'}</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge variant="outline" className="border-rose-200 text-rose-700">
+                              M{i + 1}
+                            </Badge>
+                            {replyCount > 0 && (
+                              <Badge variant="secondary" className="text-xs">
+                                {replyCount} phản hồi
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-muted-foreground">{n.text || '—'}</p>
                         </button>
                       )
                     })}
                   </div>
                 </ScrollArea>
+
                 {selectedMangaka ? (
-                  <div className="rounded-lg bg-muted/50 p-3 text-sm">
-                    <p className="mb-1 font-medium text-rose-700">{noteTaskLabel(selectedMangaka.taskType)}</p>
-                    <p>{selectedMangaka.text || 'Không có mô tả'}</p>
+                  <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                    <div>
+                      <p className="mb-1 text-xs font-medium text-rose-700">{noteTaskLabel(selectedMangaka.taskType)}</p>
+                      <p className="text-sm">{selectedMangaka.text || 'Không có mô tả'}</p>
+                    </div>
+
+                    {selectedNoteReplies.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Phản hồi của bạn:</p>
+                        {selectedNoteReplies.map((reply, idx) => (
+                          <div key={reply.id || `r-${idx}`} className="rounded-md bg-background p-2 text-sm">
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <span className="text-xs font-medium text-sky-600">{reply.author}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-muted-foreground">{reply.date}</span>
+                                <button
+                                  type="button"
+                                  className="text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleDeleteReply(reply.id)}
+                                  title="Xóa phản hồi"
+                                >
+                                  <Trash2 className="size-3" />
+                                </button>
+                              </div>
+                            </div>
+                            <p className="whitespace-pre-wrap text-sm">{reply.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Textarea
+                        rows={2}
+                        placeholder="Nhận xét lại cho ô này..."
+                        value={replyDraft}
+                        onChange={e => setReplyDraft(e.target.value)}
+                        className="resize-y text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={handleSendReply}
+                        disabled={createIssue.isPending || !replyDraft.trim()}
+                        className="w-full gap-1"
+                      >
+                        <Send className="size-3" />
+                        {createIssue.isPending ? 'Đang gửi...' : 'Gửi phản hồi'}
+                      </Button>
+                    </div>
                   </div>
-                ) : null}
+                ) : (
+                  <p className="text-xs text-muted-foreground">Chọn 1 ô để xem chi tiết & nhận xét.</p>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -382,28 +733,20 @@ export default function TantouPageReview({
             </Card>
           )}
 
-          {/* Giai đoạn 1: nhận xét lại của Tantou trên trang truyện gốc — gắn theo trang
-              đang xem, không sửa note Mangaka, chỉ thêm panel riêng (PageIssues) */}
-          <TantouCommentPanel
-            pageId={currentPageId}
-            title="Nhận xét của Tantou — Trang truyện"
-          />
-
           <Card className="flex-1 border-primary/20 shadow-md">
             <CardHeader>
-              <CardTitle className="text-base">Ghi chú cho Mangaka</CardTitle>
+              <CardTitle className="text-base">Ghi chú tổng quát</CardTitle>
               <CardDescription>
-                Đánh dấu chỗ cần chỉnh nội dung, thoại, kịch bản. Bắt buộc nhập nếu chọn "Yêu cầu chỉnh sửa";
-                không bắt buộc nếu chuyển thẳng sang {LABEL_EDITOR_BOARD}.
+                Ghi chú cho toàn bộ bản thảo. Bắt buộc nếu chọn "Yêu cầu chỉnh sửa".
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <Textarea
-                rows={12}
-                placeholder="Ghi chú cho Mangaka (không bắt buộc)..."
+                rows={6}
+                placeholder="Ghi chú cho Mangaka..."
                 value={editorialComment}
                 onChange={e => onEditorialCommentChange(e.target.value)}
-                className="min-h-[220px] resize-y"
+                className="min-h-[120px] resize-y"
               />
               {editorialComment.trim() ? (
                 <Button variant="ghost" size="sm" className="text-destructive" onClick={() => onEditorialCommentChange('')}>
@@ -413,18 +756,48 @@ export default function TantouPageReview({
             </CardContent>
           </Card>
 
-          {/* Giai đoạn 2: nhận xét lại của Tantou cho phần "Ghi chú cho Mangaka" —
-              cùng trang nhưng panel riêng để phân biệt rõ 2 giai đoạn trong luồng */}
-          <TantouCommentPanel
-            pageId={currentPageId}
-            title="Nhận xét của Tantou — Ghi chú cho Mangaka"
-          />
+          {tantouBoxes.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Nhận xét của bạn ({tantouBoxes.length})</CardTitle>
+                <CardDescription>Click vào ô xanh trên trang để xem chi tiết</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {tantouBoxes.map((box, idx) => {
+                  const bid = box.id || `tb-${idx}`
+                  return (
+                    <button
+                      key={bid}
+                      type="button"
+                      onClick={() => { setSelectedTantouBoxId(bid); setSelectedMangakaId(null) }}
+                      className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
+                        selectedTantouBoxId === bid ? 'border-sky-500 bg-sky-500/5' : 'hover:bg-muted/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant="outline" className="border-sky-200 text-sky-700">
+                          T{idx + 1}
+                        </Badge>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteBox(bid) }}
+                        >
+                          <Trash2 className="size-3" />
+                          Xóa
+                        </Button>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-muted-foreground">{box.text || '—'}</p>
+                    </button>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
-      {/* Thanh hành động sticky — "Yêu cầu chỉnh sửa" chỉ gửi notification, KHÔNG đổi status
-          (xem handleRequestRevision trong TantouEditor.jsx). Tantou không có quyền reject/lùi
-          status về Draft — quyết định duyệt/từ chối series thuộc về Editorial Board. */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
           {isDebut && (

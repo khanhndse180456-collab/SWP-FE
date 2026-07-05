@@ -29,6 +29,7 @@ export function useEbWorkspace() {
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null); // { message, onConfirm, onCancel, danger? }
+  const [publishFormatDialog, setPublishFormatDialog] = useState(null); // { seriesId, title, onSelect, onCancel }
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [selectedId, setSelectedId] = useState(null);
@@ -36,6 +37,7 @@ export function useEbWorkspace() {
   const [scores, setScores] = useState(buildInitialScores);
   const [scoreErrors, setScoreErrors] = useState(buildInitialScores);
   const [feedback, setFeedback] = useState("");
+  const [selectedPublishFormat, setSelectedPublishFormat] = useState("Monthly");
 
   const loadedRef = useRef(false);
 
@@ -43,22 +45,12 @@ export function useEbWorkspace() {
   const loadQueue = useCallback(async () => {
     setLoadingQueue(true);
     try {
-      const [subRes, seriesRes] = await Promise.allSettled([
-        axiosClient.get("/Submissions/eb"),
-        axiosClient.get("/Series"),
-      ]);
+      const seriesRes = await axiosClient.get("/Series");
+      const raw = seriesRes.data;
+      const all = Array.isArray(raw) ? raw : (raw?.data ?? []);
+      const ebData = all.filter(s => isEbStatus(s.status));
 
-      let ebData = [];
-      if (subRes.status === "fulfilled") {
-        const raw = subRes.value.data;
-        ebData = Array.isArray(raw) ? raw : (raw?.data ?? []);
-      }
-
-      if (ebData.length === 0 && seriesRes.status === "fulfilled") {
-        const raw = seriesRes.value.data;
-        const all = Array.isArray(raw) ? raw : (raw?.data ?? []);
-        ebData = all.filter(s => isEbStatus(s.status));
-      }
+      console.log('[EbWorkspace] filtered EB status count:', ebData.length);
 
       const normalized = ebData.map(item => ({
         ...item,
@@ -239,7 +231,7 @@ export function useEbWorkspace() {
     try {
       if (existingEvalId) {
         // PUT /BoardEvaluation/{id} — cập nhật evaluation đã có
-        await axiosClient.put(`/BoardEvaluation/${existingEvalId}`, {
+        const res = await axiosClient.put(`/BoardEvaluation/${existingEvalId}`, {
           storyScore: clampScore(scores.plotDialogue),
           artScore: clampScore(scores.artDesign),
           characterScore: clampScore(scores.panelingCamera),
@@ -247,9 +239,10 @@ export function useEbWorkspace() {
           pacingScore: clampScore(scores.pacingHook),
           feedback: feedback.trim(),
         });
+        console.log('[handleSaveAssessment] PUT response:', res.data);
       } else {
         // POST /BoardEvaluation — tạo evaluation mới
-        await axiosClient.post("/BoardEvaluation", {
+        const res = await axiosClient.post("/BoardEvaluation", {
           seriesid: Number(selectedId),
           inputtedbyid: Number(activeMemberId),
           storyScore: clampScore(scores.plotDialogue),
@@ -259,6 +252,7 @@ export function useEbWorkspace() {
           pacingScore: clampScore(scores.pacingHook),
           feedback: feedback.trim(),
         });
+        console.log('[handleSaveAssessment] POST response:', res.data);
       }
 
       // Reload để cập nhật bảng điểm
@@ -266,7 +260,8 @@ export function useEbWorkspace() {
       toast.success(
         `Đã lưu điểm ${activeMember?.name ?? "thành viên"} · DTB cá nhân ${average.toFixed(1)}`
       );
-    } catch {
+    } catch (err) {
+      console.error('[handleSaveAssessment] Error:', err?.response?.data ?? err);
       // axiosClient interceptor đã toast lỗi
     } finally {
       setSaving(false);
@@ -310,7 +305,24 @@ export function useEbWorkspace() {
       return;
     }
 
+    // Hiện dialog chọn định dạng phát hành
+    setPublishFormatDialog({
+      seriesId,
+      title,
+      onSelect: async (format) => {
+        setPublishFormatDialog(null);
+        await doApprove(seriesId, title, format);
+      },
+      onCancel: () => setPublishFormatDialog(null),
+    });
+  }
+
+  async function doApprove(seriesId, title, format) {
     try {
+      // 1. Cập nhật định dạng phát hành (Monthly / Weekly)
+      await axiosClient.patch(`/Series/${seriesId}/publish-format`, { publishformat: format });
+
+      // 2. Cập nhật status sang Publishing
       await axiosClient.patch(`/Series/${seriesId}/status`, { status: "Publishing" });
 
       // Gửi thông báo chấp nhận cho Mangaka
@@ -377,6 +389,10 @@ export function useEbWorkspace() {
     loadingMembers,
     saving,
     confirmDialog,
+    publishFormatDialog,
+    setPublishFormatDialog,
+    selectedPublishFormat,
+    setSelectedPublishFormat,
     // UI state
     selectedId,
     setSelectedId,
