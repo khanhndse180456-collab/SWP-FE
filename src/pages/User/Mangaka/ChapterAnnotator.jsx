@@ -32,7 +32,9 @@ import {
   useCreatePage,
   useCreatePageIssue,
   useUpdatePageIssue,
-  useDeletePageIssue
+  useDeletePageIssue,
+  useUpdateSeriesStatus,
+  useAssignTantouEditor
 } from '@/api/hooks'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -155,6 +157,8 @@ export default function ChapterAnnotator({
   onUploadComplete,
   onSendToAssistant,
   onSendToTantou,
+  seriesStatus,
+  seriesTantouId,
 }) {
   const fileRef = useRef(null)
   const coverFileRef = useRef(null)
@@ -178,6 +182,36 @@ export default function ChapterAnnotator({
   const [localRosterTick, setLocalRosterTick] = useState(0)
   const [tantouDialogOpen, setTantouDialogOpen] = useState(false)
   const [selectedTantouId, setSelectedTantouId] = useState(null)
+  
+  const [selectedTantouForSeries, setSelectedTantouForSeries] = useState('')
+  const [isSubmittingSeriesReview, setIsSubmittingSeriesReview] = useState(false)
+
+  const updateSeriesStatus = useUpdateSeriesStatus()
+  const assignTantouEditor = useAssignTantouEditor()
+
+  const isSeriesDraft = String(seriesStatus ?? '').toLowerCase() === 'draft'
+  const isSeriesPublishing = String(seriesStatus ?? '').toLowerCase() === 'publishing'
+
+  const handleSendSeriesForReview = async () => {
+    if (!selectedSeriesId || !selectedTantouForSeries) return
+    setIsSubmittingSeriesReview(true)
+    try {
+      await assignTantouEditor.mutateAsync({
+        seriesId: Number(selectedSeriesId),
+        tantouEditorId: Number(selectedTantouForSeries),
+      })
+      await updateSeriesStatus.mutateAsync({
+        id: Number(selectedSeriesId),
+        status: 'EditorReview',
+      })
+      toast.success('Đã chọn Tantou Editor và gửi duyệt Series thành công!')
+      queryClient.invalidateQueries({ queryKey: ['series'] })
+    } catch (err) {
+      toast.error(`Gửi duyệt Series thất bại: ${err?.message ?? 'Lỗi không xác định'}`)
+    } finally {
+      setIsSubmittingSeriesReview(false)
+    }
+  }
 
   // BE flow: gửi thẳng tới Tantou qua API (đã bỏ qua Assistant)
   const updateChapterStatus = useUpdateChapterStatus()
@@ -1369,7 +1403,7 @@ export default function ChapterAnnotator({
         apiPageId: page?.serverPageId ?? page?.apiPageId ?? null,
       })
     }
-    const handleTantou = () => {
+    const handleTantou = async () => {
       if (!activeChapter) return
       const realChapterId = activeChapter.serverChapterId ?? activeChapter.id
       if (!realChapterId || String(realChapterId).startsWith('ch-local-')) {
@@ -1380,28 +1414,21 @@ export default function ChapterAnnotator({
         toast.error('Chưa có ảnh trang nào để gửi.')
         return
       }
-      setSelectedTantouId(null)
-      setTantouDialogOpen(true)
-    }
-
-    const confirmSendTantou = async () => {
-      if (!activeChapter) return
-      const realChapterId = activeChapter.serverChapterId ?? activeChapter.id
-      if (!realChapterId) return
+      if (!seriesTantouId) {
+        toast.error(`Series này chưa được gán ${LABEL_TANTOU_EDITOR}.`)
+        return
+      }
       try {
-        // BE enum ChapterService: InProduction → Ready → Published. Khi Mangaka gửi sang
-        // Tantou thì chapter chuyển sang 'Ready'. Tantou Editor sẽ tự publish sau khi duyệt.
         await updateChapterStatus.mutateAsync({
           id: realChapterId,
           status: 'Ready',
         })
-        toast.success(`Đã gửi thẳng cho ${LABEL_TANTOU_EDITOR}.`)
-        setTantouDialogOpen(false)
+        toast.success(`Đã gửi thẳng cho ${LABEL_TANTOU_EDITOR} của series.`)
         onSendToTantou?.({
           chapter: activeChapter,
           pageIndex,
           pageName: pages[pageIndex]?.name,
-          tantouId: selectedTantouId,
+          tantouId: seriesTantouId,
         })
       } catch (err) {
         toast.error(`Gửi thất bại: ${err?.message ?? 'Lỗi không xác định'}`)
@@ -1428,7 +1455,7 @@ export default function ChapterAnnotator({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {onSendToTantou ? (
+              {onSendToTantou && isSeriesPublishing ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1448,16 +1475,18 @@ export default function ChapterAnnotator({
                   <SelectValue placeholder="-- Chọn Assistant --" />
                 </SelectTrigger>
                 <SelectContent>
-                  {effectiveHiredAssistants.length === 0 ? (
+                  {effectiveHiredAssistants.filter(a => a.assistantId).length === 0 ? (
                     <SelectItem value="__none__" disabled>
                       Chưa có Assistant nào
                     </SelectItem>
                   ) : (
-                    effectiveHiredAssistants.map(a => (
-                      <SelectItem key={a.assistantId} value={String(a.assistantId)}>
-                        {a.label}
-                      </SelectItem>
-                    ))
+                    effectiveHiredAssistants
+                      .filter(a => a.assistantId)
+                      .map(a => (
+                        <SelectItem key={a.assistantId} value={String(a.assistantId)}>
+                          {a.label}
+                        </SelectItem>
+                      ))
                   )}
                 </SelectContent>
               </Select>
@@ -1477,54 +1506,6 @@ export default function ChapterAnnotator({
             </div>
           </CardContent>
         </Card>
-
-        <Dialog open={tantouDialogOpen} onOpenChange={setTantouDialogOpen}>
-          <DialogContent className="sm:max-w-[480px]">
-            <DialogHeader>
-              <DialogTitle>Gửi thẳng cho {LABEL_TANTOU_EDITOR}</DialogTitle>
-              <DialogDescription>
-                Chọn 1 {LABEL_TANTOU_EDITOR} để nhận chapter này. Nếu bỏ trống, hệ thống sẽ dùng {LABEL_TANTOU_EDITOR} mặc định của series.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {(tantouEditorsRaw ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Chưa có {LABEL_TANTOU_EDITOR} nào khả dụng trong hệ thống.
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {tantouEditorsRaw.map((t) => {
-                    const tid = String(t.user_id ?? t.userid ?? t.id ?? '')
-                    const tname = t.full_name ?? t.fullname ?? t.fullName ?? t.name ?? t.username ?? 'Tantou'
-                    const checked = selectedTantouId === tid
-                    return (
-                      <li
-                        key={tid}
-                        className={cn(
-                          'flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-muted/50',
-                          checked && 'border-primary bg-primary/5',
-                        )}
-                        onClick={() => setSelectedTantouId(checked ? null : tid)}
-                      >
-                        <input type="radio" name="tantou" checked={checked} onChange={() => setSelectedTantouId(tid)} />
-                        <span className="text-sm">{tname}</span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setTantouDialogOpen(false)}>Hủy</Button>
-              <Button
-                onClick={confirmSendTantou}
-                disabled={updateChapterStatus.isPending}
-              >
-                {updateChapterStatus.isPending ? 'Đang gửi...' : 'Xác nhận gửi'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </>
     )
   }
@@ -1542,6 +1523,48 @@ export default function ChapterAnnotator({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          {isSeriesDraft && selectedSeriesId && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/30 dark:bg-amber-900/10 space-y-3">
+              <div>
+                <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  Series này đang ở trạng thái Nháp (Draft)
+                </h4>
+                <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                  Bạn cần gán {LABEL_TANTOU_EDITOR} và gửi Series duyệt trước khi có thể gửi chapter cho biên tập viên.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="w-64">
+                  <Select
+                    value={selectedTantouForSeries || undefined}
+                    onValueChange={setSelectedTantouForSeries}
+                  >
+                    <SelectTrigger className="bg-background">
+                      <SelectValue placeholder={`— Chọn ${LABEL_TANTOU_EDITOR} —`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tantouEditorsRaw
+                        .filter(t => (t.userid ?? t.userId ?? t.user_id ?? t.id))
+                        .map(t => {
+                          const tid = String(t.userid ?? t.userId ?? t.user_id ?? t.id)
+                          const tname = t.fullname ?? t.fullName ?? t.full_name ?? t.name ?? t.username ?? 'Tantou'
+                          return <SelectItem key={tid} value={tid}>{tname}</SelectItem>
+                        })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                  disabled={!selectedTantouForSeries || isSubmittingSeriesReview}
+                  onClick={handleSendSeriesForReview}
+                >
+                  {isSubmittingSeriesReview ? 'Đang gửi...' : 'Gửi duyệt Series'}
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>Series (draft)</Label>
             <Select

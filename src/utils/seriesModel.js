@@ -166,7 +166,7 @@ export function normalizeSeriesList(list) {
 export function buildWorkflowStatusLabel(s) {
   const pub = PUB_LABEL[s.publicationStatus] ?? 'Chuẩn bị'
   if (s.status === 'assistant') return 'Đang vẽ ngoại cảnh'
-  if (s.status === 'review') return 'Chờ bạn duyệt'
+  if (s.status === 'review') return 'Chờ Tantou duyệt'
   if (s.status === 'draft') {
     if (s.publicationStatus === 'preparing') return `Bản nháp · ${pub}`
     return 'Bản nháp'
@@ -423,7 +423,7 @@ export function mapApiSeriesToLocal(raw, index = 0) {
     tantoueditorid: raw.tantoueditorid ?? raw.tantou_editor_id ?? raw.tantouEditorId,
     chapters: 0,
     marks: 0,
-    status: status === 'approved' ? 'done' : status === 'pending' ? 'review' : 'draft',
+    status: (status === 'approved' || status === 'publishing') ? 'done' : (status === 'pending' || status === 'editorreview' || status === 'editorreviewing' || status === 'submittedtoeditor') ? 'review' : 'draft',
     updated: 'Cập nhật từ server',
     progress: 0,
     metadataComplete: Boolean(String(raw.synopsis ?? '').trim()),

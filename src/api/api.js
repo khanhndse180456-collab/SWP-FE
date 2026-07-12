@@ -65,7 +65,7 @@ export const seriesService = {
   },
   updateStatus: (id, status) => {
     console.log('[API] PATCH /Series/:id/status', id, status)
-    return axios.patch(`/Series/${id}/status`, { Status: status })
+    return axios.patch(`/Series/${id}/status`, { status })
   },
   updatePublishFormat: (id, publishFormat) => {
     console.log('[API] PATCH /Series/:id/publish-format', id, publishFormat)

@@ -351,7 +351,7 @@ export default function Mangaka() {
   const [rejectChapterId, setRejectChapterId] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
 
-  const [tab, setTab] = useState('annotate')
+  const [tab, setTab] = useState('series')
   // annotateSeries must read from location.state first (navigation carries the correct series),
   // then fall back to persisted workspace value — otherwise navigating from series detail
   // with "Upload chapter" shows the wrong series in the dropdown. Prefer seriesId over title
@@ -1283,9 +1283,17 @@ export default function Mangaka() {
     fd.append('title', newTitle)
     fd.append('synopsis', String(updated.synopsis ?? ''))
     fd.append('agerating', String(updated.contentRating ?? 'G'))
+    fd.append('mangakaid', String(updated.mangakaid ?? user?.id ?? ''))
+    fd.append('tantoueditorid', String(updated.tantoueditorid ?? user?.tantouEditorId ?? ''))
     // Gui genreIds/tagIds (numbers tu modal props), khong phai string names
     if (Array.isArray(form.genreIds)) form.genreIds.forEach(g => fd.append('genreIds', String(g)))
     if (Array.isArray(form.tagIds)) form.tagIds.forEach(t => fd.append('tagIds', String(t)))
+    
+    // Đính kèm file mới nếu người dùng chọn thay đổi
+    const proposalFile = form.proposalFile instanceof File ? form.proposalFile : null
+    const coverFile = form.coverImage instanceof File ? form.coverImage : null
+    if (proposalFile) fd.append('proposalFile', proposalFile)
+    if (coverFile) fd.append('coverImage', coverFile)
 
     updateSeries.mutate(
       { id: editingSeries.id, data: fd },
@@ -1305,7 +1313,6 @@ export default function Mangaka() {
     }
 
     closeAddSeriesModal()
-    navigate(seriesPath(updated))
   }
 
   function confirmAddSeries(form) {
@@ -1718,6 +1725,8 @@ export default function Mangaka() {
                   onUploadComplete={handleUploadComplete}
                   onSendToAssistant={handleSendToAssistant}
                   onSendToTantou={handleSendToTantou}
+                  seriesStatus={seriesList.find(s => String(s.id) === String(annotateSeriesId))?.publicationStatus}
+                  seriesTantouId={seriesList.find(s => String(s.id) === String(annotateSeriesId))?.tantoueditorid}
                 />
               </TabsContent>
 

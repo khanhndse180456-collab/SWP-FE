@@ -68,6 +68,9 @@ export default function AddSeriesModal({
   existingTitles = [],
 }) {
   const isEdit = mode === 'edit' && initialSeries
+  if (open && isEdit) {
+    console.log('[AddSeriesModal] Debug initialSeries:', initialSeries)
+  }
 
   // Danh sach tu API (dang object { id, name })
   const { data: rawGenres = [], isLoading: genresLoading } = useGenres()
@@ -118,23 +121,15 @@ export default function AddSeriesModal({
     return { gIds, tIds }
   }
 
-  // Khi apiGenres/apiTags load xong, populate selected IDs tu initialSeries
-  useEffect(() => {
-    if (!open || !initialSeries) return
-    const { gIds, tIds } = resolveSelectedIds(initialSeries.genres, initialSeries.tags)
-    if (gIds.length > 0) setSelectedGenreIds(gIds)
-    if (tIds.length > 0) setSelectedTagIds(tIds)
-  }, [open, apiGenres, apiTags, initialSeries])
-
-  // Khi modal mo, reset selected IDs de trigger effect phia tren
+  // Đồng bộ form và selected IDs khi mở modal hoặc khi danh sách genres/tags tải xong
   useEffect(() => {
     if (!open) return
     if (isEdit) {
       const f = seriesToForm(initialSeries)
       setForm(f)
-      // Reset selected IDs de effect phia tren populate lai
-      setSelectedGenreIds([])
-      setSelectedTagIds([])
+      const { gIds, tIds } = resolveSelectedIds(initialSeries.genres, initialSeries.tags)
+      setSelectedGenreIds(gIds)
+      setSelectedTagIds(tIds)
     } else {
       setForm(createEmptySeriesForm(authorName))
       setSelectedGenreIds([])
@@ -145,7 +140,7 @@ export default function AddSeriesModal({
     setCreatingGenre(false)
     setCreatingTag(false)
     setTouched(false)
-  }, [open, isEdit, initialSeries, authorName])
+  }, [open, isEdit, initialSeries, apiGenres, apiTags, authorName])
 
   const titlesForValidation = useMemo(() => {
     if (!isEdit) return existingTitles
@@ -164,10 +159,10 @@ export default function AddSeriesModal({
     const synopsis = String(form.synopsis ?? '').trim()
     if (synopsis.length < 1) errors.synopsis = 'Vui lòng nhập tóm tắt.'
     if (selectedGenreIds.length === 0) errors.genres = 'Chọn ít nhất một thể loại.'
-    if (!form.coverImage) errors.coverImage = 'Vui lòng chọn ảnh bìa.'
-    if (!form.proposalFile) errors.proposalFile = 'Vui lòng đính kèm file bản đề xuất.'
+    if (!isEdit && !form.coverImage) errors.coverImage = 'Vui lòng chọn ảnh bìa.'
+    if (!isEdit && !form.proposalFile) errors.proposalFile = 'Vui lòng đính kèm file bản đề xuất.'
     return { ok: Object.keys(errors).length === 0, errors }
-  }, [form, titlesForValidation, selectedGenreIds])
+  }, [form, titlesForValidation, selectedGenreIds, isEdit])
 
   function patch(updates) {
     setForm(prev => ({ ...prev, ...updates }))
@@ -322,19 +317,19 @@ export default function AddSeriesModal({
           <section className="asm-section">
             <div className="asm-section__head">
               <span className="asm-section__num">1</span>
-              <h3 className="asm-section__title">Thong tin truyen</h3>
+              <h3 className="asm-section__title">Thông tin truyện</h3>
             </div>
 
             <div className="asm-field">
               <Label className="asm-label" htmlFor="series-title">
-                Ten hien thi <span className="asm-req">*</span>
+                Tên hiển thị <span className="asm-req">*</span>
               </Label>
               <Input
                 id="series-title"
                 className="asm-input"
                 value={form.title}
                 onChange={e => patch({ title: e.target.value })}
-                placeholder="Vi du: Huyen Long Ky"
+                placeholder="Ví dụ: Huyền Long Ký"
                 maxLength={120}
                 autoFocus
                 aria-invalid={!!err('title')}
@@ -343,7 +338,7 @@ export default function AddSeriesModal({
             </div>
 
             <div className="asm-field">
-              <Label className="asm-label" htmlFor="series-alt">Ten khac / Romaji</Label>
+              <Label className="asm-label" htmlFor="series-alt">Tên khác / Romaji</Label>
               <Input
                 id="series-alt"
                 className="asm-input"
@@ -357,7 +352,7 @@ export default function AddSeriesModal({
             {/* Tags */}
             <div className="asm-field">
               <Label className="asm-label">
-                Tag
+                Tag / Thẻ
                 {tagsLoading && <Loader2 className="ml-1 inline size-3 animate-spin text-muted-foreground" />}
               </Label>
 
@@ -411,7 +406,7 @@ export default function AddSeriesModal({
                   onClick={() => setCreatingTag(v => !v)}
                 >
                   <Plus className="size-3" />
-                  Tao moi
+                  Tạo mới
                 </Button>
               </div>
 
@@ -422,15 +417,15 @@ export default function AddSeriesModal({
                     className="asm-input flex-1"
                     value={newTagName}
                     onChange={e => setNewTagName(e.target.value)}
-                    placeholder="Ten tag moi..."
+                    placeholder="Tên tag mới..."
                     maxLength={40}
                     onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleCreateTag())}
                   />
                   <Button type="button" size="sm" onClick={handleCreateTag} disabled={!newTagName.trim() || creatingTag}>
-                    {creatingTag ? <Loader2 className="size-3 animate-spin" /> : 'Tao'}
+                    {creatingTag ? <Loader2 className="size-3 animate-spin" /> : 'Tạo'}
                   </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => { setCreatingTag(false); setNewTagName('') }}>
-                    Huy
+                    Hủy
                   </Button>
                 </div>
               )}
@@ -438,14 +433,14 @@ export default function AddSeriesModal({
 
             <div className="asm-field">
               <Label className="asm-label" htmlFor="series-synopsis">
-                Tom tat / gioi thieu <span className="asm-req">*</span>
+                Tóm tắt / giới thiệu <span className="asm-req">*</span>
               </Label>
               <Textarea
                 id="series-synopsis"
                 className="asm-textarea"
                 value={form.synopsis}
                 onChange={e => patch({ synopsis: e.target.value })}
-                placeholder="Cot truyen, boi canh, nhan vat chinh..."
+                placeholder="Cốt truyện, bối cảnh, nhân vật chính..."
                 rows={4}
                 maxLength={2000}
                 aria-invalid={!!err('synopsis')}
@@ -462,7 +457,7 @@ export default function AddSeriesModal({
             <div className="asm-row">
               <div className="asm-field">
                 <Label className="asm-label" htmlFor="series-cover">
-                  Anh bia <span className="asm-req">*</span>
+                  Ảnh bìa {!isEdit && <span className="asm-req">*</span>}
                 </Label>
                 <Input
                   id="series-cover"
@@ -471,17 +466,21 @@ export default function AddSeriesModal({
                   accept="image/*"
                   onChange={e => patch({ coverImage: e.target.files?.[0] ?? null })}
                 />
-                {form.coverImage && (
+                {form.coverImage ? (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Da chon: <span className="font-medium">{form.coverImage.name}</span>
+                    Đã chọn: <span className="font-medium">{form.coverImage.name}</span>
                     ({(form.coverImage.size / 1024).toFixed(1)} KB)
                   </p>
-                )}
+                ) : isEdit && initialSeries.coverImage ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Ảnh bìa cũ: <a href={initialSeries.coverImage} target="_blank" rel="noreferrer" className="text-amber-600 hover:text-amber-700 font-medium underline">Xem ảnh hiện tại</a>
+                  </p>
+                ) : null}
                 {(err('coverImage')) && <p className="asm-error">{err('coverImage')}</p>}
               </div>
               <div className="asm-field">
                 <Label className="asm-label" htmlFor="series-proposal">
-                  File ban de xuat (PDF) <span className="asm-req">*</span>
+                  File bản đề xuất (PDF) {!isEdit && <span className="asm-req">*</span>}
                 </Label>
                 <Input
                   id="series-proposal"
@@ -490,12 +489,16 @@ export default function AddSeriesModal({
                   accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   onChange={e => patch({ proposalFile: e.target.files?.[0] ?? null })}
                 />
-                {form.proposalFile && (
+                {form.proposalFile ? (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Da chon: <span className="font-medium">{form.proposalFile.name}</span>
+                    Đã chọn: <span className="font-medium">{form.proposalFile.name}</span>
                     ({(form.proposalFile.size / 1024).toFixed(1)} KB)
                   </p>
-                )}
+                ) : isEdit && initialSeries.proposalFileUrl ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Bản đề xuất cũ: <a href={initialSeries.proposalFileUrl} target="_blank" rel="noreferrer" className="text-amber-600 hover:text-amber-700 font-medium underline">Tải xuống file hiện tại</a>
+                  </p>
+                ) : null}
                 {(err('proposalFile')) && <p className="asm-error">{err('proposalFile')}</p>}
               </div>
             </div>
@@ -505,13 +508,13 @@ export default function AddSeriesModal({
           <section className="asm-section">
             <div className="asm-section__head">
               <span className="asm-section__num">2</span>
-              <h3 className="asm-section__title">Phan loai</h3>
+              <h3 className="asm-section__title">Phân loại</h3>
             </div>
 
             {/* The loai */}
             <div className="asm-field">
               <Label className="asm-label">
-                The loai <span className="asm-hint">(toi da 5)</span>
+                Thể loại <span className="asm-hint">(tối đa 5)</span>
                 {genresLoading && <Loader2 className="ml-1 inline size-3 animate-spin text-muted-foreground" />}
               </Label>
 
@@ -565,7 +568,7 @@ export default function AddSeriesModal({
                   onClick={() => setCreatingGenre(v => !v)}
                 >
                   <Plus className="size-3" />
-                  Tao moi
+                  Tạo mới
                 </Button>
               </div>
 
@@ -576,29 +579,29 @@ export default function AddSeriesModal({
                     className="asm-input flex-1"
                     value={newGenreName}
                     onChange={e => setNewGenreName(e.target.value)}
-                    placeholder="Ten the loai moi..."
+                    placeholder="Tên thể loại mới..."
                     maxLength={40}
                     onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleCreateGenre())}
                   />
                   <Button type="button" size="sm" onClick={handleCreateGenre} disabled={!newGenreName.trim() || creatingGenre}>
-                    {creatingGenre ? <Loader2 className="size-3 animate-spin" /> : 'Tao'}
+                    {creatingGenre ? <Loader2 className="size-3 animate-spin" /> : 'Tạo'}
                   </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => { setCreatingGenre(false); setNewGenreName('') }}>
-                    Huy
+                    Hủy
                   </Button>
                 </div>
               )}
 
               {/* Loading state */}
               {genresLoading && apiGenres.length === 0 && (
-                <p className="text-xs text-muted-foreground py-2">Dang tai the loai...</p>
+                <p className="text-xs text-muted-foreground py-2">Đang tải thể loại...</p>
               )}
               {err('genres') && <p className="asm-error">{err('genres')}</p>}
             </div>
 
             {/* Phan loai noi dung */}
             <div className="asm-field">
-              <Label className="asm-label">Phan loai noi dung</Label>
+              <Label className="asm-label">Phân loại nội dung</Label>
               <Select value={form.contentRating} onValueChange={v => patch({ contentRating: v })}>
                 <SelectTrigger className="asm-select">
                   <SelectValue />
@@ -625,7 +628,7 @@ export default function AddSeriesModal({
         {/* Footer */}
         <div className="asm-footer">
           {touched && !validation.ok ? (
-            <p className="asm-footer__warn">Vui long kiem tra cac truong con thieu</p>
+            <p className="asm-footer__warn">Vui lòng kiểm tra các trường còn thiếu</p>
           ) : null}
           <Button type="button" variant="outline" onClick={handleClose} className="asm-btn-cancel">
             Huy
