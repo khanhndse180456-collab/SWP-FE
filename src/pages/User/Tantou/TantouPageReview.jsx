@@ -17,13 +17,27 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import '@/styles/mangaPage.css'
 
-// Schema thật của PageIssue (Swagger POST /api/PageIssues):
-//   pageid, createdById, assignedToId, issueType, workCategory,
-//   boxX, boxY, boxWidth, boxHeight, description, deadline
-// Không có chapterId — mọi issue gắn theo 1 pageid cụ thể.
-const TANTOU_COMMENT_TYPE = 'TantouComment'
-const MANGAKA_NOTE_TYPE = 'MangakaNote'
-const TANTOU_REPLY_TYPE = 'TantouReply'
+// Backend PageIssueDto.Create chỉ chấp nhận đúng 2 giá trị này cho IssueType
+// (xem [AllowedValues] trong DTOs/PageIssueDto.cs)
+const TANTOU_REVISION_TYPE = 'Revision'   // dùng cho mọi comment/box/reply từ Tantou
+const MANGAKA_PRODUCTION_TYPE = 'Production' // ghi chú/task do Mangaka tạo
+
+// WorkCategory hợp lệ: Content, Dialog, Inking, Effects, Shading, Background
+const DEFAULT_WORK_CATEGORY = 'Content'
+
+// Backend chưa có cột parent_note_id nên không thể lưu quan hệ reply -> note
+// thật sự. Tạm nhúng marker vào đầu `description` để tự parse lại ở FE.
+// TODO: đề xuất DUYKHANH thêm cột `parent_note_id` vào bảng page_issues để
+// bỏ workaround này.
+const REPLY_PREFIX_RE = /^\[\[reply:(.+?)\]\]\s?/
+function encodeReply(parentId, text) {
+  return `[[reply:${parentId}]] ${text}`
+}
+function decodeReply(desc) {
+  const m = REPLY_PREFIX_RE.exec(desc || '')
+  if (!m) return null
+  return { parentNoteId: m[1], text: (desc || '').slice(m[0].length) }
+}
 
 function issueField(issue, camelKey, lowerKey) {
   return issue?.[camelKey] ?? issue?.[lowerKey] ?? issue?.[camelKey?.toLowerCase()] ?? null
@@ -32,7 +46,9 @@ function tantouCommentAuthor(issue) {
   return issueField(issue, 'createdByName', 'created_by_name') ?? 'Tantou Editor'
 }
 function tantouCommentText(issue) {
-  return issueField(issue, 'description', 'description') ?? ''
+  const raw = issueField(issue, 'description', 'description') ?? ''
+  const decoded = decodeReply(raw)
+  return decoded ? decoded.text : raw
 }
 function tantouCommentDate(issue) {
   const raw = issueField(issue, 'createdat', 'createdAt')
@@ -41,11 +57,9 @@ function tantouCommentDate(issue) {
 }
 function issueId(issue) { return issueField(issue, 'issueid', 'issueId') }
 function issueType(issue) { return issueField(issue, 'issueType', 'issue_type') }
+function boxWidthOf(issue) { return issueField(issue, 'boxWidth', 'box_width') ?? 0 }
+function boxHeightOf(issue) { return issueField(issue, 'boxHeight', 'box_height') ?? 0 }
 
-/**
- * Panel nhận xét riêng của Tantou — không sửa/đè ghi chú gốc (Mangaka/Assistant),
- * chỉ thêm record mới qua PageIssues với issueType = 'TantouComment'.
- */
 function TantouCommentPanel({ pageId, title = 'Nhận xét của Tantou' }) {
   const [draft, setDraft] = useState('')
   const session = getSession()
@@ -54,10 +68,16 @@ function TantouCommentPanel({ pageId, title = 'Nhận xét của Tantou' }) {
   const createIssue = useCreatePageIssue()
   const deleteIssue = useDeletePageIssue()
 
+  // Chỉ lấy các Revision "chung" (không có box vẽ trên trang, không phải reply)
   const tantouComments = useMemo(() => {
     if (!Array.isArray(issuesRaw)) return []
     return issuesRaw
-      .filter(i => issueType(i) === TANTOU_COMMENT_TYPE)
+      .filter(i =>
+        issueType(i) === TANTOU_REVISION_TYPE &&
+        boxWidthOf(i) === 0 &&
+        boxHeightOf(i) === 0 &&
+        !decodeReply(issueField(i, 'description', 'description'))
+      )
       .sort((a, b) => {
         const ad = new Date(issueField(a, 'createdat', 'createdAt') ?? 0).getTime()
         const bd = new Date(issueField(b, 'createdat', 'createdAt') ?? 0).getTime()
@@ -74,8 +94,8 @@ function TantouCommentPanel({ pageId, title = 'Nhận xét của Tantou' }) {
         pageid: pageId,
         createdById: session?.id ?? session?.userid ?? null,
         assignedToId: null,
-        issueType: TANTOU_COMMENT_TYPE,
-        workCategory: 'review',
+        issueType: TANTOU_REVISION_TYPE,
+        workCategory: DEFAULT_WORK_CATEGORY,
         boxX: 0, boxY: 0, boxWidth: 0, boxHeight: 0,
         description: text,
         deadline: null,
@@ -185,10 +205,6 @@ export default function TantouPageReview({
   const [replyDraft, setReplyDraft] = useState('')
   const [replyOpen, setReplyOpen] = useState(false)
 
-  // === Giống hệt ChapterAnnotator.jsx (Mangaka) ===
-  // Mặc định 'draw' để kéo được NGAY khi vào trang, không cần bấm nút nào trước.
-  // Click vào 1 ô có sẵn sẽ tự set về 'select' (xem onBoxClick) — giống hành vi
-  // của Mangaka: đã chọn ô thì tạm ngưng vẽ, muốn vẽ tiếp thì bấm lại "Tạo ô nhận xét".
   const [tool, setTool] = useState('draw')
   const [drawStart, setDrawStart] = useState(null)
   const [drawCurrent, setDrawCurrent] = useState(null)
@@ -206,10 +222,15 @@ export default function TantouPageReview({
   const createIssue = useCreatePageIssue()
   const deleteIssue = useDeletePageIssue()
 
+  // Box vẽ trên trang: Revision có box thật (width/height > 0), không phải reply
   const tantouBoxes = useMemo(() => {
     if (!Array.isArray(pageIssuesRaw)) return []
     return pageIssuesRaw
-      .filter(i => issueType(i) === TANTOU_COMMENT_TYPE)
+      .filter(i =>
+        issueType(i) === TANTOU_REVISION_TYPE &&
+        boxWidthOf(i) > 0 &&
+        boxHeightOf(i) > 0
+      )
       .map(i => ({
         id: String(issueId(i)),
         x: issueField(i, 'boxX', 'box_x') ?? 0,
@@ -223,7 +244,7 @@ export default function TantouPageReview({
   const mangakaNotes = useMemo(() => {
     if (!Array.isArray(pageIssuesRaw)) return []
     return pageIssuesRaw
-      .filter(i => issueType(i) === MANGAKA_NOTE_TYPE)
+      .filter(i => issueType(i) === MANGAKA_PRODUCTION_TYPE)
       .map(i => ({
         id: String(issueId(i)),
         x: issueField(i, 'boxX', 'box_x') ?? 0,
@@ -231,7 +252,7 @@ export default function TantouPageReview({
         w: issueField(i, 'boxWidth', 'box_width') ?? 0,
         h: issueField(i, 'boxHeight', 'box_height') ?? 0,
         text: issueField(i, 'description', 'description') ?? '',
-        taskType: issueField(i, 'workCategory', 'work_category') ?? 'background',
+        taskType: issueField(i, 'workCategory', 'work_category') ?? DEFAULT_WORK_CATEGORY,
       }))
   }, [pageIssuesRaw])
 
@@ -240,24 +261,28 @@ export default function TantouPageReview({
     return mangakaNotes.find((n, i) => (n.id || `m-${i}`) === selectedMangakaId) ?? null
   }, [mangakaNotes, selectedMangakaId])
 
-  const { data: tantouRepliesRaw = [] } = usePageIssues({ pageId: currentPageId })
-
+  // Reply = Revision không có box, có marker [[reply:<id>]] trong description
   const tantouReplies = useMemo(() => {
-    if (!Array.isArray(tantouRepliesRaw)) return []
-    return tantouRepliesRaw
-      .filter(i => issueType(i) === TANTOU_REPLY_TYPE)
-      .map(i => ({
-        id: String(issueId(i)),
-        parentNoteId: issueField(i, 'parentNoteId', 'parent_note_id') ?? null,
-        text: issueField(i, 'description', 'description') ?? '',
-        author: issueField(i, 'createdByName', 'created_by_name') ?? 'Tantou Editor',
-        date: (() => {
-          const raw = issueField(i, 'createdat', 'createdAt')
-          if (!raw) return ''
-          try { return new Date(raw).toLocaleString('vi-VN') } catch { return '' }
-        })(),
-      }))
-  }, [tantouRepliesRaw])
+    if (!Array.isArray(pageIssuesRaw)) return []
+    return pageIssuesRaw
+      .filter(i => issueType(i) === TANTOU_REVISION_TYPE)
+      .map(i => {
+        const decoded = decodeReply(issueField(i, 'description', 'description'))
+        if (!decoded) return null
+        return {
+          id: String(issueId(i)),
+          parentNoteId: decoded.parentNoteId,
+          text: decoded.text,
+          author: issueField(i, 'createdByName', 'created_by_name') ?? 'Tantou Editor',
+          date: (() => {
+            const raw = issueField(i, 'createdat', 'createdAt')
+            if (!raw) return ''
+            try { return new Date(raw).toLocaleString('vi-VN') } catch { return '' }
+          })(),
+        }
+      })
+      .filter(Boolean)
+  }, [pageIssuesRaw])
 
   const selectedNoteReplies = useMemo(() => {
     if (!selectedMangakaId) return []
@@ -275,12 +300,11 @@ export default function TantouPageReview({
         pageid: currentPageId,
         createdById: session?.id ?? session?.userid ?? null,
         assignedToId: null,
-        issueType: TANTOU_REPLY_TYPE,
-        workCategory: 'review',
+        issueType: TANTOU_REVISION_TYPE,
+        workCategory: selectedMangaka?.taskType ?? DEFAULT_WORK_CATEGORY,
         boxX: 0, boxY: 0, boxWidth: 0, boxHeight: 0,
-        description: text,
+        description: encodeReply(selectedMangakaId, text),
         deadline: null,
-        parentNoteId: selectedMangakaId,
       })
       setReplyDraft('')
       toast.success('Đã gửi phản hồi.')
@@ -299,7 +323,6 @@ export default function TantouPageReview({
     }
   }
 
-  // === getPercent — giống Mangaka: nhận vào REF OBJECT (không phải .current) ===
   function getPercent(e, ref) {
     const el = ref?.current
     if (!el) return { x: 0, y: 0 }
@@ -309,9 +332,6 @@ export default function TantouPageReview({
     return { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) }
   }
 
-  // === Y HỆT onBoardMouseDown của Mangaka (ChapterAnnotator.jsx) ===
-  // SỬA: khi chưa có currentPageId mà đang ở tool "draw" thì báo lỗi rõ ràng
-  // thay vì im lặng không phản ứng gì (trước đây user bấm/kéo hoài không hiểu vì sao).
   function onBoardMouseDown(e, ref) {
     if (!currentPageId) {
       if (tool === 'draw') toast.error('Chưa có trang để tạo ô nhận xét.')
@@ -332,8 +352,6 @@ export default function TantouPageReview({
     setDrawCurrent(getPercent(e, ref))
   }
 
-  // === Giống onBoardMouseUp của Mangaka — không cần isDraggingRef,
-  // chỉ cần check w<2/h<2 là đủ để phân biệt "click" với "kéo thật" ===
   function onBoardMouseUp() {
     if (!drawStart || !drawCurrent) return
     const boxX = Math.min(drawStart.x, drawCurrent.x)
@@ -378,16 +396,15 @@ export default function TantouPageReview({
         pageid: currentPageId,
         createdById: session?.id ?? session?.userid ?? null,
         assignedToId: null,
-        issueType: TANTOU_COMMENT_TYPE,
-        workCategory: 'review',
-        boxX: x, boxY: y, boxWidth: w, boxHeight: h,
-        description: text,
+        issueType: TANTOU_REVISION_TYPE,
+        workCategory: DEFAULT_WORK_CATEGORY,
+        boxX: Math.round(x), boxY: Math.round(y), boxWidth: Math.round(w), boxHeight: Math.round(h), description: text,
         deadline: null,
       })
       setNewBoxDraft('')
       setShowNewBoxPanel(false)
-      setTempBox(null) // SỬA: dọn sạch ô nháp sau khi đã tạo thật xong
-      setTool('draw') // giống Mangaka: sau khi tạo xong quay lại chế độ vẽ luôn
+      setTempBox(null)
+      setTool('draw')
       toast.success('Đã thêm nhận xét.')
     } catch (err) {
       toast.error(err?.response?.data?.message ?? 'Không tạo được nhận xét.')
@@ -415,6 +432,7 @@ export default function TantouPageReview({
   const isDebut = submission.pipeline === 'debut'
   const hasComment = editorialComment.trim().length > 0
   const pageImageUrl = currentPage?.url ?? submission.mangakaImageUrl ?? null
+  const noPagesAvailable = pages.length === 0 // MỚI: chưa có trang nào để hiển thị/nhận xét
 
   return (
     <div className="space-y-4 pb-24">
@@ -498,135 +516,138 @@ export default function TantouPageReview({
             </div>
           </CardHeader>
           <CardContent className="flex justify-center bg-zinc-950 p-4 md:p-6">
-            <div className="relative w-full max-w-[728px]">
-              <div
-                ref={boardRef}
-                className={`mk-board manga-page manga-page--canvas relative mx-auto aspect-[728/1030] bg-zinc-900 select-none border-2 border-zinc-700 rounded ${
-                  tool === 'draw' ? 'cursor-crosshair' : tool === 'delete' ? 'cursor-not-allowed' : 'cursor-pointer'
-                }`}
-                onMouseDown={e => onBoardMouseDown(e, boardRef)}
-                onMouseMove={e => onBoardMouseMove(e, boardRef)}
-                onMouseUp={onBoardMouseUp}
-                onMouseLeave={onBoardMouseUp}
-              >
-                {pageImageUrl ? (
-                  <img
-                    src={pageImageUrl}
-                    alt=""
-                    className="mk-board__img manga-page__media absolute inset-0 size-full object-contain pointer-events-none"
-                    draggable={false}
-                    width={728}
-                    height={1030}
-                    onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
-                  />
-                ) : null}
+            {noPagesAvailable ? (
+              // MỚI: message rõ ràng khi series/chapter chưa có trang nào,
+              // thay vì để board đen kèm toast lỗi gây khó hiểu.
+              <div className="flex h-96 w-full items-center justify-center text-center text-sm text-muted-foreground">
+                Chưa có trang nào để nhận xét — Mangaka chưa nộp chương này.
+              </div>
+            ) : (
+              <div className="relative w-full max-w-[728px]">
+                <div
+                  ref={boardRef}
+                  className={`mk-board manga-page manga-page--canvas relative mx-auto aspect-[728/1030] bg-zinc-900 select-none border-2 border-zinc-700 rounded ${tool === 'draw' ? 'cursor-crosshair' : tool === 'delete' ? 'cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                  onMouseDown={e => onBoardMouseDown(e, boardRef)}
+                  onMouseMove={e => onBoardMouseMove(e, boardRef)}
+                  onMouseUp={onBoardMouseUp}
+                  onMouseLeave={onBoardMouseUp}
+                >
+                  {pageImageUrl ? (
+                    <img
+                      src={pageImageUrl}
+                      alt=""
+                      className="mk-board__img manga-page__media absolute inset-0 size-full object-contain pointer-events-none"
+                      draggable={false}
+                      width={728}
+                      height={1030}
+                      onError={(e) => { e.currentTarget.style.visibility = 'hidden' }}
+                    />
+                  ) : null}
 
-                {/* Tantou comment boxes */}
-                {tantouBoxes.map((box, idx) => {
-                  const bid = box.id || `tb-${idx}`
-                  return (
+                  {/* Tantou comment boxes */}
+                  {tantouBoxes.map((box, idx) => {
+                    const bid = box.id || `tb-${idx}`
+                    return (
+                      <div
+                        key={bid}
+                        className={`absolute box-border rounded border-2 border-sky-500 bg-sky-500/15 cursor-pointer transition-shadow ${selectedTantouBoxId === bid ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : ''
+                          }`}
+                        style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.w}%`, height: `${box.h}%` }}
+                        onClick={e => onBoxClick(e, bid)}
+                        title={box.text || 'Nhận xét của Tantou'}
+                      >
+                        <span className="absolute left-1 top-0.5 rounded bg-sky-600 px-1 text-[10px] font-bold text-white">
+                          T{idx + 1}
+                        </span>
+                      </div>
+                    )
+                  })}
+
+                  {/* Mangaka notes (read-only) */}
+                  {mangakaNotes.map((n, idx) => {
+                    const mid = n.id || `m-${idx}`
+                    return (
+                      <div
+                        key={mid}
+                        className={`absolute box-border cursor-pointer rounded border-2 border-dashed border-rose-500 bg-rose-500/15 transition-shadow ${selectedMangakaId === mid ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : ''
+                          }`}
+                        style={{ left: `${n.x}%`, top: `${n.y}%`, width: `${n.w}%`, height: `${n.h}%` }}
+                        onClick={e => onMangakaNoteClick(e, mid)}
+                        title={n.text || 'Ghi chú Mangaka'}
+                      >
+                        <span className="absolute left-1 top-0.5 rounded bg-rose-600 px-1 text-[10px] font-bold text-white">
+                          M{idx + 1}
+                        </span>
+                      </div>
+                    )
+                  })}
+
+                  {/* Drawing preview */}
+                  {drawStart && drawCurrent && (
                     <div
-                      key={bid}
-                      className={`absolute box-border rounded border-2 border-sky-500 bg-sky-500/15 cursor-pointer transition-shadow ${
-                        selectedTantouBoxId === bid ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : ''
-                      }`}
-                      style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.w}%`, height: `${box.h}%` }}
-                      onClick={e => onBoxClick(e, bid)}
-                      title={box.text || 'Nhận xét của Tantou'}
+                      className="absolute border-2 border-dashed border-sky-400 bg-sky-500/20"
+                      style={{
+                        left: `${Math.min(drawStart.x, drawCurrent.x)}%`,
+                        top: `${Math.min(drawStart.y, drawCurrent.y)}%`,
+                        width: `${Math.abs(drawCurrent.x - drawStart.x)}%`,
+                        height: `${Math.abs(drawCurrent.y - drawStart.y)}%`,
+                      }}
+                    />
+                  )}
+
+                  {tempBox && showNewBoxPanel && (
+                    <div
+                      className="absolute box-border rounded border-2 border-dashed border-sky-400 bg-sky-500/20 animate-pulse"
+                      style={{
+                        left: `${tempBox.x}%`,
+                        top: `${tempBox.y}%`,
+                        width: `${tempBox.w}%`,
+                        height: `${tempBox.h}%`,
+                      }}
                     >
-                      <span className="absolute left-1 top-0.5 rounded bg-sky-600 px-1 text-[10px] font-bold text-white">
-                        T{idx + 1}
+                      <span className="absolute left-1 top-0.5 rounded bg-sky-500 px-1 text-[10px] font-bold text-white">
+                        Mới
                       </span>
                     </div>
-                  )
-                })}
+                  )}
+                </div>
 
-                {/* Mangaka notes (read-only) */}
-                {mangakaNotes.map((n, idx) => {
-                  const mid = n.id || `m-${idx}`
-                  return (
-                    <div
-                      key={mid}
-                      className={`absolute box-border cursor-pointer rounded border-2 border-dashed border-rose-500 bg-rose-500/15 transition-shadow ${
-                        selectedMangakaId === mid ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' : ''
-                      }`}
-                      style={{ left: `${n.x}%`, top: `${n.y}%`, width: `${n.w}%`, height: `${n.h}%` }}
-                      onClick={e => onMangakaNoteClick(e, mid)}
-                      title={n.text || 'Ghi chú Mangaka'}
-                    >
-                      <span className="absolute left-1 top-0.5 rounded bg-rose-600 px-1 text-[10px] font-bold text-white">
-                        M{idx + 1}
-                      </span>
+                {/* New box input panel */}
+                {showNewBoxPanel && tempBox && (
+                  <div className="absolute inset-x-0 bottom-0 bg-background/95 p-4 backdrop-blur">
+                    <div className="mx-auto max-w-lg rounded-lg border bg-background p-4 shadow-xl">
+                      <h4 className="mb-2 font-medium">Nhận xét cho ô mới</h4>
+                      <Textarea
+                        rows={3}
+                        placeholder="Nhập nhận xét của bạn..."
+                        value={newBoxDraft}
+                        onChange={e => setNewBoxDraft(e.target.value)}
+                        className="mb-3"
+                        autoFocus
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCancelNewBox}
+                        >
+                          Hủy
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handleCreateBox(tempBox.x, tempBox.y, tempBox.w, tempBox.h)}
+                          disabled={createIssue.isPending || !newBoxDraft.trim()}
+                        >
+                          <Send className="size-3" />
+                          {createIssue.isPending ? 'Đang gửi...' : 'Tạo nhận xét'}
+                        </Button>
+                      </div>
                     </div>
-                  )
-                })}
-
-                {/* Drawing preview — trong lúc đang kéo chuột */}
-                {drawStart && drawCurrent && (
-                  <div
-                    className="absolute border-2 border-dashed border-sky-400 bg-sky-500/20"
-                    style={{
-                      left: `${Math.min(drawStart.x, drawCurrent.x)}%`,
-                      top: `${Math.min(drawStart.y, drawCurrent.y)}%`,
-                      width: `${Math.abs(drawCurrent.x - drawStart.x)}%`,
-                      height: `${Math.abs(drawCurrent.y - drawStart.y)}%`,
-                    }}
-                  />
-                )}
-
-                {/* MỚI: giữ nguyên ô tại chỗ sau khi thả chuột, trong lúc chờ nhập nhận xét —
-                    y như mk-note-box--draft của Mangaka, tránh ô "biến mất" gây mất định vị */}
-                {tempBox && showNewBoxPanel && (
-                  <div
-                    className="absolute box-border rounded border-2 border-dashed border-sky-400 bg-sky-500/20 animate-pulse"
-                    style={{
-                      left: `${tempBox.x}%`,
-                      top: `${tempBox.y}%`,
-                      width: `${tempBox.w}%`,
-                      height: `${tempBox.h}%`,
-                    }}
-                  >
-                    <span className="absolute left-1 top-0.5 rounded bg-sky-500 px-1 text-[10px] font-bold text-white">
-                      Mới
-                    </span>
                   </div>
                 )}
               </div>
-
-              {/* New box input panel */}
-              {showNewBoxPanel && tempBox && (
-                <div className="absolute inset-x-0 bottom-0 bg-background/95 p-4 backdrop-blur">
-                  <div className="mx-auto max-w-lg rounded-lg border bg-background p-4 shadow-xl">
-                    <h4 className="mb-2 font-medium">Nhận xét cho ô mới</h4>
-                    <Textarea
-                      rows={3}
-                      placeholder="Nhập nhận xét của bạn..."
-                      value={newBoxDraft}
-                      onChange={e => setNewBoxDraft(e.target.value)}
-                      className="mb-3"
-                      autoFocus
-                    />
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleCancelNewBox}
-                      >
-                        Hủy
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleCreateBox(tempBox.x, tempBox.y, tempBox.w, tempBox.h)}
-                        disabled={createIssue.isPending || !newBoxDraft.trim()}
-                      >
-                        <Send className="size-3" />
-                        {createIssue.isPending ? 'Đang gửi...' : 'Tạo nhận xét'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
           </CardContent>
         </Card>
 
@@ -648,9 +669,8 @@ export default function TantouPageReview({
                           key={mid}
                           type="button"
                           onClick={() => { setSelectedMangakaId(mid); setReplyDraft('') }}
-                          className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
-                            selectedMangakaId === mid ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                          }`}
+                          className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${selectedMangakaId === mid ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                            }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <Badge variant="outline" className="border-rose-200 text-rose-700">
@@ -770,9 +790,8 @@ export default function TantouPageReview({
                       key={bid}
                       type="button"
                       onClick={() => { setSelectedTantouBoxId(bid); setSelectedMangakaId(null) }}
-                      className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
-                        selectedTantouBoxId === bid ? 'border-sky-500 bg-sky-500/5' : 'hover:bg-muted/50'
-                      }`}
+                      className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${selectedTantouBoxId === bid ? 'border-sky-500 bg-sky-500/5' : 'hover:bg-muted/50'
+                        }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <Badge variant="outline" className="border-sky-200 text-sky-700">

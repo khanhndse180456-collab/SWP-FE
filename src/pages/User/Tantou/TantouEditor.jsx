@@ -43,10 +43,6 @@ function urgencyLabel(daysLeft) {
   return `Còn ${Math.ceil(daysLeft)} ngày`
 }
 
-// ── Xác định layer luồng của 1 chapter ──────────────────────────────────────
-// - 'done'        : chapter đã Published
-// - 'eb'          : chapter Ready HOẶC series cha đang nằm ở EB (EBReview) → đã gửi/đang chờ EB chấm
-// - 'inprogress'  : còn lại — đang làm, chưa tới lượt EB
 function getChapterLayer(item) {
   const st = normalizeStatus(item.status)
   if (st === 'published') return 'done'
@@ -70,6 +66,7 @@ export default function TantouEditor() {
     delayedCount,
     handleRefreshStudio,
     selectedSub,
+    reviewSubmission,      // ← SỬA: lấy submission đã ráp sẵn từ hook
     reviewOpen,
     editorialComment,
     setEditorialComment,
@@ -87,7 +84,6 @@ export default function TantouEditor() {
     handleSetSchedule,
   } = useTantouWorkspace()
 
-  // ── UI-only state (không liên quan tới dữ liệu/API) ───────────────────────
   const [tab, setTab] = useState('debut')
   const [studioSearch, setStudioSearch]             = useState('')
   const [studioStatusFilter, setStudioStatusFilter] = useState('all')
@@ -103,9 +99,6 @@ export default function TantouEditor() {
     })
   }, [studioQueue, studioSearch, studioStatusFilter])
 
-  // ── Chapter cần xử lý gấp (deadline gần/đã quá hạn, chưa published, ─────
-  //    chưa gửi EB) ─────────────────────────────────────────────────────────
-  // Chapter đã ở layer 'eb' hoặc 'done' thì không còn là việc "Tantou cần xử lý gấp" nữa.
   const urgentChapters = useMemo(() => {
     return studioQueue
       .filter(ch => {
@@ -114,10 +107,9 @@ export default function TantouEditor() {
         return daysLeft !== null && daysLeft <= URGENT_THRESHOLD_DAYS
       })
       .map(ch => ({ ...ch, daysLeft: getDaysLeft(ch.deadline) }))
-      .sort((a, b) => a.daysLeft - b.daysLeft) // quá hạn / gần hạn nhất lên đầu
+      .sort((a, b) => a.daysLeft - b.daysLeft)
   }, [studioQueue])
 
-  // ── Gom chapter theo 3 layer, trong mỗi layer gom tiếp theo series ────────
   const layeredStudioQueue = useMemo(() => {
     const maps = { inprogress: new Map(), eb: new Map(), done: new Map() }
 
@@ -154,7 +146,6 @@ export default function TantouEditor() {
     return result
   }, [filteredStudioQueue])
 
-  // ── Định nghĩa 3 section hiển thị (thứ tự luồng: làm → chờ EB → xong) ────
   const studioSections = [
     { key: 'inprogress', label: 'Đang thực hiện',                    dot: 'bg-sky-500',    groups: layeredStudioQueue.inprogress },
     { key: 'eb',         label: `Đang chờ ${LABEL_EDITOR_BOARD} chấm`, dot: 'bg-violet-500', groups: layeredStudioQueue.eb },
@@ -168,37 +159,32 @@ export default function TantouEditor() {
 
   // ── Review mode ───────────────────────────────────────────────────────────
   if (reviewOpen && selectedSub) {
-    const isDebut = isDebutStatus(selectedSub.status) && !isApprovedStatus(selectedSub.status)
-    const submission = {
-      id:               selectedSub.seriesid,
-      seriesTitle:      selectedSub.title,
-      chapterNum:       reviewChapterNumber,
-      pageLabel:        selectedSub.publishformat ?? '—',
-      mangakaImageUrl:  selectedSub.coverimageurl ?? null,
-      mangakaNotes:     [],
-      pipeline:         isDebut ? 'debut' : 'recurring',
-      status:           selectedSub.status,
-      editorialComment,
-    }
     return (
       <div className="flex min-h-screen flex-col bg-background">
         <Header links={NAV_LINKS} onLogout={user ? handleLogout : undefined} />
         <main className="page-container flex-1 py-8">
-          <TantouPageReview
-            submission={submission}
-            editorialComment={editorialComment}
-            onEditorialCommentChange={setEditorialComment}
-            onBack={closeReview}
-            onForwardEb={handleForwardEb}
-            onRequestRevision={handleRequestRevision}
-            onApproveRecurring={undefined}
-            pages={reviewPages}
-            pagesLoading={reviewPagesLoading}
-            pageIndex={reviewPageIndex}
-            onPageIndexChange={setReviewPageIndex}
-            chapterId={reviewChapterId}
-            revisionHistory={[]}
-          />
+          {reviewPagesLoading || !reviewSubmission ? (   // ← SỬA: chờ data thật trước khi render
+            <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
+              <Loader2 className="size-5 animate-spin" />
+              Đang tải trang truyện...
+            </div>
+          ) : (
+            <TantouPageReview
+              submission={reviewSubmission}              // ← SỬA: dùng submission đã ráp sẵn
+              editorialComment={editorialComment}
+              onEditorialCommentChange={setEditorialComment}
+              onBack={closeReview}
+              onForwardEb={handleForwardEb}
+              onRequestRevision={handleRequestRevision}
+              onApproveRecurring={undefined}
+              pages={reviewPages}
+              pagesLoading={reviewPagesLoading}
+              pageIndex={reviewPageIndex}
+              onPageIndexChange={setReviewPageIndex}
+              chapterId={reviewChapterId}
+              revisionHistory={[]}
+            />
+          )}
         </main>
       </div>
     )
