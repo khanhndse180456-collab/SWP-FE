@@ -1682,6 +1682,7 @@ export default function Mangaka() {
                 <ChapterAnnotator
                   key="annotate-tab"
                   selectedSeriesTitle={annotateSeries}
+                  selectedSeriesId={annotateSeriesId}
                   onSelectedSeriesTitleChange={setAnnotateSeries}
                   seriesOptions={seriesOptions}
                   chapterNum={annotatorChapterNum}
