@@ -47,6 +47,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { logout as authLogout } from '@/lib/auth.js'
 import { useAuth } from '@/lib/providers'
 import { cn } from '@/lib/utils'
@@ -496,22 +497,47 @@ export default function Mangaka() {
   // location.state từng gọi setLocationKey vô điều kiện), sẽ tạo vòng lặp:
   //   render → seriesList mới → effect chạy → setState → re-render → seriesList lại mới → ...
   // → React throw "Maximum update depth exceeded" → ErrorBoundary hiện trang trắng báo lỗi.
+  const [filterSeriesId, setFilterSeriesId] = useState('all')
+
   const seriesList = useMemo(
     () => Object.values(
       [...apiSeries, ...localSeriesList].reduce((acc, s) => ({ ...acc, [s.id]: s }), {}),
     ),
     [apiSeries, localSeriesList],
   )
+
+  const mappedApiChapters = useMemo(() => {
+    return (apiChapters || []).map(c => {
+      const sId = c.seriesid ?? c.Seriesid
+      const seriesObj = seriesList.find(s => String(s.id ?? s.seriesid) === String(sId))
+      const seriesTitle = seriesObj ? seriesObj.title : 'Khác'
+      const status = c.status ?? c.Status ?? 'Draft'
+      return {
+        id: String(c.chapterid ?? c.id),
+        chapterid: c.chapterid ?? c.id,
+        series: seriesTitle,
+        num: c.chapternumber ?? c.Chapternumber ?? 1,
+        title: c.title ?? `Chapter ${c.chapternumber}`,
+        pages: c.pages?.length ?? 0,
+        createdAt: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
+        deadline: c.deadline,
+        status: status,
+        type: seriesObj?.formatLabel ?? 'Manga',
+        date: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
+      }
+    })
+  }, [apiChapters, seriesList])
+
   // Deduplicate by (series, num) — prefer row with chapterid (server), fallback to first found
   const chapterRows = useMemo(() => {
-    const merged = [...apiChapters, ...localChapterRows]
+    const merged = [...mappedApiChapters, ...localChapterRows]
     const byKey = {}
     for (const r of merged) {
       const key = `${r.series}-${r.num}`
       if (!byKey[key] || r.chapterid) byKey[key] = r
     }
     return Object.values(byKey)
-  }, [apiChapters, localChapterRows])
+  }, [mappedApiChapters, localChapterRows])
 
   // Real chapter ID on backend for the currently active annotator chapter
   const annotatorServerChapterId = useMemo(() => {
@@ -554,9 +580,16 @@ export default function Mangaka() {
   }, [chapterRows, annotateSeries, nextChapterNumSuggest])
 
   const chapterRowsBySeries = useMemo(() => {
+    const filteredRows = filterSeriesId === 'all'
+      ? chapterRows
+      : chapterRows.filter(row => {
+          const seriesObj = seriesList.find(s => String(s.id) === String(filterSeriesId))
+          return seriesObj && String(row.series) === String(seriesObj.title)
+        })
+
     const order = []
     const map = new Map()
-    for (const row of chapterRows) {
+    for (const row of filteredRows) {
       const key = row.series || 'Khác'
       if (!map.has(key)) {
         map.set(key, [])
@@ -565,7 +598,7 @@ export default function Mangaka() {
       map.get(key).push(row)
     }
     return order.map(series => ({ series, chapters: map.get(series) }))
-  }, [chapterRows])
+  }, [chapterRows, filterSeriesId, seriesList])
 
   const pipelineSeries = useMemo(
     () => seriesList.find(s => s.title === annotateSeries) ?? seriesList[0],
@@ -633,7 +666,7 @@ export default function Mangaka() {
 
     // Save notes to API (mapping sang field backend: PageId, CreatedById, AssignedToId, IssueType, WorkCategory, BoxX/Y/W/H, Description, Deadline)
     if (user?.id && effectivePageId) {
-      notes.forEach((note) => {
+      const promises = notes.map((note) => {
         const issueType = note.taskType === 'revision' ? 'Revision' : note.taskType === 'production' ? 'Production' : 'Revision'
         const workCategory = note.taskType === 'background' ? 'Background'
           : note.taskType === 'dialog' ? 'Dialog'
@@ -648,7 +681,7 @@ export default function Mangaka() {
             ? new Date(chapter.deadline).toISOString() 
             : new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString())
 
-        pageIssuesService.create({
+        return pageIssuesService.create({
           pageId: Number(effectivePageId),
           createdById: user.id,
           assignedToId: assistantId ? Number(assistantId) : null,
@@ -662,6 +695,11 @@ export default function Mangaka() {
           deadline: deadline,
         }).then(r => console.log('[Mangaka] pageIssuesService.create OK →', { noteClientKey: note.clientKey, response: JSON.stringify(r?.data) }))
           .catch(e => console.error('[Mangaka] pageIssuesService.create FAILED →', { noteClientKey: note.clientKey, error: e?.response?.data ?? e.message }))
+      })
+
+      Promise.all(promises).then(() => {
+        console.log('[Mangaka] All pageIssues created, invalidating pageIssues queries...')
+        qc.invalidateQueries({ queryKey: ['pageIssues'] })
       })
     }
 
@@ -1554,11 +1592,32 @@ export default function Mangaka() {
               </TabsContent>
 
               <TabsContent value="chapters" className="space-y-4">
-                <div>
-                  <h2 className="text-xl font-semibold">Chapter đã upload</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Bấm tên truyện hoặc chapter để xem trang chi tiết.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold">Chapter đã upload</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Bấm tên truyện hoặc chapter để xem trang chi tiết.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider shrink-0">Lọc theo Series:</span>
+                    <Select
+                      value={filterSeriesId}
+                      onValueChange={setFilterSeriesId}
+                    >
+                      <SelectTrigger className="w-56 h-9 bg-background">
+                        <SelectValue placeholder="Tất cả Series" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tất cả Series</SelectItem>
+                        {seriesList.map(s => (
+                          <SelectItem key={s.id} value={String(s.id)}>
+                            {s.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {chapterRowsBySeries.length === 0 ? (

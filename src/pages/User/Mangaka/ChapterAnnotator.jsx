@@ -352,6 +352,14 @@ export default function ChapterAnnotator({
     const sid = sp?.pageid ?? sp?.Pageid
     return sid != null ? Number(sid) : null
   }, [activeChapter, pageIndex, serverPages])
+
+  const issuesForCurrentPage = useMemo(() => {
+    if (currentPageServerId == null || !Number.isFinite(Number(currentPageServerId)) || !Array.isArray(serverPageIssues)) return []
+    return serverPageIssues.filter(issue => {
+      const issuePageId = issue.pageid ?? issue.pageId ?? issue.Pageid
+      return issuePageId != null && Number(issuePageId) === Number(currentPageServerId)
+    })
+  }, [serverPageIssues, currentPageServerId])
   const { data: currentPageLayers = [] } = usePageLayers(currentPageServerId)
   const fallbackLayerUrl = useMemo(() => {
     // Lấy URL của layer đầu tiên visible (Zindex thấp nhất hoặc layername = 'Default').
@@ -369,9 +377,8 @@ export default function ChapterAnnotator({
     return sorted[0]?.Fileurl ?? sorted[0]?.fileurl ?? null
   }, [currentPageLayers])
 
-  // Ưu tiên pages local (FE mới upload), fallback serverPages cho chapter từ API.
+  // Ưu tiên serverPages từ API (để có đầy đủ serverPageId), fallback localPages FE mới upload.
   const pages = useMemo(() => {
-    // Dedup localPages trước (trường hợp data bị duplicate id do hydrate/rehydrate).
     const dedupeById = (arr) => {
       const seen = new Set()
       const out = []
@@ -387,23 +394,24 @@ export default function ChapterAnnotator({
       return out
     }
 
+    if (Array.isArray(serverPages) && serverPages.length > 0) {
+      const mapped = serverPages
+        .filter(p => p && (p.pageid ?? p.Pageid ?? p.pageimageurl ?? p.Pageimageurl))
+        .map((p, i) => {
+          const directUrl = p.pageimageurl ?? p.Pageimageurl ?? null
+          const sid = p.pageid ?? p.Pageid ?? null
+          return {
+            id: String(sid ?? `srv-page-${i}`),
+            name: `Page ${p.pagenumber ?? p.Pagenumber ?? i + 1}`,
+            url: directUrl && String(directUrl).trim() !== '' ? directUrl : null,
+            serverPageId: sid,
+          }
+        })
+      return dedupeById(mapped)
+    }
+
     if (localPages.length > 0) return dedupeById(localPages)
-    if (!Array.isArray(serverPages)) return []
-    // Không filter bỏ page rỗng URL nữa — giữ page nếu có serverPageId để có thể
-    // render fallback URL từ PageLayer khi user chọn page đó.
-    const mapped = serverPages
-      .filter(p => p && (p.pageid ?? p.Pageid ?? p.pageimageurl ?? p.Pageimageurl))
-      .map((p, i) => {
-        const directUrl = p.pageimageurl ?? p.Pageimageurl ?? null
-        const sid = p.pageid ?? p.Pageid ?? null
-        return {
-          id: String(sid ?? `srv-page-${i}`),
-          name: `Page ${p.pagenumber ?? p.Pagenumber ?? i + 1}`,
-          url: directUrl && String(directUrl).trim() !== '' ? directUrl : null,
-          serverPageId: sid,
-        }
-      })
-    return dedupeById(mapped)
+    return []
   }, [localPages, serverPages])
 
   // Nếu page hiện tại không có url trực tiếp nhưng có layer thì dùng URL layer.
@@ -434,28 +442,107 @@ export default function ChapterAnnotator({
     }
   }, [isFullscreen])
 
+  const handleUpdateServerIssue = useCallback((stableKey, field, value) => {
+    const originalIssue = serverPageIssues.find(i => String(i.issueid ?? i.Issueid ?? i.id) === String(stableKey))
+    if (!originalIssue) return
+
+    const issueType = field === 'taskType'
+      ? (value === 'revision' ? 'Revision' : value === 'production' ? 'Production' : 'Revision')
+      : (originalIssue.issueType ?? originalIssue.Issuetype ?? 'Revision')
+
+    const workCategory = field === 'taskType'
+      ? (value === 'background' ? 'Background'
+        : value === 'dialog' ? 'Dialog'
+        : value === 'ink' ? 'Inking'
+        : value === 'fx' ? 'Effects'
+        : value === 'shading' ? 'Shading'
+        : 'Content')
+      : (originalIssue.workCategory ?? originalIssue.Workcategory ?? 'Background')
+
+    const description = field === 'text' ? value : (originalIssue.description ?? originalIssue.Description ?? '')
+    const deadline = field === 'deadline'
+      ? new Date(value).toISOString()
+      : (originalIssue.deadline ? new Date(originalIssue.deadline).toISOString() : null)
+
+    updatePageIssue.mutate({
+      id: Number(stableKey),
+      data: {
+        pageId: originalIssue.pageid ?? originalIssue.pageId ?? originalIssue.Pageid,
+        createdById: originalIssue.createdById ?? originalIssue.Createdbyid ?? user?.id ?? 0,
+        assignedToId: originalIssue.assignedToId ?? originalIssue.Assignedtoid ?? null,
+        issueType,
+        workCategory,
+        boxX: originalIssue.boxX ?? originalIssue.Boxx ?? 0,
+        boxY: originalIssue.boxY ?? originalIssue.Boxy ?? 0,
+        boxWidth: originalIssue.boxWidth ?? originalIssue.Boxwidth ?? 0,
+        boxHeight: originalIssue.boxHeight ?? originalIssue.Boxheight ?? 0,
+        description,
+        deadline,
+      }
+    }, {
+      onSuccess: () => {
+        toast.success('Đã cập nhật ghi chú trên server.')
+        queryClient.invalidateQueries({ queryKey: ['pageIssues'] })
+      },
+      onError: (err) => {
+        toast.error(err?.response?.data?.message ?? 'Lỗi khi cập nhật.')
+      }
+    })
+  }, [serverPageIssues, updatePageIssue, user, queryClient])
+
+  const handleDeleteServerIssue = useCallback((stableKey) => {
+    deletePageIssue.mutate(Number(stableKey), {
+      onSuccess: () => {
+        toast.success('Đã xóa ghi chú trên server.')
+        setSelectedNoteId(prev => (prev === stableKey ? null : prev))
+        queryClient.invalidateQueries({ queryKey: ['pageIssues'] })
+      },
+      onError: (err) => {
+        toast.error(err?.response?.data?.message ?? 'Lỗi khi xóa ghi chú.')
+      }
+    })
+  }, [deletePageIssue, queryClient])
+
+  const updateNoteField = useCallback((stableKey, field, value) => {
+    const isServer = Number.isFinite(Number(stableKey))
+    if (isServer) {
+      handleUpdateServerIssue(stableKey, field, value)
+    } else {
+      setNotes(prev => ({
+        ...prev,
+        [pageKey]: (prev[pageKey] ?? []).map(n => (
+          noteStableKey(n) === stableKey ? { ...n, [field]: value } : n
+        )),
+      }))
+    }
+  }, [pageKey, setNotes, handleUpdateServerIssue])
+
+  const deleteNote = useCallback((stableKey) => {
+    const isServer = Number.isFinite(Number(stableKey))
+    if (isServer) {
+      handleDeleteServerIssue(stableKey)
+    } else {
+      setNotes(prev => ({
+        ...prev,
+        [pageKey]: (prev[pageKey] ?? []).filter(n => noteStableKey(n) !== stableKey),
+      }))
+      setSelectedNoteId(prev => (prev === stableKey ? null : prev))
+    }
+  }, [pageKey, setNotes, handleDeleteServerIssue])
+
+  const persistNoteById = useCallback(async (stableKey) => {
+    const draftValue = draftTextRef.current.get(stableKey)
+    if (draftValue !== undefined) {
+      updateNoteField(stableKey, 'text', draftValue)
+      draftTextRef.current.delete(stableKey)
+    }
+  }, [updateNoteField])
+
   useEffect(() => {
     if (!uploadRejectMessage) return undefined
     const t = window.setTimeout(() => setUploadRejectMessage(null), 6000)
     return () => window.clearTimeout(t)
   }, [uploadRejectMessage])
-
-  const updateNoteField = useCallback((stableKey, field, value) => {
-    setNotes(prev => ({
-      ...prev,
-      [pageKey]: (prev[pageKey] ?? []).map(n => (
-        noteStableKey(n) === stableKey ? { ...n, [field]: value } : n
-      )),
-    }))
-  }, [pageKey, setNotes])
-
-  const deleteNote = useCallback((stableKey) => {
-    setNotes(prev => ({
-      ...prev,
-      [pageKey]: (prev[pageKey] ?? []).filter(n => noteStableKey(n) !== stableKey),
-    }))
-    setSelectedNoteId(prev => (prev === stableKey ? null : prev))
-  }, [pageKey, setNotes])
 
   useEffect(() => {
     function onKey(e) {
@@ -470,13 +557,7 @@ export default function ChapterAnnotator({
     return () => window.removeEventListener('keydown', onKey)
   }, [selectedNoteId, deleteNote])
 
-  const persistNoteById = useCallback(async (stableKey) => {
-    const draftValue = draftTextRef.current.get(stableKey)
-    if (draftValue !== undefined) {
-      updateNoteField(stableKey, 'text', draftValue)
-      draftTextRef.current.delete(stableKey)
-    }
-  }, [updateNoteField])
+
 
   const scheduleNoteSave = useCallback((stableKey, currentText) => {
     if (!stableKey) return
@@ -1028,13 +1109,13 @@ export default function ChapterAnnotator({
           // thì tạm thời không hiển thị server issue nào (issue chỉ tồn tại trên server).
           const currentPageServerId = pages[pageIndex]?.serverPageId ?? pages[pageIndex]?.apiPageId
           const currentPageIdNum = currentPageServerId != null ? Number(currentPageServerId) : null
-          const issuesForCurrentPage = (currentPageIdNum != null && Number.isFinite(currentPageIdNum))
+          const issuesForCurrentPageFiltered = (currentPageIdNum != null && Number.isFinite(currentPageIdNum))
             ? serverPageIssues.filter(issue => {
-              const issuePageId = issue.pageId ?? issue.Pageid
+              const issuePageId = issue.pageid ?? issue.pageId ?? issue.Pageid
               return issuePageId != null && Number(issuePageId) === currentPageIdNum
             })
             : []
-          return issuesForCurrentPage.map((issue, idx) => {
+          return issuesForCurrentPageFiltered.map((issue, idx) => {
             const boxX = issue.boxX ?? issue.Boxx ?? issue.boxx ?? 0
             const boxY = issue.boxY ?? issue.Boxy ?? issue.boxy ?? 0
             const boxW = issue.boxWidth ?? issue.Boxwidth ?? 0
@@ -1082,12 +1163,16 @@ export default function ChapterAnnotator({
     return (
       <li
         className={cn(
-          'rounded-lg border p-3',
-          selectedNoteId === stableKey ? 'border-primary bg-primary/5' : 'bg-background',
+          'rounded-lg border p-3 transition-all',
+          note.isServer 
+            ? (selectedNoteId === stableKey ? 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/10' : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/5') 
+            : (selectedNoteId === stableKey ? 'border-primary bg-primary/5' : 'bg-background'),
         )}
       >
         <div className="mb-2 flex items-center justify-between">
-          <Badge variant="outline">Ô #{index + 1}</Badge>
+          <Badge variant={note.isServer ? 'secondary' : 'outline'} className={cn(note.isServer && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300')}>
+            {note.isServer ? `Đã gửi #${index + 1}` : `Nháp #${index + 1}`}
+          </Badge>
           <Button size="xs" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => onDelete(stableKey)}>
             <Trash2 className="size-3" />
             Gỡ
@@ -1179,32 +1264,86 @@ export default function ChapterAnnotator({
             </Alert>
           ) : null}
 
-          {pageNotes.length === 0 ? (
+          {pageNotes.length === 0 && issuesForCurrentPage.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Chưa có ô nào. Chọn <strong>Tạo ô</strong>, kéo vùng trên trang, chọn loại việc và giao trợ lý.
             </p>
           ) : (
-            <div
-              className={cn(
-                'min-h-0 overflow-y-auto overscroll-contain pr-1',
-                inFullscreen ? 'flex-1' : 'max-h-[480px]',
-              )}
-            >
-              <ul className="space-y-3">
-                {pageNotes.map((n, idx) => (
-                  <NoteItem
-                    key={noteStableKey(n, idx)}
-                    note={n}
-                    index={idx}
-                    selectedNoteId={selectedNoteId}
-                    hiredAssistants={effectiveHiredAssistants}
-                    onDelete={deleteNote}
-                    onSelect={setSelectedNoteId}
-                    onUpdate={updateNoteField}
-                    textareaRefMap={noteTextareaRefs}
-                  />
-                ))}
-              </ul>
+            <div className="flex-1 flex flex-col min-h-0 gap-4">
+              {/* Section 1: Đã gửi (Trên server) */}
+              <div className="flex flex-col min-h-0 flex-1">
+                <h4 className="text-xs font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-wider mb-2">
+                  Đã gửi (Trên Server)
+                </h4>
+                {issuesForCurrentPage.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic mb-2">Chưa có ghi chú nào được gửi.</p>
+                ) : (
+                  <div className="overflow-y-auto max-h-[220px] pr-1 flex-1">
+                    <ul className="space-y-3">
+                      {issuesForCurrentPage.map((issue, idx) => {
+                        const serverId = String(issue.issueid ?? issue.Issueid ?? issue.id)
+                        const rawCategory = issue.workCategory ?? issue.Workcategory ?? 'Background'
+                        const taskType = rawCategory.toLowerCase()
+                        
+                        const mappedNote = {
+                          id: serverId,
+                          clientKey: serverId,
+                          taskType,
+                          text: issue.description ?? issue.Description ?? '',
+                          deadline: issue.deadline ? String(issue.deadline).substring(0, 10) : '',
+                          isServer: true,
+                        }
+
+                        return (
+                          <NoteItem
+                            key={`srv-${serverId}`}
+                            note={mappedNote}
+                            index={idx}
+                            selectedNoteId={selectedNoteId}
+                            hiredAssistants={effectiveHiredAssistants}
+                            onDelete={deleteNote}
+                            onSelect={setSelectedNoteId}
+                            onUpdate={updateNoteField}
+                            textareaRefMap={noteTextareaRefs}
+                          />
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <hr className="border-zinc-200 dark:border-zinc-800" />
+
+              {/* Section 2: Bản nháp chưa gửi */}
+              <div className="flex flex-col min-h-0 flex-1">
+                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                  Bản nháp chưa gửi
+                </h4>
+                {pageNotes.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">
+                    Chưa có bản nháp nào. Chọn <strong>Tạo ô</strong> và kéo vùng trên trang.
+                  </p>
+                ) : (
+                  <div className="overflow-y-auto max-h-[220px] pr-1 flex-1">
+                    <ul className="space-y-3">
+                      {pageNotes.map((n, idx) => (
+                        <NoteItem
+                          key={noteStableKey(n, idx)}
+                          note={n}
+                          index={idx}
+                          selectedNoteId={selectedNoteId}
+                          hiredAssistants={effectiveHiredAssistants}
+                          onDelete={deleteNote}
+                          onSelect={setSelectedNoteId}
+                          onUpdate={updateNoteField}
+                          textareaRefMap={noteTextareaRefs}
+                        />
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
