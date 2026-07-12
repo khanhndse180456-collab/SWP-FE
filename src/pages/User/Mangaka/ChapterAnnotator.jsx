@@ -774,7 +774,8 @@ export default function ChapterAnnotator({
     if (w < 2 || h < 2) return
 
     const clientKey = uid()
-    const newNote = { id: clientKey, clientKey, x, y, w, h, text: '', taskType: 'background', assignee: '' }
+    const tomorrowStr = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().substring(0, 10)
+    const newNote = { id: clientKey, clientKey, x, y, w, h, text: '', taskType: 'background', assignee: '', deadline: tomorrowStr }
     setNotes(prev => ({
       ...prev,
       [pageKey]: [...(prev[pageKey] ?? []), newNote],
@@ -1108,6 +1109,16 @@ export default function ChapterAnnotator({
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-1 mt-2">
+          <Label className="text-xs">Hạn chót</Label>
+          <input
+            type="date"
+            className="w-full text-xs border rounded px-2 py-1 h-8 bg-background border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-1 focus:ring-primary"
+            value={note.deadline ? String(note.deadline).substring(0, 10) : ''}
+            onChange={e => onUpdate(stableKey, 'deadline', e.target.value)}
+            onFocus={() => onSelect(stableKey)}
+          />
+        </div>
         <Textarea
           ref={el => {
             if (el) textareaRefMap.current.set(stableKey, el)
@@ -1216,6 +1227,7 @@ export default function ChapterAnnotator({
         pageName: page?.name,
         notes: pageNotes,
         assistantId: selectedAssistantId,
+        apiPageId: page?.serverPageId ?? page?.apiPageId ?? null,
       })
     }
     const handleTantou = () => {

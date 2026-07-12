@@ -615,9 +615,11 @@ export default function Mangaka() {
 
   const ebApprovedMap = useMemo(() => readEbDebutApproved(), [ebApprovedTick, seriesList])
 
-  function handleSendToAssistant({ chapter, pageIndex, pageUrl, pageName, notes, assistantId }) {
+  function handleSendToAssistant({ chapter, pageIndex, pageUrl, pageName, notes, assistantId, apiPageId }) {
     if (!notes?.length) return
     const assistant = hiredAssistants.find(a => String(a.assistantId) === String(assistantId))
+    const effectivePageId = apiPageId ?? chapter?.pages?.[pageIndex]?.apiPageId
+    
     console.log('[Mangaka] handleSendToAssistant →', {
       series: chapter.series,
       chapterId: chapter.id,
@@ -626,11 +628,11 @@ export default function Mangaka() {
       assistantId,
       assistantName: assistant?.name,
       notesCount: notes.length,
-      activePageApiId: chapter?.pages?.[pageIndex]?.apiPageId,
+      activePageApiId: effectivePageId,
     })
-    const activePage = chapter?.pages?.[pageIndex]
-    // Save notes to API (mapping sang field backend: PageId, CreatedById, AssignedToId, IssueType, WorkCategory, BoxX/Y/W/H, Description)
-    if (user?.id && activePage?.apiPageId) {
+
+    // Save notes to API (mapping sang field backend: PageId, CreatedById, AssignedToId, IssueType, WorkCategory, BoxX/Y/W/H, Description, Deadline)
+    if (user?.id && effectivePageId) {
       notes.forEach((note) => {
         const issueType = note.taskType === 'revision' ? 'Revision' : note.taskType === 'production' ? 'Production' : 'Revision'
         const workCategory = note.taskType === 'background' ? 'Background'
@@ -639,8 +641,15 @@ export default function Mangaka() {
               : note.taskType === 'fx' ? 'Effects'
                 : note.taskType === 'shading' ? 'Shading'
                   : 'Content'
+
+        const deadline = note.deadline
+          ? new Date(note.deadline).toISOString()
+          : (chapter.deadline 
+            ? new Date(chapter.deadline).toISOString() 
+            : new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString())
+
         pageIssuesService.create({
-          pageId: activePage.apiPageId,
+          pageId: Number(effectivePageId),
           createdById: user.id,
           assignedToId: assistantId ? Number(assistantId) : null,
           issueType,
@@ -650,10 +659,17 @@ export default function Mangaka() {
           boxWidth: Math.round(note.w),
           boxHeight: Math.round(note.h),
           description: (note.text ?? note.content ?? '').trim() || 'Ghi chú mới',
+          deadline: deadline,
         }).then(r => console.log('[Mangaka] pageIssuesService.create OK →', { noteClientKey: note.clientKey, response: JSON.stringify(r?.data) }))
           .catch(e => console.error('[Mangaka] pageIssuesService.create FAILED →', { noteClientKey: note.clientKey, error: e?.response?.data ?? e.message }))
       })
     }
+
+    // Xóa ghi chú local sau khi đã gửi
+    setAnnotatorNotes(prev => ({
+      ...prev,
+      [`${chapter.id}-${pageIndex}`]: []
+    }))
 
     setLocalChapterRows(prev =>
       prev.map(r =>
@@ -662,10 +678,6 @@ export default function Mangaka() {
           : r,
       ),
     )
-
-    // Chapter vẫn giữ 'InProduction' khi Assistant đang làm — Assistant chỉ tạo PageIssue,
-    // KHÔNG đổi status chapter. Status chỉ chuyển sang 'Ready' khi Mangaka bấm "Hoàn tất chapter".
-    // (Enum BE: InProduction → Ready → Published; không có 'StudioWorking'/'SubmittedToEditor'.)
 
     toast.success(`Đã gửi ghi chú Trang ${pageIndex + 1} (${notes.length} ô) cho ${assistant?.label ?? 'Assistant'}.`)
   }
