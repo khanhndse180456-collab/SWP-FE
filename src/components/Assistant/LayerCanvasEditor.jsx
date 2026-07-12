@@ -363,7 +363,7 @@ const LayerCanvasEditor = forwardRef(function LayerCanvasEditor(
 
     const commitShape = (obj) => {
       const layerId = activeLayerRef.current
-      if (!layerId?.startsWith('paint')) return
+      if (typeof layerId !== 'string' || !layerId.startsWith('paint')) return
       tagObject(obj, layerId, 'paint')
       applyPaintObjectInteractivity(obj, toolRef.current, false)
       canvas.add(obj)
@@ -373,7 +373,7 @@ const LayerCanvasEditor = forwardRef(function LayerCanvasEditor(
 
     const onDown = (opt) => {
       const layerId = activeLayerRef.current
-      if (!layerId?.startsWith('paint')) return
+      if (typeof layerId !== 'string' || !layerId.startsWith('paint')) return
       const p = canvas.getPointer(opt.e)
 
       if (toolRef.current === 'eyedropper') {

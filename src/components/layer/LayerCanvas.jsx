@@ -107,11 +107,11 @@ export default function LayerCanvas({
         // Vẽ notes overlay
         if (showNotes && notes.length > 0) {
           for (const note of notes) {
-            // Hỗ trợ cả 2 shape: {boxx, boxy, boxwidth, boxheight} (PascalCase) và {x, y, w, h} (mapped)
-            const x = Number(note.x ?? note.boxx ?? note.boxX ?? 0)
-            const y = Number(note.y ?? note.boxy ?? note.boxY ?? 0)
-            const w = Number(note.w ?? note.boxwidth ?? note.boxWidth ?? 10)
-            const h = Number(note.h ?? note.boxheight ?? note.boxHeight ?? 10)
+            // Hỗ trợ các kiểu shape: {box_x, box_y, box_width, box_height} (snake_case), {boxx, boxy...} (PascalCase) và {x, y, w, h} (mapped)
+            const x = Number(note.x ?? note.box_x ?? note.boxx ?? note.boxX ?? 0)
+            const y = Number(note.y ?? note.box_y ?? note.boxy ?? note.boxY ?? 0)
+            const w = Number(note.w ?? note.box_width ?? note.boxwidth ?? note.boxWidth ?? 10)
+            const h = Number(note.h ?? note.box_height ?? note.boxheight ?? note.boxHeight ?? 10)
             const nx = (canvas.width * x) / 100
             const ny = (canvas.height * y) / 100
             const nw = (canvas.width * w) / 100

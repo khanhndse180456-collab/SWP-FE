@@ -396,7 +396,10 @@ export default function PageLayerWorkspace() {
   const { seriesSlug, chapterId, pageId } = useParams()
   const user = getSession()
 
-  const serverPageId = pageId?.startsWith('u-') || pageId?.startsWith('local-') ? null : pageId
+  const serverPageId =
+    typeof pageId === 'string' && (pageId.startsWith('u-') || pageId.startsWith('local-'))
+      ? null
+      : pageId
 
   const { data: serverPage, isLoading: pageLoading } = usePageById(serverPageId)
   const { data: serverLayers = [] } = usePageLayers(serverPageId)

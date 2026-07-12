@@ -94,14 +94,14 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
         // BE: issueid, pageid, description, status, boxX, boxY, boxWidth, boxHeight
         // Sau transform: issueid, pageid, description, status, box_x, box_y, box_width, box_height
         const mapped = list.map(n => ({
-          id: n.issueid ?? n.issueId ?? n.Issueid ?? n.id,
-          pageId: n.pageid ?? n.pageId ?? n.Pageid,
+          id: n.issue_id ?? n.issueid ?? n.issueId ?? n.Issueid ?? n.id,
+          pageId: n.page_id ?? n.pageid ?? n.pageId ?? n.Pageid,
           description: n.description ?? n.Description ?? '',
           status: n.status ?? n.Status ?? 'Pending',
-          x: Number(n.boxx ?? n.boxX ?? n.BoxX ?? n.x ?? 0),
-          y: Number(n.boxy ?? n.boxY ?? n.BoxY ?? n.y ?? 0),
-          w: Number(n.boxwidth ?? n.boxWidth ?? n.BoxWidth ?? n.w ?? n.width ?? 10),
-          h: Number(n.boxheight ?? n.boxHeight ?? n.BoxHeight ?? n.h ?? n.height ?? 10),
+          x: Number(n.box_x ?? n.boxx ?? n.boxX ?? n.BoxX ?? n.x ?? 0),
+          y: Number(n.box_y ?? n.boxy ?? n.boxY ?? n.BoxY ?? n.y ?? 0),
+          w: Number(n.box_width ?? n.boxwidth ?? n.boxWidth ?? n.BoxWidth ?? n.w ?? n.width ?? 10),
+          h: Number(n.box_height ?? n.boxheight ?? n.boxHeight ?? n.BoxHeight ?? n.h ?? n.height ?? 10),
         }))
         console.log('[LayerEditor] notes for pageId', activePageId, '→', mapped.length, 'items:', mapped.map(n => ({ id: n.id, status: n.status, desc: n.description?.slice(0, 30) })))
         setPageNotes(mapped)
