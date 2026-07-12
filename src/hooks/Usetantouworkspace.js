@@ -110,18 +110,34 @@ export function useTantouWorkspace() {
     [studioQueue],
   )
 
+  // MỚI: tập seriesid đang có ít nhất 1 chapter chưa Published — tức còn
+  // "sống", có khả năng có trang để Tantou nhận xét. Dùng để disable nút
+  // "Mở & nhận xét" ở SubmissionCard cho series chưa có chapter nào, tránh
+  // user bấm vào rồi mới thấy khung đen/toast lỗi. Tận dụng lại studioChapters
+  // đã fetch sẵn — không tốn thêm API call.
+  const seriesWithPendingChapter = useMemo(() => {
+    const set = new Set()
+    studioChapters.forEach(ch => {
+      if (normalizeStatus(ch.status) !== 'published') set.add(ch.seriesid)
+    })
+    return set
+  }, [studioChapters])
+
   // ── Chapter + pages thật của series đang review ───────────────────────────
-  // Chỉ fetch khi đang mở review (reviewOpen) để tránh gọi API thừa.
   const reviewSeriesId = reviewOpen ? selectedSub?.seriesid : undefined
   const { data: reviewChapters = [], isLoading: reviewChaptersLoading } = useChapters(reviewSeriesId)
 
-  // Chapter đầu tiên (nhỏ nhất theo chapternumber) — chapter Mangaka mới gửi lên
+  // Ưu tiên chapter CHƯA Published (còn cần Tantou xử lý); trong nhóm đó lấy
+  // chapter tạo gần đây nhất. Nếu không còn chapter nào chưa Published thì
+  // mới fallback về toàn bộ danh sách (mới nhất trước).
   const reviewChapter = useMemo(() => {
     if (!Array.isArray(reviewChapters) || reviewChapters.length === 0) return null
-    return [...reviewChapters].sort((a, b) => {
-      const an = a.chapternumber ?? a.Chapternumber ?? 0
-      const bn = b.chapternumber ?? b.Chapternumber ?? 0
-      return an - bn
+    const pending = reviewChapters.filter(ch => normalizeStatus(ch.status) !== 'published')
+    const pool = pending.length > 0 ? pending : reviewChapters
+    return [...pool].sort((a, b) => {
+      const ad = new Date(a.createdat ?? a.Createdat ?? 0).getTime()
+      const bd = new Date(b.createdat ?? b.Createdat ?? 0).getTime()
+      return bd - ad
     })[0]
   }, [reviewChapters])
 
@@ -135,7 +151,6 @@ export function useTantouWorkspace() {
 
   const { data: reviewPagesRaw = [], isLoading: reviewPagesLoading } = usePages(reviewChapterId)
 
-  // Map về shape gọn cho TantouPageReview: { serverPageId, url, name }
   const reviewPages = useMemo(() => {
     if (!Array.isArray(reviewPagesRaw)) return []
     return reviewPagesRaw
@@ -148,10 +163,6 @@ export function useTantouWorkspace() {
       }))
   }, [reviewPagesRaw])
 
-  // MỚI: Gộp sẵn "submission" đầy đủ cho TantouPageReview — trước đây component
-  // cha (TantouEditor.jsx) tự ráp lại field chapterNum/pageLabel/pipeline từ nhiều
-  // nguồn khác nhau và bị thiếu (gây ra "Ch. —" và trang trống). Giờ hook trả về
-  // sẵn 1 object đầy đủ, component cha chỉ cần dùng thẳng làm prop `submission`.
   const reviewSubmission = useMemo(() => {
     if (!selectedSub) return null
     const st = normalizeStatus(selectedSub.status)
@@ -181,9 +192,6 @@ export function useTantouWorkspace() {
     loadSeries()
   }
 
-  // Backend state machine: Draft → EditorReview → EBReview (không cho nhảy thẳng
-  // Draft → EBReview, xem _validTransitions trong SeriesService.cs). Tantou "Chuyển
-  // sang EB" phải đi qua EditorReview trước nếu series đang ở Draft.
   async function handleForwardEb() {
     if (!selectedSub) return
     try {
@@ -242,10 +250,11 @@ export function useTantouWorkspace() {
     studioLoading,
     studioQueue,
     delayedCount,
+    seriesWithPendingChapter,
     handleRefreshStudio,
     // review
     selectedSub,
-    reviewSubmission, // ← MỚI: dùng thẳng làm prop `submission` cho TantouPageReview
+    reviewSubmission,
     reviewOpen,
     editorialComment,
     setEditorialComment,

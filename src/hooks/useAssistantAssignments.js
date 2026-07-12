@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { getSession } from '@/lib/auth'
-import { contractsService } from '@/api'
 import { chaptersService } from '@/api'
 import { seriesService } from '@/api'
 import { pagesService } from '@/api'
-import { submissionsService } from '@/api/submissionsService.js'
-import { listAssistantSubmissions } from '@/utils/assistantWorkspaceStorage.js'
+import axiosClient from '@/api/axiosClient.js'
+
+// LƯU Ý QUAN TRỌNG:
+// Backend KHÔNG có controller `Submissions` hay `Contracts` (đã kiểm tra
+// toàn bộ Swagger). Mọi cuộc gọi tới /Submissions/* hoặc /Contracts/* sẽ
+// luôn 404 vì endpoint không tồn tại — không phải lỗi URL sai, mà là tính
+// năng chưa được backend implement. Đã bỏ hoàn toàn 2 nguồn này khỏi hook.
+// Nguồn dữ liệu hợp lệ duy nhất cho assignment của Assistant:
+//   - GET /api/Chapters/assistant/{assistantId}
+//   - GET /api/MangakaAssistant (quan hệ hợp tác Mangaka-Assistant)
+// TODO: nếu sản phẩm cần luồng "Assistant nộp bài / submission review",
+// cần đề xuất DUYKHANH thêm SubmissionsController thật ở backend.
 
 async function enrichChapterWithSeries(chapter) {
   const cid = chapter.chapterid ?? chapter.Chapterid ?? chapter.id ?? null
@@ -45,56 +54,30 @@ async function enrichChapterWithSeries(chapter) {
   }
 }
 
-async function enrichContract(contract) {
-  const sid = contract.seriesId ?? contract.seriesid ?? contract.Seriesid ?? contract.series_id ?? null
+async function enrichMangakaAssistantRow(row) {
+  const sid = row.seriesid ?? row.Seriesid ?? row.seriesId ?? null
 
-  if (!sid) {
-    return {
-      contractId: contract.contractId ?? contract.contract_id ?? contract.ContractId ?? contract.id ?? null,
-      mangakaId: contract.mangakaId ?? contract.mangaka_id ?? contract.Mangakaid ?? null,
-      mangakaName: contract.mangakaName ?? contract.mangaka_name ?? null,
-      seriesId: null,
-      chapterId: null,
-      seriesTitle: contract.seriesTitle ?? contract.series_title ?? null,
-      chapterNum: null,
-      title: null,
-      status: contract.status ?? 'Active',
-      pages: [],
-      pageCount: 0,
-    }
+  const base = {
+    contractId: row.id ?? row.mangakaassistantid ?? row.MangakaAssistantId ?? null,
+    mangakaId: row.mangakaid ?? row.Mangakaid ?? row.mangakaId ?? null,
+    mangakaName: row.mangakaName ?? row.mangaka_name ?? null,
+    seriesId: sid,
+    chapterId: null,
+    seriesTitle: null,
+    chapterNum: null,
+    title: null,
+    status: row.status ?? 'Active',
+    pages: [],
+    pageCount: 0,
   }
+
+  if (!sid) return { ...base, seriesTitle: base.seriesTitle ?? 'Unknown Series' }
 
   try {
     const sr = await seriesService.getById(sid)
-    const seriesTitle = sr?.data?.title ?? 'Unknown Series'
-
-    return {
-      contractId: contract.contractId ?? contract.contract_id ?? contract.ContractId ?? contract.id ?? null,
-      mangakaId: contract.mangakaId ?? contract.mangaka_id ?? contract.Mangakaid ?? null,
-      mangakaName: contract.mangakaName ?? contract.mangaka_name ?? null,
-      seriesId: sid,
-      chapterId: null,
-      seriesTitle,
-      chapterNum: null,
-      title: null,
-      status: contract.status ?? 'Active',
-      pages: [],
-      pageCount: 0,
-    }
+    return { ...base, seriesTitle: sr?.data?.title ?? 'Unknown Series' }
   } catch {
-    return {
-      contractId: contract.contractId ?? contract.contract_id ?? null,
-      mangakaId: contract.mangakaId ?? contract.mangaka_id ?? null,
-      mangakaName: contract.mangakaName ?? contract.mangaka_name ?? null,
-      seriesId: sid,
-      chapterId: null,
-      seriesTitle: 'Unknown Series',
-      chapterNum: null,
-      title: null,
-      status: contract.status ?? 'Active',
-      pages: [],
-      pageCount: 0,
-    }
+    return { ...base, seriesTitle: 'Unknown Series' }
   }
 }
 
@@ -107,7 +90,6 @@ export function useAssistantAssignments() {
 
   const refresh = useCallback(async () => {
     if (!assistantId) {
-      console.log('[useAssistantAssignments] no assistantId, skipping')
       setAssignments([])
       setLoading(false)
       return
@@ -116,70 +98,43 @@ export function useAssistantAssignments() {
     setLoading(true)
     setError(null)
     try {
-      // Lay tat ca chapter duoc gan cho assistant nay
+      // Nguồn 1: chapter được giao trực tiếp cho assistant này
       const chaptersRes = await chaptersService.getByAssistant(assistantId)
       const chapterList = Array.isArray(chaptersRes?.data) ? chaptersRes.data : []
-
-      // Enrich chapters thanh assignments
       const chapterAssignments = await Promise.all(chapterList.map(enrichChapterWithSeries))
 
-      // Lay contracts (quan he mangaka-assistant)
-      const contractsRes = await contractsService.getAll({ assistantId })
-      const contractList = Array.isArray(contractsRes?.data) ? contractsRes.data : []
-      const contractAssignments = await Promise.all(contractList.map(enrichContract))
-
-      // Lay submissions tu localStorage
-      const hydratedSubs = listAssistantSubmissions(assistantId)
-
-      // Lay submissions tu backend API
-      let apiSubmissions = []
+      // Nguồn 2: quan hệ hợp tác Mangaka-Assistant (dùng để hiện các
+      // series đang hợp tác dù chưa có chapter cụ thể nào được giao)
+      let assistantRows = []
       try {
-        const subsRes = await submissionsService.getByAssistant(assistantId)
-        apiSubmissions = Array.isArray(subsRes?.data) ? subsRes.data : []
+        const res = await axiosClient.get('/MangakaAssistant', { params: { assistantId } })
+        const all = Array.isArray(res?.data) ? res.data : []
+        assistantRows = all.filter(r =>
+          String(r.assistantid ?? r.Assistantid ?? r.assistantId ?? '') === String(assistantId)
+        )
       } catch (err) {
-        console.warn('[useAssistantAssignments] failed to fetch API submissions:', err)
+        console.warn('[useAssistantAssignments] failed to fetch MangakaAssistant:', err)
       }
+      const relationAssignments = await Promise.all(assistantRows.map(enrichMangakaAssistantRow))
 
-      // Convert API submissions sang format assignment
-      const apiAssignmentItems = apiSubmissions.map(s => {
-        const mapped = {
-          id: s.submission_id,
-          submissionId: s.submission_id,
-          chapterId: s.chapter_id,
-          seriesTitle: s.series_title ?? 'Unknown Series',
-          chapterNum: s.chapter_num,
-          mangakaId: s.mangaka_id,
-          referenceImageUrl: s.reference_image_url,
-          mangakaImageUrl: s.reference_image_url ?? s.mangaka_image_url,
-          notes: s.notes ? String(s.notes).split('; ').filter(Boolean) : [],
-          status: (s.status ?? 'pending').toLowerCase(),
-          pageCount: s.reference_image_url ? 1 : 0,
-          createdAt: s.created_at,
-          _source: 'api',
-        }
-          return mapped
-      })
-
-      // Merge: chapter assignments + contract assignments + submissions (deduplicate by key)
+      // Deduplicate: ưu tiên chapter assignment nếu cùng seriesId đã có
       const seriesIds = new Set(chapterAssignments.map(a => a.seriesId).filter(Boolean))
-      const extraContracts = contractAssignments.filter(a => !a.seriesId || !seriesIds.has(a.seriesId))
+      const extraRelations = relationAssignments.filter(a => !a.seriesId || !seriesIds.has(a.seriesId))
 
-      // Deduplicate by composite key (source + id) to avoid collisions
       const seen = new Set()
       const dedup = (arr) => arr.filter(a => {
-        const source = a._source ?? (a.id ? 'submission' : a.contractId ? 'contract' : 'chapter')
-        const id = a.id ?? a.contractId ?? a.chapterId
+        const source = a.chapterId ? 'chapter' : a.contractId ? 'contract' : 'unknown'
+        const id = a.chapterId ?? a.contractId
         const key = `${source}:${id}`
         if (seen.has(key)) return false
         seen.add(key)
         return true
       })
 
-      // Merge: chapter assignments + contract assignments + submissions from localStorage + submissions from API
-      const merged = dedup([...chapterAssignments, ...extraContracts, ...hydratedSubs, ...apiAssignmentItems])
+      const merged = dedup([...chapterAssignments, ...extraRelations])
       setAssignments(merged)
     } catch (err) {
-      const msg = err?.response?.data?.message ?? err?.message ?? 'Khong tai duoc danh sach viec.'
+      const msg = err?.response?.data?.message ?? err?.message ?? 'Không tải được danh sách việc.'
       setError(msg)
       toast.error(msg)
       setAssignments([])
@@ -192,10 +147,6 @@ export function useAssistantAssignments() {
     void refresh()
   }, [refresh])
 
-  // Refresh when:
-  //  - assistant changes
-  //  - the page becomes visible again (e.g. user switches back to tab, or returns from /mangaka)
-  //  - a "contract-updated" event fires (new assignment accepted, status changed, etc.)
   useEffect(() => {
     if (!assistantId) return
 

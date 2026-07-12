@@ -236,6 +236,19 @@ function extractSuccessMessage(data) {
 function extractErrorMessage(data) {
   if (!data) return null
   if (typeof data === 'string') return data
+
+  // ASP.NET Core ModelState validation trả về dạng ProblemDetails:
+  // { title: "One or more validation errors occurred.", status: 400,
+  //   errors: { FieldName: ["The FieldName field is required."] } }
+  // Trước đây code chỉ đọc "title" (câu chung chung, không nói field nào sai) —
+  // giờ ưu tiên đọc "errors" trước để hiện đúng field bị backend từ chối.
+  if (data.errors && typeof data.errors === 'object') {
+    const detail = Object.entries(data.errors)
+      .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+      .join(' | ')
+    if (detail) return detail
+  }
+
   return (
     data.message ??
     data.msg ??

@@ -30,8 +30,11 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
   const [finalizing, setFinalizing] = useState(false)
   const [error, setError] = useState(null)
 
-  // Submission IDs are client-generated (sub-*) - skip API calls
-  const isSubmissionPage = pageId?.startsWith('sub-')
+  // Submission IDs are client-generated (sub-*) - skip API calls.
+  // pageId có thể là number (page thật từ backend, ví dụ 5) hoặc string
+  // (id giả "sub-*" từ luồng submission cũ), nên phải kiểm tra kiểu trước
+  // khi gọi .startsWith để tránh crash "pageId?.startsWith is not a function".
+  const isSubmissionPage = typeof pageId === 'string' && pageId.startsWith('sub-')
 
   const refresh = useCallback(async () => {
     if (!pageId || isSubmissionPage) return

@@ -7,7 +7,7 @@ function unwrap(res) {
 export const layersService = {
   // GET /PageLayers/{id} → PageLayerDto (single)
   list(pageId) {
-    return axios.get(`/PageLayers/${pageId}`).then(unwrap)
+    return axios.get('/PageLayers', { params: { pageId } }).then(unwrap)
   },
 
   // POST /PageLayers (multipart): layerFile + pageid + uploaderid + layername + zindex + opacity
