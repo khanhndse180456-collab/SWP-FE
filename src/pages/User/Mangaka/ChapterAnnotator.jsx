@@ -16,8 +16,24 @@ import { LABEL_EDITOR_BOARD, LABEL_TANTOU_EDITOR } from '@/constants/roleTermino
 import { NOTE_TASK_TYPES, noteTaskLabel } from '@/constants/workspaceTasks.js'
 import { fileToStorableDataUrl } from '@/utils/mangakaWorkspaceStorage.js'
 import { getActiveAssigneesForMangaka } from '@/utils/assistantRosterStorage.js'
-import { getSession } from '@/lib/auth.js'
-import { usePages, usePageIssues, usePageLayers, useContracts, useAvailableAssistantProfiles, useAvailableTantouEditors, useUpdateChapterStatus, useChapters, useDeleteChapter } from '@/api/hooks'
+import { useAuth } from '@/lib/providers'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  usePages,
+  usePageIssues,
+  usePageLayers,
+  useContracts,
+  useAvailableAssistantProfiles,
+  useAvailableTantouEditors,
+  useUpdateChapterStatus,
+  useChapters,
+  useDeleteChapter,
+  useCreateChapter,
+  useCreatePage,
+  useCreatePageIssue,
+  useUpdatePageIssue,
+  useDeletePageIssue
+} from '@/api/hooks'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -175,6 +191,14 @@ export default function ChapterAnnotator({
   const { data: serverChapters = [] } = useChapters(Number.isFinite(numericSeriesId) ? numericSeriesId : undefined)
   const deleteChapterApi = useDeleteChapter()
 
+  const createChapterMutation = useCreateChapter()
+  const createPage = useCreatePage()
+  const createPageIssue = useCreatePageIssue()
+  const updatePageIssue = useUpdatePageIssue()
+  const deletePageIssue = useDeletePageIssue()
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+
   // Subscribe trực tiếp vào roster update event — không phụ thuộc parent re-render
   useEffect(() => {
     const onRoster = () => setLocalRosterTick(t => t + 1)
@@ -189,15 +213,13 @@ export default function ChapterAnnotator({
   // Tính lại hiredAssistants mỗi khi localRosterTick thay đổi
   const localHiredAssistants = useMemo(() => {
     void localRosterTick
-    const user = getSession()
     const mkId = user?.id ?? user?.userid ?? null
     return getActiveAssigneesForMangaka(mkId)
-  }, [localRosterTick])
+  }, [localRosterTick, user])
 
   const localMangakaId = useMemo(() => {
-    const u = getSession()
-    return u?.id ?? u?.userid ?? null
-  }, [localRosterTick])
+    return user?.id ?? user?.userid ?? null
+  }, [user])
 
   const { data: contractsRaw = [] } = useContracts({ mangakaId: localMangakaId })
   console.log('[ChapterAnnotator] contractsRaw:', contractsRaw)
@@ -400,6 +422,48 @@ export default function ChapterAnnotator({
   const pageNotes = notes[pageKey] ?? []
 
   useEffect(() => {
+    if (!serverPageIssues || !pages || pages.length === 0) return
+    const currentPageServerId = pages[pageIndex]?.serverPageId ?? pages[pageIndex]?.apiPageId
+    const currentPageIdNum = currentPageServerId != null ? Number(currentPageServerId) : null
+    if (currentPageIdNum == null || !Number.isFinite(currentPageIdNum)) return
+
+    const issuesForCurrentPage = serverPageIssues.filter(issue => {
+      const issuePageId = issue.pageId ?? issue.Pageid
+      return issuePageId != null && Number(issuePageId) === currentPageIdNum
+    })
+
+    const mappedServerNotes = issuesForCurrentPage.map(issue => {
+      const issueId = String(issue.issueid ?? issue.Issueid ?? issue.id)
+      const rawCategory = issue.workCategory ?? issue.Workcategory ?? 'Background'
+      const taskType = rawCategory.toLowerCase()
+      return {
+        id: issueId,
+        clientKey: issueId,
+        x: issue.boxX ?? issue.Boxx ?? 0,
+        y: issue.boxY ?? issue.Boxy ?? 0,
+        w: issue.boxWidth ?? issue.Boxwidth ?? 0,
+        h: issue.boxHeight ?? issue.Boxheight ?? 0,
+        text: issue.description ?? issue.Description ?? '',
+        taskType: taskType,
+        assignee: '',
+        isApi: true,
+      }
+    })
+
+    setNotes(prev => {
+      const existing = prev[pageKey] ?? []
+      const keysMatch = existing.length === mappedServerNotes.length &&
+        existing.every((n, i) => String(n.id) === String(mappedServerNotes[i]?.id) && n.text === mappedServerNotes[i]?.text && n.taskType === mappedServerNotes[i]?.taskType)
+      
+      if (keysMatch) return prev
+      return {
+        ...prev,
+        [pageKey]: mappedServerNotes,
+      }
+    })
+  }, [serverPageIssues, pages, pageIndex, pageKey, setNotes])
+
+  useEffect(() => {
     if (!isFullscreen) return undefined
     const onKey = (e) => { if (e.key === 'Escape') setIsFullscreen(false) }
     document.body.style.overflow = 'hidden'
@@ -416,13 +480,70 @@ export default function ChapterAnnotator({
     return () => window.clearTimeout(t)
   }, [uploadRejectMessage])
 
+  const updateNoteField = useCallback((stableKey, field, value) => {
+    setNotes(prev => ({
+      ...prev,
+      [pageKey]: (prev[pageKey] ?? []).map(n => (
+        noteStableKey(n) === stableKey ? { ...n, [field]: value } : n
+      )),
+    }))
+
+    const isServerId = Number.isFinite(Number(stableKey))
+    if (!isServerId) return
+
+    const originalIssue = serverPageIssues.find(i => String(i.issueid ?? i.Issueid ?? i.id) === String(stableKey))
+    if (!originalIssue) return
+
+    const issueType = field === 'taskType'
+      ? (value === 'revision' ? 'Revision' : value === 'production' ? 'Production' : 'Revision')
+      : (originalIssue.issueType ?? originalIssue.Issuetype ?? 'Revision')
+
+    const workCategory = field === 'taskType'
+      ? (value === 'background' ? 'Background'
+        : value === 'dialog' ? 'Dialog'
+        : value === 'ink' ? 'Inking'
+        : value === 'fx' ? 'Effects'
+        : value === 'shading' ? 'Shading'
+        : 'Content')
+      : (originalIssue.workCategory ?? originalIssue.Workcategory ?? 'Background')
+
+    const description = field === 'text' ? value : (originalIssue.description ?? originalIssue.Description ?? '')
+
+    updatePageIssue.mutate({
+      id: Number(stableKey),
+      data: {
+        pageId: originalIssue.pageId ?? originalIssue.Pageid,
+        createdById: originalIssue.createdById ?? originalIssue.Createdbyid ?? user?.id ?? 0,
+        issueType,
+        workCategory,
+        boxX: originalIssue.boxX ?? originalIssue.Boxx ?? 0,
+        boxY: originalIssue.boxY ?? originalIssue.Boxy ?? 0,
+        boxWidth: originalIssue.boxWidth ?? originalIssue.Boxwidth ?? 0,
+        boxHeight: originalIssue.boxHeight ?? originalIssue.Boxheight ?? 0,
+        description,
+      }
+    })
+  }, [pageKey, serverPageIssues, updatePageIssue, user, setNotes])
+
   const deleteNote = useCallback((stableKey) => {
     setNotes(prev => ({
       ...prev,
       [pageKey]: (prev[pageKey] ?? []).filter(n => noteStableKey(n) !== stableKey),
     }))
     setSelectedNoteId(prev => (prev === stableKey ? null : prev))
-  }, [setNotes, pageKey])
+
+    const isServerId = Number.isFinite(Number(stableKey))
+    if (isServerId) {
+      deletePageIssue.mutate(Number(stableKey), {
+        onSuccess: () => {
+          toast.success('Đã xóa ghi chú trên server.')
+        },
+        onError: (err) => {
+          toast.error(err?.response?.data?.message ?? 'Không thể xóa ghi chú.')
+        }
+      })
+    }
+  }, [pageKey, deletePageIssue, setNotes])
 
   useEffect(() => {
     function onKey(e) {
@@ -438,23 +559,12 @@ export default function ChapterAnnotator({
   }, [selectedNoteId, deleteNote])
 
   const persistNoteById = useCallback(async (stableKey) => {
-    let noteSnapshot = null
-    setNotes(prev => {
-      noteSnapshot = (prev[pageKey] ?? []).find(n => noteStableKey(n) === stableKey) ?? null
-      return prev
-    })
-    if (!noteSnapshot) return
     const draftValue = draftTextRef.current.get(stableKey)
     if (draftValue !== undefined) {
-      setNotes(prev => ({
-        ...prev,
-        [pageKey]: (prev[pageKey] ?? []).map(n =>
-          noteStableKey(n) === stableKey ? { ...n, text: draftValue } : n
-        ),
-      }))
+      updateNoteField(stableKey, 'text', draftValue)
       draftTextRef.current.delete(stableKey)
     }
-  }, [pageKey, setNotes])
+  }, [updateNoteField])
 
   const scheduleNoteSave = useCallback((stableKey, currentText) => {
     if (!stableKey) return
@@ -522,23 +632,46 @@ export default function ChapterAnnotator({
     const createdAt = new Date().toLocaleDateString('vi-VN')
     const title = newChapterTitle.trim() || `Chapter ${num}`
     const deadline = newChapterDeadline ? new Date(newChapterDeadline).toISOString() : null
-    const ch = { id: uid(), series: trimmedSeries, num, title, pages: [], createdAt, deadline, deadlineRaw: newChapterDeadline }
-    setChapters(prev => [ch, ...prev])
-    setActiveChapterId(ch.id)
-    setPageIndex(0)
-    setSelectedNoteId(null)
-    setUploadRejectMessage(null)
 
-    // Chi tao chapter LOCAL - chua goi API tao tren server
-    // API se duoc goi khi nguoi dung thuc su upload anh
-
-    setNewChapterTitle('')
-    setNewChapterDeadline('')
-    onChapterNumChange?.(String(num + 1))
+    createChapterMutation.mutate({
+      seriesid: Number(selectedSeriesId),
+      chapternumber: Number(num),
+      title: title,
+      deadline: deadline || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    }, {
+      onSuccess: (res) => {
+        const responseData = res?.data ?? res
+        const realChapterId = responseData?.chapterid ?? responseData?.id
+        const ch = {
+          id: String(realChapterId),
+          serverChapterId: Number(realChapterId),
+          series: trimmedSeries,
+          num,
+          title,
+          pages: [],
+          createdAt,
+          deadline,
+          deadlineRaw: newChapterDeadline,
+          isApi: true,
+        }
+        setChapters(prev => [ch, ...prev])
+        setActiveChapterId(String(realChapterId))
+        setPageIndex(0)
+        setSelectedNoteId(null)
+        setUploadRejectMessage(null)
+        setNewChapterTitle('')
+        setNewChapterDeadline('')
+        onChapterNumChange?.(String(num + 1))
+        toast.success(`Đã tạo Ch. ${num} trên server!`)
+      },
+      onError: (err) => {
+        toast.error(err?.response?.data?.message ?? 'Lỗi khi tạo chapter trên server.')
+      }
+    })
   }, [
-    selectedSeriesTitle, nextChapterNum, chapters, setChapters,
+    selectedSeriesTitle, selectedSeriesId, nextChapterNum, chapters, setChapters,
     setActiveChapterId, setPageIndex, onChapterNumChange, activateChapter,
-    newChapterTitle, newChapterDeadline,
+    newChapterTitle, newChapterDeadline, createChapterMutation
   ])
 
   const handleFiles = useCallback(async (files) => {
@@ -559,81 +692,33 @@ export default function ChapterAnnotator({
     )
     if (!fileList.length) return
 
-    const hadPages = target.pages.length > 0
-    const targetId = target.id
-    const hasSync = typeof onUploadProgress === 'function' || typeof onUploadComplete === 'function'
-    const sleep = ms => new Promise(r => setTimeout(r, ms))
-    const filesToAdd = fileList
-    let newPages = []
-
     try {
-      if (hasSync && typeof onUploadProgress === 'function') {
-        onUploadProgress(trimmedSeries, 5)
-        setUploadUi({ series: trimmedSeries, chapter: target.num, pct: 5 })
+      setUploadUi({ series: trimmedSeries, chapter: target.num, pct: 5 })
+      
+      const currentPagesCount = pages.length
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i]
+        const fd = new FormData()
+        fd.append('chapterid', String(effectiveServerChapterId))
+        fd.append('pagenumber', String(currentPagesCount + i + 1))
+        fd.append('pageFile', file)
+        
+        await createPage.mutateAsync(fd)
+        
+        const pct = 10 + Math.round(((i + 1) / fileList.length) * 90)
+        setUploadUi({ series: trimmedSeries, chapter: target.num, pct })
       }
-
-      for (let i = 0; i < filesToAdd.length; i++) {
-        const { dataUrl } = await fileToStorableDataUrl(filesToAdd[i])
-        newPages.push({ id: uid(), name: filesToAdd[i].name, url: dataUrl })
-        if (hasSync && typeof onUploadProgress === 'function') {
-          const pct = 10 + Math.round(((i + 1) / filesToAdd.length) * 80)
-          setUploadUi({ series: trimmedSeries, chapter: target.num, pct })
-          onUploadProgress(trimmedSeries, pct)
-        }
-      }
-    } catch {
-      setUploadRejectMessage('Không đọc được một hoặc nhiều ảnh — thử lại.')
+      
+      toast.success('Đã tải lên các trang thành công!')
+      queryClient.invalidateQueries({ queryKey: ['pages', effectiveServerChapterId] })
+      queryClient.invalidateQueries({ queryKey: ['chapters'] })
+    } catch (err) {
+      setUploadRejectMessage(err?.response?.data?.message ?? 'Lỗi khi upload trang lên server.')
+    } finally {
       setUploadUi(null)
-      if (typeof onUploadProgress === 'function') onUploadProgress(trimmedSeries, 0)
-      return
     }
-
-    const createdAt = target.createdAt ?? new Date().toLocaleDateString('vi-VN')
-    const existingLocal = chapters.some(c => c.id === targetId)
-    const chapterWithPages = { ...target, pages: [...(target.pages ?? []), ...newPages] }
-    const nextChapters = existingLocal
-      ? chapters.map(ch => (ch.id !== targetId ? ch : chapterWithPages))
-      : [chapterWithPages, ...chapters]
-
-    setChapters(nextChapters)
-
-    setNotes(prev => {
-      const next = { ...prev }
-      const startIdx = target.pages.length
-      for (let pi = 0; pi < newPages.length; pi++) {
-        const key = `${targetId}-${startIdx + pi}`
-        if (!next[key]) next[key] = []
-      }
-      return next
-    })
-
-    if (typeof onUploadComplete === 'function') {
-      let numParsed = target.num
-      if (typeof numParsed === 'string') {
-        numParsed = parseInt(numParsed, 10)
-        if (Number.isNaN(numParsed)) numParsed = target.num
-      }
-      const totalPages = target.pages.length + newPages.length
-      onUploadComplete({
-        series: trimmedSeries,
-        num: numParsed,
-        pages: totalPages,
-        chapterLocalId: targetId,
-        createdAt,
-        isNewChapter: !hadPages,
-        annotatorChapters: nextChapters,
-      })
-    }
-
-    if (hasSync && typeof onUploadProgress === 'function') {
-      onUploadProgress(trimmedSeries, 100)
-      await sleep(400)
-      onUploadProgress(trimmedSeries, 0)
-    }
-    setUploadUi(null)
   }, [
-    selectedSeriesTitle, activeChapterId, seriesChapters, chapters, setChapters, setNotes,
-    onUploadProgress, onUploadComplete,
+    selectedSeriesTitle, activeChapterId, seriesChapters, pages, effectiveServerChapterId, createPage, queryClient
   ])
 
   function onFileChange(e) {
@@ -776,22 +861,35 @@ export default function ChapterAnnotator({
     setDrawCurrent(null)
     if (w < 2 || h < 2) return
 
-    const clientKey = uid()
-    const newNote = { id: clientKey, clientKey, x, y, w, h, text: '', taskType: 'background', assignee: '' }
-    setNotes(prev => ({
-      ...prev,
-      [pageKey]: [...(prev[pageKey] ?? []), newNote],
-    }))
-    setSelectedNoteId(clientKey)
-  }
+    const pageId = pages[pageIndex]?.serverPageId ?? pages[pageIndex]?.apiPageId
+    if (!pageId) {
+      toast.error('Trang chưa được tải lên server, không thể tạo ghi chú.')
+      return
+    }
 
-  function updateNoteField(stableKey, field, value) {
-    setNotes(prev => ({
-      ...prev,
-      [pageKey]: (prev[pageKey] ?? []).map(n => (
-        noteStableKey(n) === stableKey ? { ...n, [field]: value } : n
-      )),
-    }))
+    createPageIssue.mutate({
+      pageId: Number(pageId),
+      createdById: user?.id ?? 0,
+      issueType: 'Revision',
+      workCategory: 'Background',
+      boxX: Math.round(x),
+      boxY: Math.round(y),
+      boxWidth: Math.round(w),
+      boxHeight: Math.round(h),
+      description: '',
+    }, {
+      onSuccess: (res) => {
+        const created = res?.data ?? res
+        const realId = created?.id ?? created?.issueid
+        if (realId) {
+          setSelectedNoteId(String(realId))
+        }
+        toast.success('Đã vẽ ô ghi chú mới.')
+      },
+      onError: (err) => {
+        toast.error(err?.response?.data?.message ?? 'Lỗi khi lưu ghi chú.')
+      }
+    })
   }
 
   function goPage(delta) {

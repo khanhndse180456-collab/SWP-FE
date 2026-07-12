@@ -472,31 +472,8 @@ export default function Mangaka() {
   }, [apiSeries.length, apiChapters.length])
   const [uploadPctBySeries, setUploadPctBySeries] = useState({})
   
-  // Load persisted chapters from localStorage
-  const [annotatorChapters, setAnnotatorChapters] = useState(() => {
-    try {
-      const saved = localStorage.getItem('mangaka_annotator_chapters')
-      return saved ? JSON.parse(saved) : []
-    } catch { return [] }
-  })
-  // Persist to localStorage on change
-  useEffect(() => {
-    try {
-      localStorage.setItem('mangaka_annotator_chapters', JSON.stringify(annotatorChapters))
-    } catch (e) { console.warn('Failed to persist annotatorChapters:', e) }
-  }, [annotatorChapters])
-  
-  const [annotatorNotes, setAnnotatorNotes] = useState(() => {
-    try {
-      const saved = localStorage.getItem('mangaka_annotator_notes')
-      return saved ? JSON.parse(saved) : {}
-    } catch { return {} }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem('mangaka_annotator_notes', JSON.stringify(annotatorNotes))
-    } catch (e) { console.warn('Failed to persist annotatorNotes:', e) }
-  }, [annotatorNotes])
+  const [annotatorChapters, setAnnotatorChapters] = useState([])
+  const [annotatorNotes, setAnnotatorNotes] = useState({})
   
   const [annotatorActiveChapterId, setAnnotatorActiveChapterId] = useState(null)
   const [annotatorPageIndex, setAnnotatorPageIndex] = useState(0)
