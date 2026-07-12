@@ -628,42 +628,8 @@ export default function Mangaka() {
       notesCount: notes.length,
       activePageApiId: chapter?.pages?.[pageIndex]?.apiPageId,
     })
-    const submission = buildSubmissionFromMangakaPage({
-      seriesTitle: chapter.series,
-      chapterId: chapter.id,
-      chapterNum: chapter.num,
-      pageIndex,
-      pageName,
-      mangakaImageUrl: pageUrl,
-      notes,
-      mangakaName: user?.name ?? 'Mangaka',
-      assistantId,
-    })
-    console.log('[Mangaka] submission built →', { id: submission.id, chapterId: submission.chapterId, notes: submission.notes.map(n => n.clientKey) })
-
-    // Save to BE API first, then localStorage as fallback
-    const mangakaId = user?.id ?? null
-    const mangakaName = user?.name ?? 'Mangaka'
-
-    submissionsService.create({
-      mangakaId,
-      assistantId,
-      chapterId: submission.chapterId,
-      seriesTitle: chapter.series,
-      chapterNum: chapter.num,
-      referenceImageUrl: pageUrl,
-      notes: notes.map(n => n.text).join('; '),
-    }).catch(err => {
-      console.warn('[Mangaka] Failed to save submission to BE, using localStorage fallback:', err)
-      void pushAssistantSubmission(submission)
-    })
-
-    // Also keep localStorage for offline support
-    void pushAssistantSubmission(submission)
-    console.log('[Mangaka] submission saved, chapterId used:', submission.chapterId)
-
     const activePage = chapter?.pages?.[pageIndex]
-    // Save notes to API (mapping sang field backend: PageId, CreatedById, IssueType, WorkCategory, BoxX/Y/W/H, Description)
+    // Save notes to API (mapping sang field backend: PageId, CreatedById, AssignedToId, IssueType, WorkCategory, BoxX/Y/W/H, Description)
     if (user?.id && activePage?.apiPageId) {
       notes.forEach((note) => {
         const issueType = note.taskType === 'revision' ? 'Revision' : note.taskType === 'production' ? 'Production' : 'Revision'
@@ -676,13 +642,14 @@ export default function Mangaka() {
         pageIssuesService.create({
           pageId: activePage.apiPageId,
           createdById: user.id,
+          assignedToId: assistantId ? Number(assistantId) : null,
           issueType,
           workCategory,
           boxX: Math.round(note.x),
           boxY: Math.round(note.y),
           boxWidth: Math.round(note.w),
           boxHeight: Math.round(note.h),
-          description: note.text ?? note.content ?? '',
+          description: (note.text ?? note.content ?? '').trim() || 'Ghi chú mới',
         }).then(r => console.log('[Mangaka] pageIssuesService.create OK →', { noteClientKey: note.clientKey, response: JSON.stringify(r?.data) }))
           .catch(e => console.error('[Mangaka] pageIssuesService.create FAILED →', { noteClientKey: note.clientKey, error: e?.response?.data ?? e.message }))
       })
@@ -700,7 +667,7 @@ export default function Mangaka() {
     // KHÔNG đổi status chapter. Status chỉ chuyển sang 'Ready' khi Mangaka bấm "Hoàn tất chapter".
     // (Enum BE: InProduction → Ready → Published; không có 'StudioWorking'/'SubmittedToEditor'.)
 
-    toast.success(`Đã gửi ${submission.pageLabel} (${notes.length} ô) cho ${assistant?.label ?? 'Assistant'}.`)
+    toast.success(`Đã gửi ghi chú Trang ${pageIndex + 1} (${notes.length} ô) cho ${assistant?.label ?? 'Assistant'}.`)
   }
 
   function sendChapterToTantou({ series, chapter, pageIndex = 0, pageName, notes = [], imageOverride }) {

@@ -421,47 +421,7 @@ export default function ChapterAnnotator({
   const pageKey = activeChapter ? `${activeChapterId}-${pageIndex}` : ''
   const pageNotes = notes[pageKey] ?? []
 
-  useEffect(() => {
-    if (!serverPageIssues || !pages || pages.length === 0) return
-    const currentPageServerId = pages[pageIndex]?.serverPageId ?? pages[pageIndex]?.apiPageId
-    const currentPageIdNum = currentPageServerId != null ? Number(currentPageServerId) : null
-    if (currentPageIdNum == null || !Number.isFinite(currentPageIdNum)) return
 
-    const issuesForCurrentPage = serverPageIssues.filter(issue => {
-      const issuePageId = issue.pageId ?? issue.Pageid
-      return issuePageId != null && Number(issuePageId) === currentPageIdNum
-    })
-
-    const mappedServerNotes = issuesForCurrentPage.map(issue => {
-      const issueId = String(issue.issueid ?? issue.Issueid ?? issue.id)
-      const rawCategory = issue.workCategory ?? issue.Workcategory ?? 'Background'
-      const taskType = rawCategory.toLowerCase()
-      return {
-        id: issueId,
-        clientKey: issueId,
-        x: issue.boxX ?? issue.Boxx ?? 0,
-        y: issue.boxY ?? issue.Boxy ?? 0,
-        w: issue.boxWidth ?? issue.Boxwidth ?? 0,
-        h: issue.boxHeight ?? issue.Boxheight ?? 0,
-        text: issue.description ?? issue.Description ?? '',
-        taskType: taskType,
-        assignee: '',
-        isApi: true,
-      }
-    })
-
-    setNotes(prev => {
-      const existing = prev[pageKey] ?? []
-      const keysMatch = existing.length === mappedServerNotes.length &&
-        existing.every((n, i) => String(n.id) === String(mappedServerNotes[i]?.id) && n.text === mappedServerNotes[i]?.text && n.taskType === mappedServerNotes[i]?.taskType)
-      
-      if (keysMatch) return prev
-      return {
-        ...prev,
-        [pageKey]: mappedServerNotes,
-      }
-    })
-  }, [serverPageIssues, pages, pageIndex, pageKey, setNotes])
 
   useEffect(() => {
     if (!isFullscreen) return undefined
@@ -487,43 +447,7 @@ export default function ChapterAnnotator({
         noteStableKey(n) === stableKey ? { ...n, [field]: value } : n
       )),
     }))
-
-    const isServerId = Number.isFinite(Number(stableKey))
-    if (!isServerId) return
-
-    const originalIssue = serverPageIssues.find(i => String(i.issueid ?? i.Issueid ?? i.id) === String(stableKey))
-    if (!originalIssue) return
-
-    const issueType = field === 'taskType'
-      ? (value === 'revision' ? 'Revision' : value === 'production' ? 'Production' : 'Revision')
-      : (originalIssue.issueType ?? originalIssue.Issuetype ?? 'Revision')
-
-    const workCategory = field === 'taskType'
-      ? (value === 'background' ? 'Background'
-        : value === 'dialog' ? 'Dialog'
-        : value === 'ink' ? 'Inking'
-        : value === 'fx' ? 'Effects'
-        : value === 'shading' ? 'Shading'
-        : 'Content')
-      : (originalIssue.workCategory ?? originalIssue.Workcategory ?? 'Background')
-
-    const description = field === 'text' ? value : (originalIssue.description ?? originalIssue.Description ?? '')
-
-    updatePageIssue.mutate({
-      id: Number(stableKey),
-      data: {
-        pageId: originalIssue.pageId ?? originalIssue.Pageid,
-        createdById: originalIssue.createdById ?? originalIssue.Createdbyid ?? user?.id ?? 0,
-        issueType,
-        workCategory,
-        boxX: originalIssue.boxX ?? originalIssue.Boxx ?? 0,
-        boxY: originalIssue.boxY ?? originalIssue.Boxy ?? 0,
-        boxWidth: originalIssue.boxWidth ?? originalIssue.Boxwidth ?? 0,
-        boxHeight: originalIssue.boxHeight ?? originalIssue.Boxheight ?? 0,
-        description,
-      }
-    })
-  }, [pageKey, serverPageIssues, updatePageIssue, user, setNotes])
+  }, [pageKey, setNotes])
 
   const deleteNote = useCallback((stableKey) => {
     setNotes(prev => ({
@@ -531,19 +455,7 @@ export default function ChapterAnnotator({
       [pageKey]: (prev[pageKey] ?? []).filter(n => noteStableKey(n) !== stableKey),
     }))
     setSelectedNoteId(prev => (prev === stableKey ? null : prev))
-
-    const isServerId = Number.isFinite(Number(stableKey))
-    if (isServerId) {
-      deletePageIssue.mutate(Number(stableKey), {
-        onSuccess: () => {
-          toast.success('Đã xóa ghi chú trên server.')
-        },
-        onError: (err) => {
-          toast.error(err?.response?.data?.message ?? 'Không thể xóa ghi chú.')
-        }
-      })
-    }
-  }, [pageKey, deletePageIssue, setNotes])
+  }, [pageKey, setNotes])
 
   useEffect(() => {
     function onKey(e) {
@@ -861,35 +773,13 @@ export default function ChapterAnnotator({
     setDrawCurrent(null)
     if (w < 2 || h < 2) return
 
-    const pageId = pages[pageIndex]?.serverPageId ?? pages[pageIndex]?.apiPageId
-    if (!pageId) {
-      toast.error('Trang chưa được tải lên server, không thể tạo ghi chú.')
-      return
-    }
-
-    createPageIssue.mutate({
-      pageId: Number(pageId),
-      createdById: user?.id ?? 0,
-      issueType: 'Revision',
-      workCategory: 'Background',
-      boxX: Math.round(x),
-      boxY: Math.round(y),
-      boxWidth: Math.round(w),
-      boxHeight: Math.round(h),
-      description: '',
-    }, {
-      onSuccess: (res) => {
-        const created = res?.data ?? res
-        const realId = created?.id ?? created?.issueid
-        if (realId) {
-          setSelectedNoteId(String(realId))
-        }
-        toast.success('Đã vẽ ô ghi chú mới.')
-      },
-      onError: (err) => {
-        toast.error(err?.response?.data?.message ?? 'Lỗi khi lưu ghi chú.')
-      }
-    })
+    const clientKey = uid()
+    const newNote = { id: clientKey, clientKey, x, y, w, h, text: '', taskType: 'background', assignee: '' }
+    setNotes(prev => ({
+      ...prev,
+      [pageKey]: [...(prev[pageKey] ?? []), newNote],
+    }))
+    setSelectedNoteId(clientKey)
   }
 
   function goPage(delta) {
