@@ -1543,7 +1543,7 @@ export default function Mangaka() {
             { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
             { id: 'series', label: 'Series của tôi', icon: BookOpen },
             { id: 'chapter', label: 'Chapter', icon: FileText },
-            { id: 'page', label: 'Page', icon: Layers },
+            { id: 'page', label: 'Workspace', icon: Layers },
             { id: 'assistants', label: 'Assistant', icon: UserPlus },
             { id: 'contract', label: 'Hợp đồng', icon: FileSignature },
             { id: 'stats', label: 'Thống kê', icon: BarChart3 },
@@ -1584,34 +1584,6 @@ export default function Mangaka() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Header */}
-        <header className="h-16 border-b bg-card flex items-center justify-between px-8 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-muted-foreground">Mangaka Workspace</span>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setTab('notifications')}
-              className="relative p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted/50 transition-colors cursor-pointer"
-            >
-              <Bell className="size-5" />
-              {notifications.length > 0 && (
-                <span className="absolute top-1 right-1 size-2 rounded-full bg-red-500" />
-              )}
-            </button>
-
-            <div className="flex items-center gap-3 pl-2 border-l">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-foreground">{mangakaName}</p>
-                <p className="text-[10px] text-muted-foreground font-semibold uppercase">Mangaka</p>
-              </div>
-              <div className="size-9 rounded-full bg-muted flex items-center justify-center font-bold text-sm text-muted-foreground overflow-hidden">
-                {mangakaName.slice(0, 1).toUpperCase()}
-              </div>
-            </div>
-          </div>
-        </header>
 
         {/* Body Container */}
         <main className="flex-1 overflow-y-auto p-8 bg-zinc-50/50 dark:bg-zinc-950/20">
