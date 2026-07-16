@@ -1637,7 +1637,7 @@ export default function ChapterAnnotator({
               {seriesChapters.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Chưa có chapter — bấm nút trên để tạo Ch. {nextChapterNum}.</p>
               ) : (
-                <ScrollArea className="max-h-64 rounded-lg border">
+                <div className="max-h-64 overflow-y-auto rounded-lg border divide-y bg-background">
                   <ul className="divide-y">
                     {seriesChapters.map(ch => {
                       const isPick = ch.id === activeChapterId
@@ -1699,7 +1699,7 @@ export default function ChapterAnnotator({
                       )
                     })}
                   </ul>
-                </ScrollArea>
+                </div>
               )}
             </section>
 

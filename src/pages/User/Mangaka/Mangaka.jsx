@@ -26,6 +26,24 @@ import {
 import Header from '@/components/User/Header/Header.jsx'
 import Footer from '@/components/User/Footer/Footer.jsx'
 import { WorkspaceHero } from '@/components/layout/WorkspaceHero.jsx'
+import {
+  LayoutDashboard,
+  Layers,
+  FileSignature,
+  Settings as SettingsIcon,
+  LogOut,
+  BarChart3,
+  User,
+  Bell,
+} from 'lucide-react'
+import DashboardView from './DashboardView.jsx'
+import SeriesView from './SeriesView.jsx'
+import ChapterView from './ChapterView.jsx'
+import PageView from './PageView.jsx'
+import ProfileView from './ProfileView.jsx'
+import ContractsView from './ContractsView.jsx'
+import StatsView from './StatsView.jsx'
+import SettingsView from './SettingsView.jsx'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -104,6 +122,7 @@ import {
   useAvailableTantouEditors,
   useAssignTantouEditor,
   useNotifications,
+  useContracts,
 } from '@/api/hooks'
 import '@/styles/mangaPage.css'
 import './Mangaka.css'
@@ -346,12 +365,13 @@ export default function Mangaka() {
   const updateChapterStatus = useUpdateChapterStatus()
   const availableTantouEditors = useAvailableTantouEditors()
   const assignTantouEditor = useAssignTantouEditor()
+  const { data: contractsRaw = [] } = useContracts({ mangakaId })
 
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectChapterId, setRejectChapterId] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
 
-  const [tab, setTab] = useState('series')
+  const [tab, setTab] = useState('dashboard')
   // annotateSeries must read from location.state first (navigation carries the correct series),
   // then fall back to persisted workspace value — otherwise navigating from series detail
   // with "Upload chapter" shows the wrong series in the dropdown. Prefer seriesId over title
@@ -1478,7 +1498,9 @@ export default function Mangaka() {
     if (processedNavStateRef.current === st) return
     processedNavStateRef.current = st
 
-    if (st.tab === 'chapters' || st.tab === 'annotate' || st.tab === 'series' || st.tab === 'assistants') setTab(st.tab)
+    if (st.tab === 'chapters' || st.tab === 'chapter' || st.tab === 'annotate' || st.tab === 'page' || st.tab === 'series' || st.tab === 'assistants') {
+      setTab(st.tab === 'chapters' ? 'chapter' : st.tab)
+    }
     // Prefer seriesId (resolved via seriesList) over raw title string — avoids race when
     // user navigates before seriesList has loaded from API.
     const resolvedSeries = resolveSeriesFromNavState(st, seriesList)
@@ -1491,7 +1513,7 @@ export default function Mangaka() {
 
   function openAnnotate(seriesTitle, chapterLocalId) {
     setAnnotateSeries(seriesTitle)
-    setTab('annotate')
+    setTab('page')
     if (chapterLocalId) {
       setAnnotatorActiveChapterId(chapterLocalId)
       setAnnotatorPageIndex(0)
@@ -1504,526 +1526,236 @@ export default function Mangaka() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <Header links={NAV_LINKS} onLogout={user ? handleLogout : undefined} />
-
-      <WorkspaceHero
-        className="from-rose-950 to-zinc-950"
-        label="Mangaka Workspace"
-        title={`Xin chào${user?.name ? `, ${user.name.split(' ')[0]}` : ''}`}
-        description={`Tạo hồ sơ giới thiệu & nộp bản thảo lên ${LABEL_EDITOR_BOARD} · đánh dấu vùng giao việc cho Assistant · duyệt bản tổng hợp ngay trên trang.`}
-      >
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Button onClick={openAddSeriesModal} className="bg-white text-zinc-900 hover:bg-zinc-100">
-            <Plus className="size-4" />
-            Đăng ký series
-          </Button>
-          <Button
-            variant="outline"
-            className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-            disabled={seriesList.length === 0}
-            onClick={() => seriesList[0] && openAnnotate(seriesList[0].title)}
-          >
-            <Upload className="size-4" />
-            Upload chapter
-          </Button>
-          <Button
-            variant="outline"
-            className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-            onClick={() => setTab('assistants')}
-          >
-            <UserPlus className="size-4" />
-            Thuê Assistant
-          </Button>
+    <div className="flex min-h-screen bg-slate-900/5 dark:bg-zinc-950">
+      {/* Sidebar */}
+      <aside className="w-64 border-r bg-zinc-950 text-zinc-100 flex flex-col shrink-0">
+        {/* Logo Section */}
+        <div className="h-16 flex items-center gap-2.5 px-6 border-b border-zinc-800">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs">
+            <BookOpen className="size-4" />
+          </span>
+          <span className="font-bold tracking-tight text-white text-lg">MangaPublish</span>
         </div>
-      </WorkspaceHero>
 
-      <main className="page-container flex-1 py-8">
-        {tab !== 'annotate' ? (
-          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {STAT_DEFS.map((def, i) => (
-              <StatCard key={def.label} def={def} value={statValues[i].value} trend={statValues[i].trend} />
-            ))}
-          </div>
-        ) : null}
+        {/* Menu Items */}
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'series', label: 'Series của tôi', icon: BookOpen },
+            { id: 'chapter', label: 'Chapter', icon: FileText },
+            { id: 'page', label: 'Page', icon: Layers },
+            { id: 'assistants', label: 'Assistant', icon: UserPlus },
+            { id: 'contract', label: 'Hợp đồng', icon: FileSignature },
+            { id: 'stats', label: 'Thống kê', icon: BarChart3 },
+            { id: 'notifications', label: 'Thông báo', icon: Bell },
+            { id: 'profile', label: 'Profile của tôi', icon: User },
+            { id: 'settings', label: 'Cài đặt', icon: SettingsIcon },
+          ].map((item) => {
+            const Icon = item.icon
+            const active = tab === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => setTab(item.id)}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold text-left transition-all cursor-pointer ${
+                  active
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
+                }`}
+              >
+                <Icon className="size-4" />
+                {item.label}
+              </button>
+            )
+          })}
+        </nav>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <div>
-            <Tabs value={tab} onValueChange={setTab}>
-              <TabsList className="mb-5 h-auto flex-wrap">
-                {TAB_ITEMS.map(t => {
-                  const Icon = t.icon
-                  return (
-                    <TabsTrigger key={t.id} value={t.id} className="gap-2">
-                      <Icon className="size-4" />
-                      {t.label}
-                    </TabsTrigger>
-                  )
-                })}
-              </TabsList>
+        {/* Logout at bottom */}
+        <div className="p-4 border-t border-zinc-800">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold text-zinc-400 hover:bg-red-500/10 hover:text-red-500 transition-colors cursor-pointer"
+          >
+            <LogOut className="size-4" />
+            Đăng xuất
+          </button>
+        </div>
+      </aside>
 
-              <TabsContent value="series" className="space-y-4">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-semibold">Series của tôi</h2>
-                    <p className="text-sm text-muted-foreground">Quản lý draft và luồng duyệt</p>
-                  </div>
-                  <Button size="sm" variant="outline" onClick={openAddSeriesModal}>
-                    <Plus className="size-4" />
-                    Đăng ký series
-                  </Button>
-                </div>
-
-                {seriesList.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center text-muted-foreground">
-                      Chưa có series nào — bấm "Đăng ký series" để bắt đầu.
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {seriesList.map(s => (
-                      <SeriesCard
-                        key={s.id}
-                        series={s}
-                        ebApproved={!!ebApprovedMap[s.title]}
-                        uploadPct={uploadPctBySeries[s.title] ?? 0}
-                        onOpenAnnotate={() => openAnnotate(s.title)}
-                        onOpenEdit={() => openEditSeriesModal(s)}
-                        onDelete={() => deleteSeriesById(s.id)}
-                        onCompleteDebut={() => completeDebutPipeline(s.id)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="chapters" className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-semibold">Chapter đã upload</h2>
-                    <p className="text-sm text-muted-foreground">
-                      Bấm tên truyện hoặc chapter để xem trang chi tiết.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider shrink-0">Lọc theo Series:</span>
-                    <Select
-                      value={filterSeriesId}
-                      onValueChange={setFilterSeriesId}
-                    >
-                      <SelectTrigger className="w-56 h-9 bg-background">
-                        <SelectValue placeholder="Tất cả Series" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Tất cả Series</SelectItem>
-                        {seriesList.map(s => (
-                          <SelectItem key={s.id} value={String(s.id)}>
-                            {s.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {chapterRowsBySeries.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center text-muted-foreground">
-                      Chưa có chapter — upload ở tab Upload & Ghi chú.
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="space-y-3">
-                    {chapterRowsBySeries.map(({ series, chapters: groupChapters }) => {
-                      const seriesMeta = seriesList.find(x => x.title === series)
-                      const slug = seriesMeta?.slug ?? slugifySeriesTitle(series)
-                      return (
-                        <Card key={series} className="overflow-hidden p-0">
-                          <Link
-                            to={`/mangaka/series/${slug}`}
-                            className="flex items-center gap-2 border-b bg-muted/30 px-5 py-3 transition-colors hover:bg-muted/50"
-                          >
-                            <span
-                              className="size-2.5 shrink-0 rounded-full"
-                              style={{ background: seriesMeta?.color ?? '#999' }}
-                            />
-                            <strong className="text-sm">{series}</strong>
-                            {seriesMeta?.needsFullDebutPipeline ? (
-                              <Sparkles className="size-3.5 text-amber-500" />
-                            ) : null}
-                            <span className="ml-auto text-xs text-muted-foreground">
-                              {groupChapters.length} chapter
-                            </span>
-                            <ChevronRight className="size-3.5 text-muted-foreground" />
-                          </Link>
-                          <div className="divide-y">
-                            {groupChapters.map(c => {
-                              const annot = resolveAnnotatorChapter(c, annotatorChapters)
-                              const thumbUrl = annot?.pages?.find(p => p?.url)?.url
-                              const statusBadge = STATUS_BADGE[c.status] ?? STATUS_BADGE.draft
-                              return (
-                                <Link
-                                  key={c.id}
-                                  to={`/mangaka/series/${slug}/chapter/${c.id}`}
-                                  className="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-muted/30"
-                                >
-                                  {thumbUrl ? (
-                                    <span className="manga-page manga-page--thumb-sm shrink-0 overflow-hidden rounded">
-                                      <img src={thumbUrl} alt="" className="manga-page__media" />
-                                    </span>
-                                  ) : (
-                                    <span className="flex size-[52px] shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                                      Ch.{c.num}
-                                    </span>
-                                  )}
-                                  <span className="font-medium">Ch. {c.num}</span>
-                                  <Badge variant="outline" className="text-[10px]">{c.type}</Badge>
-                                  <span className="text-xs text-muted-foreground">{c.pages} trang</span>
-                                  <Badge className={statusBadge.className} variant="secondary">
-                                    {statusBadge.label}
-                                  </Badge>
-                                  <span className="ml-auto text-xs text-muted-foreground">{c.date}</span>
-                                  <ChevronRight className="size-3.5 text-muted-foreground" />
-                                </Link>
-                              )
-                            })}
-                          </div>
-                        </Card>
-                      )
-                    })}
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="assistants">
-                <MangakaAssistants mangakaId={mangakaId} mangakaName={mangakaName} />
-              </TabsContent>
-
-              <TabsContent value="annotate">
-                <ChapterAnnotator
-                  key="annotate-tab"
-                  selectedSeriesTitle={annotateSeries}
-                  selectedSeriesId={annotateSeriesId}
-                  onSelectedSeriesTitleChange={setAnnotateSeries}
-                  seriesOptions={seriesOptions}
-                  chapterNum={annotatorChapterNum}
-                  onChapterNumChange={setAnnotatorChapterNum}
-                  chapterNumHint={annotateChapterHint}
-                  chapters={annotatorChapters}
-                  setChapters={setAnnotatorChapters}
-                  activeChapterId={annotatorActiveChapterId}
-                  setActiveChapterId={setAnnotatorActiveChapterId}
-                  pageIndex={annotatorPageIndex}
-                  setPageIndex={setAnnotatorPageIndex}
-                  notes={annotatorNotes}
-                  setNotes={setAnnotatorNotes}
-                  serverChapterId={annotatorServerChapterId}
-                  hiredAssistants={hiredAssistants}
-                  onOpenAssistantsTab={() => setTab('assistants')}
-                  onUploadProgress={handleUploadProgress}
-                  onUploadComplete={handleUploadComplete}
-                  onSendToAssistant={handleSendToAssistant}
-                  onSendToTantou={handleSendToTantou}
-                  seriesStatus={seriesList.find(s => String(s.id) === String(annotateSeriesId))?.publicationStatus}
-                  seriesTantouId={seriesList.find(s => String(s.id) === String(annotateSeriesId))?.tantoueditorid}
-                />
-              </TabsContent>
-
-              <TabsContent value="history" className="space-y-4">
-                <div>
-                  <h2 className="text-xl font-semibold">Lịch sử chapter</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Các chapter đã gửi Tantou, đã duyệt, hoặc đã xuất bản.
-                  </p>
-                </div>
-                {historyChapters.length === 0 ? (
-                  <Card>
-                    <CardContent className="p-8 text-center text-muted-foreground">
-                      <History className="size-10 mx-auto mb-3 opacity-40" />
-                      <p>Chưa có chapter nào trong lịch sử.</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {historyChapters.map((c) => {
-                      const chId = c.id ?? c.chapterId
-                      const num = c.chapterNumber ?? c.num ?? '?'
-                      const title = c.title ?? c.chapterTitle ?? `Ch. ${num}`
-                      const status = String(c.status ?? '').toLowerCase()
-                      const series = apiSeries.find(s => s.id === (c.seriesId ?? c.series_id))
-                      const updated = c.updatedAt ?? c.UpdatedAt
-                      return (
-                        <Card key={chId} className="hover:shadow-md transition-shadow">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-sm">
-                              {series?.title ?? '—'} · Ch. {num}
-                            </CardTitle>
-                            <CardDescription className="truncate">{title}</CardDescription>
-                          </CardHeader>
-                          <CardContent className="space-y-2">
-                            <Badge
-                              variant="secondary"
-                              className={historyBadgeClass(status)}
-                            >
-                              {historyStatusLabel(status)}
-                            </Badge>
-                            <p className="text-xs text-muted-foreground">
-                              {updated ? new Date(updated).toLocaleString('vi-VN') : ''}
-                            </p>
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Header */}
+        <header className="h-16 border-b bg-card flex items-center justify-between px-8 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-muted-foreground">Mangaka Workspace</span>
           </div>
 
-          <aside className="space-y-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Workflow className="size-4 text-primary" />
-                  Quy trình làm việc
-                </CardTitle>
-                <CardDescription>
-                  Theo series <strong className="text-foreground">{pipelineSeries?.title ?? '—'}</strong>
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Badge
-                  className={pipelineSeries?.needsFullDebutPipeline
-                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400'
-                    : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-400'}
-                  variant="secondary"
-                >
-                  {pipelineSeries?.needsFullDebutPipeline
-                    ? `✦ Lần đầu · có ${LABEL_EDITOR_BOARD}`
-                    : `Lần 2+ · chỉ ${LABEL_TANTOU_EDITOR}`}
-                </Badge>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setTab('notifications')}
+              className="relative p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted/50 transition-colors cursor-pointer"
+            >
+              <Bell className="size-5" />
+              {notifications.length > 0 && (
+                <span className="absolute top-1 right-1 size-2 rounded-full bg-red-500" />
+              )}
+            </button>
 
-                {pipelineSeries?.needsFullDebutPipeline && pipelineSeries.title && !ebApprovedMap[pipelineSeries.title] ? (
-                  <p className="text-xs text-muted-foreground">
-                    Chờ {LABEL_EDITOR_BOARD} duyệt vòng đầu —{' '}
-                    <Link to={PATH_EDITOR_BOARD} className="font-medium text-primary hover:underline">
-                      mở trang {LABEL_EDITOR_BOARD}
-                    </Link>
-                  </p>
-                ) : null}
+            <div className="flex items-center gap-3 pl-2 border-l">
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-bold text-foreground">{mangakaName}</p>
+                <p className="text-[10px] text-muted-foreground font-semibold uppercase">Mangaka</p>
+              </div>
+              <div className="size-9 rounded-full bg-muted flex items-center justify-center font-bold text-sm text-muted-foreground overflow-hidden">
+                {mangakaName.slice(0, 1).toUpperCase()}
+              </div>
+            </div>
+          </div>
+        </header>
 
-                <ol className="relative space-y-3 border-l border-muted pl-5">
-                  {workflowSteps.map((w, i) => {
-                    const isActive = i === 0
-                    return (
-                      <li key={w.step} className="relative">
-                        <span
-                          className={cn(
-                            'absolute -left-[26px] flex size-5 items-center justify-center rounded-full text-[10px] font-bold ring-2 ring-card',
-                            isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-                          )}
-                        >
-                          {w.step}
-                        </span>
-                        <p className="text-sm font-medium">{w.title}</p>
-                        <p className="text-xs text-muted-foreground">{w.desc}</p>
-                      </li>
-                    )
-                  })}
-                </ol>
-              </CardContent>
-            </Card>
+        {/* Body Container */}
+        <main className="flex-1 overflow-y-auto p-8 bg-zinc-50/50 dark:bg-zinc-950/20">
+          {tab === 'dashboard' && (
+            <DashboardView
+              mangakaName={mangakaName}
+              stats={{
+                totalSeries: seriesList.length,
+                pendingApproval: chapterRows.filter(c => c.status === 'Ready').length,
+                inProgress: chapterRows.filter(c => c.status === 'InProduction').length,
+                completed: chapterRows.filter(c => c.status === 'Published' || c.status === 'done').length,
+              }}
+              recentSeries={seriesList.slice(0, 4)}
+              recentNotifications={notifications}
+              onNavigateTab={setTab}
+              onSelectSeries={setAnnotateSeries}
+              STATUS_BADGE={STATUS_BADGE}
+            />
+          )}
 
-            {pendingFromAssistant.length > 0 ? (
-              <Card className="border-emerald-300/40 shadow-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ClipboardCheck className="size-4 text-emerald-600" />
-                    Bản ghép từ Assistant ({pendingFromAssistant.length})
-                  </CardTitle>
-                  <CardDescription>
-                    Duyệt hoặc từ chối các bản ghép mà Assistant vừa gửi.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {pendingFromAssistant.map((c) => {
-                    const chId = c.id ?? c.chapterId
-                    const num = c.chapterNumber ?? c.num ?? '?'
-                    const title = c.title ?? c.chapterTitle ?? `Ch. ${num}`
-                    return (
-                      <div key={chId} className="rounded-lg border bg-muted/30 p-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold">Ch. {num} — {title}</p>
-                          <Badge variant="secondary" className="bg-amber-100 text-amber-700">
-                            Chờ duyệt
-                          </Badge>
+          {tab === 'series' && (
+            <SeriesView
+              seriesList={seriesList}
+              ebApprovedMap={ebApprovedMap}
+              uploadPctBySeries={uploadPctBySeries}
+              onOpenAddSeries={openAddSeriesModal}
+              onOpenEdit={openEditSeriesModal}
+              onDelete={deleteSeriesById}
+              onViewSeries={(s) => {
+                setAnnotateSeries(s.title)
+                setTab('chapter')
+              }}
+              STATUS_BADGE={STATUS_BADGE}
+            />
+          )}
+
+          {tab === 'chapter' && (
+            <ChapterView
+              seriesList={seriesList}
+              chapterRows={chapterRows}
+              onOpenAddChapter={(series) => {
+                if (series) {
+                  setAnnotateSeries(series.title)
+                  setTab('page')
+                }
+              }}
+              onOpenEditChapter={(chapter) => {
+                const matchedSeries = seriesList.find(s => s.title === chapter.series)
+                if (matchedSeries) {
+                  openEditSeriesModal(matchedSeries)
+                }
+              }}
+              onDeleteChapter={deleteSeriesById}
+              onViewChapterDetail={(chapter) => {
+                setAnnotateSeries(chapter.series)
+                setAnnotatorActiveChapterId(chapter.id)
+                setTab('page')
+              }}
+              STATUS_BADGE={STATUS_BADGE}
+            />
+          )}
+
+          {tab === 'page' && (
+            <PageView
+              seriesList={seriesList}
+              chapterRows={chapterRows}
+              onUploadComplete={handleUploadComplete}
+              onUploadProgress={handleUploadProgress}
+              STATUS_BADGE={STATUS_BADGE}
+              annotateSeries={annotateSeries}
+              setAnnotateSeries={setAnnotateSeries}
+              annotateSeriesId={annotateSeriesId}
+              seriesOptions={seriesOptions}
+              annotatorChapterNum={annotatorChapterNum}
+              setAnnotatorChapterNum={setAnnotatorChapterNum}
+              annotateChapterHint={annotateChapterHint}
+              annotatorChapters={annotatorChapters}
+              setAnnotatorChapters={setAnnotatorChapters}
+              annotatorActiveChapterId={annotatorActiveChapterId}
+              setAnnotatorActiveChapterId={setAnnotatorActiveChapterId}
+              annotatorPageIndex={annotatorPageIndex}
+              setAnnotatorPageIndex={setAnnotatorPageIndex}
+              annotatorNotes={annotatorNotes}
+              setAnnotatorNotes={setAnnotatorNotes}
+              annotatorServerChapterId={annotatorServerChapterId}
+              hiredAssistants={hiredAssistants}
+              onOpenAssistantsTab={() => setTab('assistants')}
+              onSendToAssistant={handleSendToAssistant}
+              onSendToTantou={handleSendToTantou}
+            />
+          )}
+
+          {tab === 'assistants' && (
+            <MangakaAssistants mangakaId={mangakaId} mangakaName={mangakaName} />
+          )}
+
+          {tab === 'contract' && (
+            <ContractsView contracts={contractsRaw} />
+          )}
+
+          {tab === 'stats' && (
+            <StatsView />
+          )}
+
+          {tab === 'notifications' && (
+            <div className="space-y-4 max-w-3xl">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Thông báo</h1>
+                <p className="text-sm text-muted-foreground">Tất cả các thông báo hoạt động của bạn.</p>
+              </div>
+              <Card className="border bg-card">
+                <CardContent className="p-6 divide-y space-y-4">
+                  {notifications.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-6">Không có thông báo nào.</p>
+                  ) : (
+                    notifications.map(n => (
+                      <div key={n.id} className="flex items-start gap-4 pt-4 first:pt-0">
+                        <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                          <Bell className="size-4" />
                         </div>
-                        {c.mangakaRejectionReason ? (
-                          <p className="text-xs text-destructive">
-                            Từng bị từ chối: {c.mangakaRejectionReason}
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-foreground">{n.title || n.message}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{n.content || n.description}</p>
+                          <p className="text-[10px] text-muted-foreground mt-2">
+                            {n.createdat ? new Date(n.createdat).toLocaleString('vi-VN') : 'Vừa xong'}
                           </p>
-                        ) : null}
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => acceptAssistantChapter(c)}
-                            disabled={updateChapterStatus.isPending}
-                          >
-                            <CheckCircle2 className="size-3.5" />
-                            Chấp nhận
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="flex-1"
-                            onClick={() => openRejectDialog(c)}
-                            disabled={updateChapterStatus.isPending}
-                          >
-                            Từ chối
-                          </Button>
                         </div>
                       </div>
-                    )
-                  })}
+                    ))
+                  )}
                 </CardContent>
               </Card>
-            ) : null}
+            </div>
+          )}
 
-            {pendingCompositeReview ? (
-              <Card className="border-primary/30 shadow-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ClipboardCheck className="size-4 text-primary" />
-                    Bản tổng hợp từ Assistant
-                  </CardTitle>
-                  <CardDescription>
-                    <strong className="text-foreground">{pendingCompositeReview.series}</strong> · Ch. {pendingCompositeReview.num}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Badge
-                    className={pendingCompositeReview.status === 'InProduction'
-                      ? STATUS_BADGE.assistant.className
-                      : STATUS_BADGE.review.className}
-                    variant="secondary"
-                  >
-                    {pendingCompositeReview.status === 'InProduction' ? 'Chờ bạn phản hồi' : 'Chờ Assistant vẽ'}
-                  </Badge>
+          {tab === 'profile' && (
+            <ProfileView user={user} />
+          )}
 
-                  <div className="overflow-hidden rounded-lg border bg-muted">
-                    {pendingDeliverable?.compositeDataUrl ? (
-                      <img src={pendingDeliverable.compositeDataUrl} alt={`Bản ghép ${pendingDeliverable.pageLabel}`} className="w-full" />
-                    ) : pendingDeliverable?.overlayDataUrl ? (
-                      <div className="relative">
-                        {pendingDeliverable.mangakaImageUrl ? (
-                          <img src={pendingDeliverable.mangakaImageUrl} alt="Ảnh gốc" className="w-full" />
-                        ) : null}
-                        <img src={pendingDeliverable.overlayDataUrl} alt="Layer Assistant" className="absolute inset-0 w-full" />
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center gap-1 p-6 text-center text-xs text-muted-foreground">
-                        <ImageIcon className="size-6 opacity-40" />
-                        <span>Chờ Assistant gửi layer</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {pendingDeliverable ? (
-                    <p className="text-xs text-muted-foreground">
-                      {pendingDeliverable.pageLabel}
-                      {pendingDeliverable.sendMode === 'overlay' ? ' · Layer trong suốt' : ' · Bản ghép'}
-                    </p>
-                  ) : null}
-
-                  <div className="flex gap-2">
-                    <Button size="sm" className="flex-1" onClick={() => handleCompositeDecision('approve')}>
-                      <CheckCircle2 className="size-3.5" />
-                      Phê duyệt
-                    </Button>
-                    <Button size="sm" variant="outline" className="flex-1" onClick={() => handleCompositeDecision('revision')}>
-                      Yêu cầu sửa
-                    </Button>
-                  </div>
-
-                  {tantouSendReady ? (
-                    <Button size="sm" className="w-full" onClick={handleSendTantouFromReady}>
-                      <Send className="size-3.5" />
-                      Gửi {LABEL_TANTOU_EDITOR}
-                    </Button>
-                  ) : null}
-
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="w-full"
-                    disabled={seriesList.length === 0}
-                    onClick={() => openAnnotate(pendingCompositeReview.series)}
-                  >
-                    Mở trên trang
-                    <ArrowRight className="size-3.5" />
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {tantouRevisions.length > 0 ? (
-              <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-500/30 dark:bg-amber-500/5">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ListChecks className="size-4 text-amber-600" />
-                    Nhận xét từ {LABEL_TANTOU_EDITOR}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {tantouRevisions.slice(0, 3).map(s => (
-                    <div key={s.id} className="rounded-lg border bg-card p-3">
-                      <p className="text-sm font-semibold">{s.seriesTitle}</p>
-                      <p className="text-xs text-muted-foreground">Ch. {s.chapterNum} · {s.pageLabel}</p>
-                      {s.editorialComment ? (
-                        <p className="mt-1.5 line-clamp-3 text-xs">{s.editorialComment}</p>
-                      ) : null}
-                      <Link to={PATH_TANTOU_EDITOR} className="mt-2 inline-flex items-center text-xs font-medium text-primary hover:underline">
-                        Xem chi tiết
-                        <ChevronRight className="size-3" />
-                      </Link>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {tab !== 'annotate' ? (
-              <Card className="border-primary/20 bg-primary/5">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Lightbulb className="size-4 text-primary" />
-                    Mẹo nhanh
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="text-xs text-muted-foreground">
-                    Chọn loại việc (nền, tô bóng, hiệu ứng) cho từng vùng trước khi gửi Assistant — giảm vòng chỉnh sửa.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full"
-                    disabled={seriesList.length === 0}
-                    onClick={() => seriesList[0] && openAnnotate(seriesList[0].title)}
-                  >
-                    Bắt đầu ghi chú
-                    <ArrowRight className="size-3.5" />
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : null}
-          </aside>
-        </div>
-      </main>
-
-      <Footer />
+          {tab === 'settings' && (
+            <SettingsView />
+          )}
+        </main>
+      </div>
 
       <AddSeriesModal
         open={addSeriesOpen}
