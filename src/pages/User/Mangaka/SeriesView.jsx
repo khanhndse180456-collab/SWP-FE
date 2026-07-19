@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Search, Plus, Eye, Edit2, Trash2 } from 'lucide-react'
+import { Search, Plus, Eye, Edit2, Trash2, Send } from 'lucide-react'
 
 export default function SeriesView({
   seriesList,
@@ -13,6 +13,7 @@ export default function SeriesView({
   onOpenEdit,
   onDelete,
   onViewSeries,
+  onSendSeriesForReview,
   STATUS_BADGE,
 }) {
   const [searchQuery, setSearchQuery] = useState('')
@@ -72,6 +73,7 @@ export default function SeriesView({
                 filteredSeries.map(s => {
                   const badge = STATUS_BADGE[s.status?.toLowerCase()] || STATUS_BADGE.draft
                   const initials = (s.title.length >= 2 ? s.title : `${s.title}●`).slice(0, 2)
+                  const isDraft = String(s.status ?? '').toLowerCase() === 'draft'
                   return (
                     <tr key={s.id} className="hover:bg-muted/30 transition-colors">
                       <td className="p-4">
@@ -113,6 +115,17 @@ export default function SeriesView({
                       </td>
                       <td className="p-4">
                         <div className="flex items-center justify-center gap-1.5">
+                          {isDraft && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                              onClick={() => onSendSeriesForReview(s)}
+                              title="Gửi duyệt Series"
+                            >
+                              <Send className="size-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"

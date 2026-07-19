@@ -149,12 +149,12 @@ instance.interceptors.response.use(
     console.log('data:', res.data)
     console.groupEnd()
 
-    // Toast chỉ cho mutations, không phải GET
-    const isMutation = !['get', 'head', 'options'].includes(method?.toLowerCase())
-    if (isMutation) {
-      const msg = extractSuccessMessage(res.data) ?? `${method?.toUpperCase()} ${url} thanh cong`
-      toast.success(msg)
-    }
+    // Toast chỉ cho mutations, không phải GET (Đã tắt để tránh trùng lặp thông báo hệ thống)
+    // const isMutation = !['get', 'head', 'options'].includes(method?.toLowerCase())
+    // if (isMutation) {
+    //   const msg = extractSuccessMessage(res.data) ?? `${method?.toUpperCase()} ${url} thanh cong`
+    //   toast.success(msg)
+    // }
 
     return res
   },
