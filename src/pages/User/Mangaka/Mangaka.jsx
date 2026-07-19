@@ -123,6 +123,7 @@ import {
   useAssignTantouEditor,
   useNotifications,
   useContracts,
+  useUpdateSeriesStatus,
 } from '@/api/hooks'
 import '@/styles/mangaPage.css'
 import './Mangaka.css'
@@ -365,7 +366,12 @@ export default function Mangaka() {
   const updateChapterStatus = useUpdateChapterStatus()
   const availableTantouEditors = useAvailableTantouEditors()
   const assignTantouEditor = useAssignTantouEditor()
+  const updateSeriesStatus = useUpdateSeriesStatus()
   const { data: contractsRaw = [] } = useContracts({ mangakaId })
+
+  const [sendReviewDialogOpen, setSendReviewDialogOpen] = useState(false)
+  const [selectedSeriesForReview, setSelectedSeriesForReview] = useState(null)
+  const [selectedTantouForReview, setSelectedTantouForReview] = useState('')
 
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectChapterId, setRejectChapterId] = useState(null)
@@ -1520,6 +1526,27 @@ export default function Mangaka() {
     }
   }
 
+  const handleSendSeriesForReviewSubmit = async () => {
+    if (!selectedSeriesForReview || !selectedTantouForReview) return
+    try {
+      await assignTantouEditor.mutateAsync({
+        seriesId: Number(selectedSeriesForReview.id ?? selectedSeriesForReview.seriesid),
+        tantouEditorId: Number(selectedTantouForReview),
+      })
+      await updateSeriesStatus.mutateAsync({
+        id: Number(selectedSeriesForReview.id ?? selectedSeriesForReview.seriesid),
+        status: 'EditorReview',
+      })
+      toast.success('Đã chọn Tantou Editor và gửi duyệt Series thành công!')
+      qc.invalidateQueries({ queryKey: ['series'] })
+      setSendReviewDialogOpen(false)
+      setSelectedSeriesForReview(null)
+      setSelectedTantouForReview('')
+    } catch (err) {
+      toast.error(`Gửi duyệt Series thất bại: ${err?.message ?? 'Lỗi không xác định'}`)
+    }
+  }
+
   function handleLogout() {
     authLogout()
     navigate('/login')
@@ -1615,6 +1642,10 @@ export default function Mangaka() {
               onViewSeries={(s) => {
                 setAnnotateSeries(s.title)
                 setTab('chapter')
+              }}
+              onSendSeriesForReview={(series) => {
+                setSelectedSeriesForReview(series)
+                setSendReviewDialogOpen(true)
               }}
               STATUS_BADGE={STATUS_BADGE}
             />
@@ -1764,6 +1795,49 @@ export default function Mangaka() {
               disabled={updateChapterStatus.isPending || !rejectReason.trim()}
             >
               {updateChapterStatus.isPending ? 'Đang gửi...' : 'Xác nhận từ chối'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={sendReviewDialogOpen} onOpenChange={setSendReviewDialogOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Gửi duyệt Series: {selectedSeriesForReview?.title}</DialogTitle>
+            <DialogDescription>
+              Vui lòng chọn Tantou Editor để gán cho Series và tiến hành gửi duyệt.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-xs">Chọn Tantou Editor</Label>
+              <Select
+                value={selectedTantouForReview}
+                onValueChange={setSelectedTantouForReview}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="— Chọn Tantou Editor —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableTantouEditors.data
+                    ?.filter(t => (t.userid ?? t.userId ?? t.user_id ?? t.id))
+                    .map(t => {
+                      const tid = String(t.userid ?? t.userId ?? t.user_id ?? t.id)
+                      const tname = t.fullname ?? t.fullName ?? t.full_name ?? t.name ?? t.username ?? 'Tantou'
+                      return <SelectItem key={tid} value={tid}>{tname}</SelectItem>
+                    })}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setSendReviewDialogOpen(false); setSelectedSeriesForReview(null); setSelectedTantouForReview(''); }}>Hủy</Button>
+            <Button
+              className="bg-primary text-primary-foreground font-semibold"
+              onClick={handleSendSeriesForReviewSubmit}
+              disabled={!selectedTantouForReview || assignTantouEditor.isPending || updateSeriesStatus.isPending}
+            >
+              {assignTantouEditor.isPending || updateSeriesStatus.isPending ? 'Đang gửi...' : 'Gửi duyệt'}
             </Button>
           </DialogFooter>
         </DialogContent>
