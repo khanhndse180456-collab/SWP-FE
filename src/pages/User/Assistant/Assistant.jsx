@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
+  Briefcase,
   CheckCircle2,
   Clock,
   Handshake,
@@ -10,11 +11,18 @@ import {
   Inbox,
   Layers as LayersIcon,
   Lightbulb,
+  Settings as SettingsIcon,
   TrendingUp,
 } from 'lucide-react'
-import Header from '@/components/User/Header/Header.jsx'
-import Footer from '@/components/User/Footer/Footer.jsx'
-import { WorkspaceHero } from '@/components/layout/WorkspaceHero.jsx'
+import {
+  LayoutDashboard,
+  Send,
+  BarChart3,
+  History as HistoryIcon,
+  User,
+} from 'lucide-react'
+import SidebarNav from '@/components/layout/SidebarNav.jsx'
+import WorkspaceTopBar from '@/components/layout/WorkspaceTopBar.jsx'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,6 +33,8 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { getSession, logout } from '@/lib/auth.js'
 import { useAssistantAssignments } from '@/hooks/useAssistantAssignments.js'
@@ -32,7 +42,15 @@ import { useCollaborationRequests } from '@/hooks/useCollaborationRequests.js'
 import LayerEditor from '@/components/layer/LayerEditor.jsx'
 import CollaborationRequestsDialog from '@/components/CollaborationRequestsDialog.jsx'
 
-const NAV_LINKS = [{ to: '/', label: 'Trang chủ' }]
+const SIDEBAR_ITEMS = [
+  { id: 'dashboard',     label: 'Dashboard',        icon: LayoutDashboard },
+  { id: 'tasks',         label: 'Chapter của tôi',  icon: Briefcase },
+  { id: 'submit',        label: 'Đã gửi Mangaka',   icon: Send },
+  { id: 'history',       label: 'Lịch sử',          icon: HistoryIcon },
+  { id: 'stats',         label: 'Thống kê',         icon: BarChart3 },
+  { id: 'profile',       label: 'Hồ sơ',            icon: User },
+  { id: 'settings',      label: 'Cài đặt',          icon: SettingsIcon },
+]
 
 const STATS = [
   { label: 'Chapter nhận', icon: Inbox, color: 'amber' },
@@ -75,6 +93,8 @@ export default function Assistant() {
   const [taskFilter, setTaskFilter] = useState('all')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [collabDialogOpen, setCollabDialogOpen] = useState(false)
+  const [tab, setTab] = useState('dashboard')
+  const [studioSearch, setStudioSearch] = useState('')
 
   const selectedAssignment = useMemo(
     () => {
@@ -149,32 +169,38 @@ export default function Assistant() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <Header
-        links={NAV_LINKS}
+    <div className="flex min-h-screen bg-slate-900/5 dark:bg-zinc-950">
+      <SidebarNav
+        logoIcon={LayersIcon}
+        appName="MangaPublish"
+        items={SIDEBAR_ITEMS}
+        activeId={tab}
+        onSelect={setTab}
         onLogout={user ? handleLogout : undefined}
-        notificationCount={pendingCount}
-        onNotificationClick={() => setCollabDialogOpen(true)}
+        accentClass="bg-violet-600 text-white"
       />
 
-      <WorkspaceHero
-        className="from-violet-950 to-zinc-950"
-        label="Assistant Workspace"
-        title={`Xin chào${user?.name ? `, ${user.name.split(' ')[0]}` : ''}`}
-        description="Nhận chapter từ Mangaka. Mỗi chapter = nhiều trang. Upload layer theo thứ tự, gộp và gửi."
-      >
-        <div className="mt-5 flex flex-wrap gap-3 text-xs text-zinc-300">
-          <Badge variant="secondary" className="bg-white/10 text-white hover:bg-white/15">
-            <LayersIcon className="size-3" />
-            Layer Editor
-          </Badge>
-          <Badge variant="secondary" className="bg-white/10 text-white hover:bg-white/15">
-            Gộp & gửi cho Mangaka
-          </Badge>
-        </div>
-      </WorkspaceHero>
+      <div className="flex flex-1 flex-col min-w-0">
+        <WorkspaceTopBar
+          user={user}
+          onLogout={user ? handleLogout : undefined}
+        />
+        <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-8 dark:bg-zinc-950/20">
+          <Tabs value={tab} onValueChange={setTab} className="space-y-6">
+            <TabsList className="h-auto flex-wrap">
+              {SIDEBAR_ITEMS.slice(0, 5).map(item => {
+                const Icon = item.icon
+                return (
+                  <TabsTrigger key={item.id} value={item.id} className="gap-2">
+                    <Icon className="size-4" />
+                    {item.label}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
 
-      <main className="page-container flex-1 py-8">
+            {/* DASHBOARD TAB */}
+            <TabsContent value="dashboard" className="space-y-6">
         {/* Banner: cần sửa */}
         {(() => {
           const revisions = assignments.filter(a => String(a.status).toLowerCase() === 'revision')
@@ -416,11 +442,273 @@ export default function Assistant() {
             )}
           </div>
         </div>
-      </main>
+            </TabsContent>
+
+            {/* TASKS TAB: danh sách chapter full-width */}
+            <TabsContent value="tasks" className="space-y-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <CardTitle className="text-base">Chapter được giao</CardTitle>
+                      <CardDescription>Chọn chapter để xử lý</CardDescription>
+                    </div>
+                    <div className="relative w-full sm:w-64">
+                      <Input
+                        placeholder="Tìm chapter..."
+                        value={studioSearch}
+                        onChange={e => setStudioSearch(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="-mb-1 mt-1 flex flex-wrap gap-1 pt-2">
+                    {FILTERS.map(f => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setTaskFilter(f.id)}
+                        className={cn(
+                          'rounded-full border px-2 py-0.5 text-[11px] transition-colors',
+                          taskFilter === f.id
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-muted text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+                        )}
+                      >
+                        {f.label}
+                        {counts[f.id] > 0 && (
+                          <span className={cn(
+                            'ml-1 rounded-full px-1 py-0.5 text-[10px] font-bold',
+                            taskFilter === f.id
+                              ? 'bg-primary/20 text-primary'
+                              : 'bg-muted text-muted-foreground',
+                          )}>
+                            {counts[f.id]}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </CardHeader>
+                <CardContent className="px-0">
+                  {assignmentsLoading ? (
+                    <div className="p-6 text-center text-xs text-muted-foreground">Đang tải…</div>
+                  ) : filteredChapters.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-muted-foreground">Không có chapter nào.</div>
+                  ) : (
+                    <ScrollArea className="max-h-[60vh]">
+                      <ul className="space-y-1 p-3 pt-0">
+                        {filteredChapters
+                          .filter(ch => !studioSearch.trim() || (ch.seriesTitle ?? '').toLowerCase().includes(studioSearch.toLowerCase()))
+                          .map(ch => {
+                            const badge = STATUS_BADGE[(ch.status ?? '').toLowerCase()] ?? STATUS_BADGE.pending
+                            const cover = ch.pages?.find(p => p.url) ?? ch.pages?.[0]
+                            const coverUrl = cover?.url ?? ch.mangakaImageUrl ?? ch.referenceImageUrl ?? null
+                            const notesCount = Array.isArray(ch.notes) ? ch.notes.length : 0
+                            const source = ch._source ?? (ch.id ? 'submission' : ch.contractId ? 'contract' : 'chapter')
+                            const itemKey = `${source}:${ch.id ?? ch.contractId ?? ch.chapterId}`
+                            const displayChapterId = ch.chapterId ?? ch.id
+                            const isSelected = displayChapterId === selectedChapterId
+                            return (
+                              <li key={itemKey}>
+                                <button
+                                  type="button"
+                                  onClick={() => { handleSelectChapter(ch); setTab('dashboard') }}
+                                  className={cn(
+                                    'flex w-full items-start gap-3 rounded-lg p-3 text-left transition-colors',
+                                    isSelected ? 'bg-primary/10' : 'hover:bg-muted/50',
+                                  )}
+                                >
+                                  <span className="shrink-0 size-12 overflow-hidden rounded border bg-muted">
+                                    {coverUrl ? (
+                                      <img src={coverUrl} alt="" className="size-full object-cover" />
+                                    ) : (
+                                      <span className="flex size-full items-center justify-center text-muted-foreground">
+                                        <ImageIcon className="size-4" />
+                                      </span>
+                                    )}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-semibold">
+                                      {ch.seriesTitle}
+                                    </p>
+                                    <p className="truncate text-xs text-muted-foreground">
+                                      Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {ch.pageCount ?? ch.pages?.length ?? 0} trang{ch.id && notesCount > 0 ? ` · ${notesCount} ghi chú` : ''}
+                                    </p>
+                                    <Badge className={cn('mt-1', badge.className)} variant="secondary">
+                                      {badge.label}
+                                    </Badge>
+                                  </div>
+                                </button>
+                              </li>
+                            )
+                          })}
+                      </ul>
+                    </ScrollArea>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* SUBMIT TAB: các chapter đã gửi Mangaka */}
+            <TabsContent value="submit" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Send className="size-4 text-primary" />
+                    Chapter đã gửi Mangaka
+                  </CardTitle>
+                  <CardDescription>
+                    Các chapter đã hoàn tất layer và gửi chờ duyệt.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const submitted = assignments.filter(a => {
+                      const s = String(a.status).toLowerCase()
+                      return s === 'submitted' || s === 'approved'
+                    })
+                    if (submitted.length === 0) {
+                      return <p className="text-sm text-muted-foreground">Chưa có chapter nào được gửi.</p>
+                    }
+                    return (
+                      <ul className="divide-y">
+                        {submitted.map(ch => {
+                          const badge = STATUS_BADGE[String(ch.status).toLowerCase()] ?? STATUS_BADGE.pending
+                          return (
+                            <li key={ch.id ?? ch.chapterId} className="flex items-center justify-between py-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">{ch.seriesTitle}</p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
+                                </p>
+                              </div>
+                              <Badge className={cn(badge.className)} variant="secondary">
+                                {badge.label}
+                              </Badge>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )
+                  })()}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* HISTORY TAB */}
+            <TabsContent value="history" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <HistoryIcon className="size-4 text-primary" />
+                    Lịch sử xử lý
+                  </CardTitle>
+                  <CardDescription>
+                    Các chapter đã hoàn tất (đã duyệt / bị từ chối).
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const closed = assignments.filter(a => {
+                      const s = String(a.status).toLowerCase()
+                      return s === 'approved' || s === 'revision'
+                    })
+                    if (closed.length === 0) {
+                      return <p className="text-sm text-muted-foreground">Chưa có lịch sử.</p>
+                    }
+                    return (
+                      <ul className="divide-y">
+                        {closed.map(ch => {
+                          const badge = STATUS_BADGE[String(ch.status).toLowerCase()] ?? STATUS_BADGE.pending
+                          return (
+                            <li key={ch.id ?? ch.chapterId} className="flex items-center justify-between py-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">{ch.seriesTitle}</p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
+                                </p>
+                              </div>
+                              <Badge className={cn(badge.className)} variant="secondary">
+                                {badge.label}
+                              </Badge>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )
+                  })()}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* STATS TAB: thống kê grid */}
+            <TabsContent value="stats" className="space-y-6">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                {statsDisplayed.map((s, i) => {
+                  const Icon = s.icon
+                  return (
+                    <Card key={i}>
+                      <CardContent className="flex items-center gap-3 p-4">
+                        <span
+                          className={cn(
+                            'flex size-10 items-center justify-center rounded-lg',
+                            `bg-${s.color}-500/10`,
+                          )}
+                        >
+                          <Icon className={cn('size-5', `text-${s.color}-500`)} />
+                        </span>
+                        <div>
+                          <p className="text-xs text-muted-foreground">{s.label}</p>
+                          <p className="text-lg font-bold tabular-nums">{s.value}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            </TabsContent>
+
+            {/* PROFILE / SETTINGS placeholders (giống Mangaka) */}
+            <TabsContent value="profile">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <User className="size-4 text-primary" />
+                    Hồ sơ Assistant
+                  </CardTitle>
+                  <CardDescription>Thông tin cá nhân & liên hệ.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p><span className="text-muted-foreground">Tên:</span> {user?.name ?? '—'}</p>
+                  <p><span className="text-muted-foreground">Email:</span> {user?.email ?? '—'}</p>
+                  <p><span className="text-muted-foreground">Vai trò:</span> Assistant</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="settings">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <SettingsIcon className="size-4 text-primary" />
+                    Cài đặt
+                  </CardTitle>
+                  <CardDescription>Tùy chỉnh workspace của bạn.</CardDescription>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Các tùy chọn sẽ được bổ sung trong phiên bản tiếp theo.
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </main>
+      </div>
 
       <CollaborationRequestsDialog open={collabDialogOpen} onOpenChange={setCollabDialogOpen} />
-
-      <Footer />
     </div>
   )
 }

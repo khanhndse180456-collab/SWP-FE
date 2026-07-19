@@ -178,6 +178,7 @@ export default function ChapterAnnotator({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [uploadUi, setUploadUi] = useState(null)
   const [uploadRejectMessage, setUploadRejectMessage] = useState(null)
+  const [isDragOver, setIsDragOver] = useState(false)
   const [selectedAssistantId, setSelectedAssistantId] = useState(null)
   const [localRosterTick, setLocalRosterTick] = useState(0)
   const [tantouDialogOpen, setTantouDialogOpen] = useState(false)
@@ -241,6 +242,36 @@ export default function ChapterAnnotator({
     return () => {
       window.removeEventListener('mk-assistant-roster-update', onRoster)
       window.removeEventListener('storage', onRoster)
+    }
+  }, [])
+
+  // Chặn browser mở tab mới khi user lỡ thả file ngoài dropzone.
+  // Cũng bật highlight khi kéo file vào page.
+  useEffect(() => {
+    const hasFiles = (e) => {
+      const types = e?.dataTransfer?.types
+      if (!types) return false
+      return Array.from(types).includes('Files')
+    }
+    const onWindowDragOver = (e) => { if (hasFiles(e)) e.preventDefault() }
+    const onWindowDrop = (e) => {
+      if (hasFiles(e)) e.preventDefault()
+      setIsDragOver(false)
+    }
+    const onWindowDragEnter = (e) => { if (hasFiles(e)) setIsDragOver(true) }
+    const onWindowDragLeave = (e) => {
+      // Khi rời window hoặc sang dropzone (target related)
+      if (e.relatedTarget == null) setIsDragOver(false)
+    }
+    window.addEventListener('dragover', onWindowDragOver)
+    window.addEventListener('drop', onWindowDrop)
+    window.addEventListener('dragenter', onWindowDragEnter)
+    window.addEventListener('dragleave', onWindowDragLeave)
+    return () => {
+      window.removeEventListener('dragover', onWindowDragOver)
+      window.removeEventListener('drop', onWindowDrop)
+      window.removeEventListener('dragenter', onWindowDragEnter)
+      window.removeEventListener('dragleave', onWindowDragLeave)
     }
   }, [])
 
@@ -721,31 +752,100 @@ export default function ChapterAnnotator({
 
     try {
       setUploadUi({ series: trimmedSeries, chapter: target.num, pct: 5 })
-      
+
+      // Ưu tiên chapter.serverChapterId (đã lưu server) trước prop, rồi fallback.
+      // Nếu vẫn không có → chapter còn là local nháp → tự đẩy lên server trước.
+      let serverChapterId =
+        target.serverChapterId
+          ?? (Number.isFinite(Number(target.id)) ? Number(target.id) : null)
+          ?? effectiveServerChapterId
+          ?? null
+
+      if (!Number.isFinite(Number(serverChapterId)) || Number(serverChapterId) <= 0) {
+        const num = parseInt(String(target.num), 10) || 1
+        const title = target.title || `Chapter ${num}`
+        const isoDeadline = target.deadline
+          ? new Date(target.deadline).toISOString()
+          : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+        const seriesIdNum = Number(selectedSeriesId)
+        if (!Number.isFinite(seriesIdNum) || seriesIdNum <= 0) {
+          setUploadRejectMessage('Series chưa có ID server — không thể tạo chapter ở đây.')
+          setUploadUi(null)
+          return
+        }
+        try {
+          const res = await createChapterMutation.mutateAsync({
+            seriesid: seriesIdNum,
+            chapternumber: num,
+            title,
+            deadline: isoDeadline,
+          })
+          const respData = res?.data ?? res
+          const realId = Number(respData?.chapterid ?? respData?.id)
+          if (!Number.isFinite(realId) || realId <= 0) {
+            throw new Error('Server không trả về chapter id hợp lệ.')
+          }
+          serverChapterId = realId
+          // Cập nhật local state để UI sync
+          setChapters(prev => prev.map(c =>
+            c.id === target.id
+              ? { ...c, id: String(realId), serverChapterId: realId, isApi: true }
+              : c,
+          ))
+          setActiveChapterId(String(realId))
+        } catch (createErr) {
+          console.error('[upload] auto-create chapter failed:', createErr)
+          setUploadRejectMessage(
+            `Không lưu được chapter lên server: ${createErr?.response?.data?.message ?? createErr?.message ?? 'lỗi không xác định'}. Hãy tạo chapter trước.`,
+          )
+          setUploadUi(null)
+          return
+        }
+      }
+
+      const effectiveId = Number(serverChapterId)
       const currentPagesCount = pages.length
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i]
         const fd = new FormData()
-        fd.append('chapterid', String(effectiveServerChapterId))
+        fd.append('chapterid', String(effectiveId))
         fd.append('pagenumber', String(currentPagesCount + i + 1))
         fd.append('pageFile', file)
-        
+
         await createPage.mutateAsync(fd)
-        
+
         const pct = 10 + Math.round(((i + 1) / fileList.length) * 90)
         setUploadUi({ series: trimmedSeries, chapter: target.num, pct })
       }
-      
+
       toast.success('Đã tải lên các trang thành công!')
-      queryClient.invalidateQueries({ queryKey: ['pages', effectiveServerChapterId] })
+      queryClient.invalidateQueries({ queryKey: ['pages', effectiveId] })
       queryClient.invalidateQueries({ queryKey: ['chapters'] })
     } catch (err) {
-      setUploadRejectMessage(err?.response?.data?.message ?? 'Lỗi khi upload trang lên server.')
+      // Log đầy đủ để debug; hiển thị thông điệp dễ hiểu cho user
+      console.error('[upload] createPage failed:', {
+        status: err?.response?.status,
+        url: err?.response?.config?.url,
+        method: err?.response?.config?.method,
+        body: err?.response?.data,
+        message: err?.message,
+        request: err?.response?.config?.data instanceof FormData
+          ? Array.from(err.response.config.data.entries())
+          : undefined,
+      })
+      const status = err?.response?.status
+      const serverMsg = err?.response?.data?.message ?? err?.message
+      const detail = status
+        ? `HTTP ${status}: ${serverMsg ?? 'không rõ nguyên nhân'}`
+        : (serverMsg ?? 'Lỗi khi upload trang lên server (kiểm tra kết nối mạng/CORS).')
+      setUploadRejectMessage(detail)
     } finally {
       setUploadUi(null)
     }
   }, [
-    selectedSeriesTitle, activeChapterId, seriesChapters, pages, effectiveServerChapterId, createPage, queryClient
+    selectedSeriesTitle, selectedSeriesId, activeChapterId, seriesChapters,
+    pages, effectiveServerChapterId, createPage, createChapterMutation,
+    setChapters, setActiveChapterId, queryClient,
   ])
 
   function onFileChange(e) {
@@ -1791,14 +1891,21 @@ export default function ChapterAnnotator({
 
               <div
                 className={cn(
-                  'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors',
+                  'relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors',
                   canUpload
                     ? 'border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50'
                     : 'cursor-not-allowed border-muted bg-muted/20 opacity-60',
                   uploadUi && 'border-primary bg-primary/5',
+                  isDragOver && canUpload && 'border-primary bg-primary/10 ring-4 ring-primary/20',
                 )}
                 onDrop={canUpload ? onDrop : e => e.preventDefault()}
                 onDragOver={e => e.preventDefault()}
+                onDragEnter={e => { e.preventDefault(); if (canUpload) setIsDragOver(true) }}
+                onDragLeave={e => {
+                  // chỉ tắt khi rời khỏi dropzone hoàn toàn
+                  if (e.currentTarget.contains(e.relatedTarget)) return
+                  setIsDragOver(false)
+                }}
                 onClick={() => { if (canUpload) fileRef.current?.click() }}
                 role={canUpload ? 'button' : undefined}
               >
@@ -1811,13 +1918,24 @@ export default function ChapterAnnotator({
                   disabled={!canUpload}
                   onChange={onFileChange}
                 />
-                <div className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <div className={cn(
+                  'flex size-12 items-center justify-center rounded-xl transition-transform',
+                  isDragOver && canUpload ? 'scale-110 bg-primary text-primary-foreground' : 'bg-primary/10 text-primary',
+                )}>
                   <Upload className="size-5" />
                 </div>
-                <p className="text-sm font-medium">Kéo thả ảnh trang hoặc bấm để chọn</p>
+                <p className="text-sm font-medium">
+                  {isDragOver && canUpload
+                    ? 'Thả ảnh vào đây để upload'
+                    : 'Kéo thả ảnh trang hoặc bấm để chọn'}
+                </p>
                 {uploadUi ? (
                   <p className="text-xs text-primary">
                     Đang tải <strong>{uploadUi.series}</strong> · Ch. <strong>{uploadUi.chapter}</strong> · {uploadUi.pct}%
+                  </p>
+                ) : isDragOver && canUpload ? (
+                  <p className="text-xs font-medium text-primary">
+                    Chấp nhận nhiều ảnh PNG/JPG/WEBP
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
@@ -1933,6 +2051,20 @@ export default function ChapterAnnotator({
                 </span>
               </button>
             ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Overlay hint toàn trang khi đang kéo file vào */}
+      {isDragOver && canUpload ? (
+        <div
+          className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-primary/10 backdrop-blur-sm"
+          aria-hidden="true"
+        >
+          <div className="rounded-2xl border-2 border-dashed border-primary bg-background/80 px-10 py-8 text-center shadow-2xl">
+            <Upload className="mx-auto size-10 text-primary" />
+            <p className="mt-3 text-base font-semibold text-foreground">Thả ảnh để upload vào Ch. {uploadTargetChapter?.num}</p>
+            <p className="mt-1 text-xs text-muted-foreground">PNG / JPG / WEBP — có thể thả nhiều ảnh cùng lúc</p>
           </div>
         </div>
       ) : null}

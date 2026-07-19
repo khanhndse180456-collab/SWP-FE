@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, BookOpen, Calendar, Clock, Loader2, Search, Sparkles, X } from 'lucide-react'
 import SidebarNav from '@/components/layout/SidebarNav.jsx'
+import WorkspaceTopBar from '@/components/layout/WorkspaceTopBar.jsx'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,7 +15,6 @@ import { normalizeStatus, isDebutStatus, isApprovedStatus, isEbStatus, statusLab
 import { CoverThumb } from '@/components/User/Tantou/CoverThumb.jsx'
 import { SubmissionCard } from '@/components/User/Tantou/SubmissionCard.jsx'
 import { StudioChapterCard } from '@/components/User/Tantou/StudioChapterCard.jsx'
-import { SidebarFlow } from '@/components/User/Tantou/SidebarFlow.jsx'
 import TantouPageReview from './TantouPageReview.jsx'
 import './TantouEditor.css'
 
@@ -199,20 +199,22 @@ export default function TantouEditor() {
         activeId={tab}
         onSelect={setTab}
         onLogout={user ? handleLogout : undefined}
-        user={user}
         accentClass="bg-sky-600 text-white"
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="border-b bg-white px-8 py-5 dark:bg-zinc-950">
-          <p className="text-xs font-semibold uppercase tracking-wider text-sky-600">{LABEL_TANTOU_EDITOR}</p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">
-            Xin chào{user?.name ? `, ${user.name}` : ''}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Nhận bản thảo từ Mangaka · viết nhận xét · chuyển {LABEL_EDITOR_BOARD} · theo dõi tiến độ studio.
-          </p>
-        </div>
+        <WorkspaceTopBar
+          user={user}
+          onLogout={user ? handleLogout : undefined}
+          titleSlot={
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-sky-600">{LABEL_TANTOU_EDITOR}</p>
+              <h1 className="text-base font-bold tracking-tight">
+                Xin chào{user?.name ? `, ${user.name}` : ''}
+              </h1>
+            </div>
+          }
+        />
         <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-8 dark:bg-zinc-950/20">
           <Tabs value={tab} onValueChange={setTab} className="space-y-6">
           <TabsList className="h-auto flex-wrap">
@@ -305,7 +307,6 @@ export default function TantouEditor() {
                   </div>
                 )}
               </div>
-              <SidebarFlow onRefresh={loadSeries} />
             </div>
           </TabsContent>
 

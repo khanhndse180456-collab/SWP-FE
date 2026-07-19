@@ -3,12 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { BookOpen, FileText, ImageIcon, ClipboardCheck, Bell } from 'lucide-react'
+import MangakaPendingReviews from './MangakaPendingReviews.jsx'
 
 export default function DashboardView({
   mangakaName,
   stats,
   recentSeries,
   recentNotifications,
+  chapterRows,
   onNavigateTab,
   onSelectSeries,
   STATUS_BADGE,
@@ -78,6 +80,12 @@ export default function DashboardView({
           </CardContent>
         </Card>
       </div>
+
+      {/* Pending composite reviews — Assistant đã gộp layer gửi qua */}
+      <MangakaPendingReviews
+        chapterRows={chapterRows ?? []}
+        onNavigateTab={onNavigateTab}
+      />
 
       {/* Split section */}
       <div className="grid gap-6 md:grid-cols-2">

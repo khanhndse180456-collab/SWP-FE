@@ -20,8 +20,7 @@ import {
   Wand2,
   X,
 } from 'lucide-react'
-import Header from '@/components/User/Header/Header.jsx'
-import Footer from '@/components/User/Footer/Footer.jsx'
+import SidebarNav from '@/components/layout/SidebarNav.jsx'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -685,8 +684,6 @@ export default function PageLayerWorkspace() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header links={NAV_LINKS} onLogout={user ? handleLogout : undefined} />
-
       <div className="border-b bg-muted/30">
         <div className="page-container py-3">
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -946,8 +943,6 @@ export default function PageLayerWorkspace() {
           </aside>
         </div>
       </main>
-
-      <Footer />
 
       <UploadLayerDialog
         open={uploadOpen}

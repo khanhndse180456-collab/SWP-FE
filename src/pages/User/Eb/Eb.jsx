@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList } from "lucide-react";
 import SidebarNav from "@/components/layout/SidebarNav.jsx";
+import WorkspaceTopBar from "@/components/layout/WorkspaceTopBar.jsx";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -107,7 +108,6 @@ export default function Eb() {
         activeId={tab}
         onSelect={setTab}
         onLogout={user ? handleLogout : undefined}
-        user={user}
         accentClass="bg-emerald-600 text-white"
       />
 
@@ -216,15 +216,18 @@ export default function Eb() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="border-b bg-white px-8 py-5 dark:bg-zinc-950">
-          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">{LABEL_EDITOR_BOARD} · Hội đồng</p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">
-            Xin chào{user?.name ? `, ${user.name}` : ""}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Nhập điểm từng thành viên Hội đồng — bảng tổng hợp cập nhật realtime từ API.
-          </p>
-        </div>
+        <WorkspaceTopBar
+          user={user}
+          onLogout={user ? handleLogout : undefined}
+          titleSlot={
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">{LABEL_EDITOR_BOARD} · Hội đồng</p>
+              <h1 className="text-base font-bold tracking-tight">
+                Xin chào{user?.name ? `, ${user.name}` : ""}
+              </h1>
+            </div>
+          }
+        />
 
         {tab === "queue" && selectedId && activeSubmission && (() => {
           const assessment = getQueueAssessment(selectedId);

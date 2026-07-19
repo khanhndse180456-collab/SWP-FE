@@ -99,8 +99,22 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       // khiến originalImage/resultImage không bao giờ được set lúc refresh() (vd sau F5),
       // dù backend đã lưu Pageimageurl đúng.
       const p = pageRes?.data ?? pageRes;
-      setOriginalImage(p?.pageimageurl ?? p?.Pageimageurl ?? null);
-      setResultImage(p?.pageimageurl ?? p?.Pageimageurl ?? null);
+      // original = ảnh gốc, result = ảnh sau khi Assistant gộp layer.
+      // Thường BE chỉ lưu 1 trường Pageimageurl — sau khi finalize() BE ghi đè
+      // thẳng Pageimageurl = ảnh gộp, nên cả 2 cùng URL là đúng. Phòng trường hợp
+      // BE tách riêng (compositeImageUrl / merged_image_url) thì vẫn nhận ra.
+      const originalUrl =
+        p?.pageimageurl ?? p?.Pageimageurl ?? p?.originalImageUrl ?? null;
+      const resultUrl =
+        p?.compositeimageurl
+        ?? p?.compositeImageUrl
+        ?? p?.merged_image_url
+        ?? p?.mergedImageUrl
+        ?? p?.pageimageurl
+        ?? p?.Pageimageurl
+        ?? null;
+      setOriginalImage(originalUrl);
+      setResultImage(resultUrl);
 
       const rawLayers = Array.isArray(layersRes) ? layersRes : [];
       setLayers(rawLayers.map(apiLayerToUi));

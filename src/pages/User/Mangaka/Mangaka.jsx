@@ -23,9 +23,8 @@ import {
   UserPlus,
   Workflow,
 } from 'lucide-react'
-import Header from '@/components/User/Header/Header.jsx'
-import Footer from '@/components/User/Footer/Footer.jsx'
 import SidebarNav from '@/components/layout/SidebarNav.jsx'
+import WorkspaceTopBar from '@/components/layout/WorkspaceTopBar.jsx'
 import { WorkspaceHero } from '@/components/layout/WorkspaceHero.jsx'
 import {
   LayoutDashboard,
@@ -33,14 +32,11 @@ import {
   FileSignature,
   Settings as SettingsIcon,
   BarChart3,
-  User,
-  Bell,
 } from 'lucide-react'
 import DashboardView from './DashboardView.jsx'
 import SeriesView from './SeriesView.jsx'
 import ChapterView from './ChapterView.jsx'
 import PageView from './PageView.jsx'
-import ProfileView from './ProfileView.jsx'
 import ContractsView from './ContractsView.jsx'
 import StatsView from './StatsView.jsx'
 import SettingsView from './SettingsView.jsx'
@@ -138,8 +134,6 @@ const SIDEBAR_ITEMS = [
   { id: 'assistants',    label: 'Assistant',         icon: UserPlus },
   { id: 'contract',      label: 'Hợp đồng',          icon: FileSignature },
   { id: 'stats',         label: 'Thống kê',          icon: BarChart3 },
-  { id: 'notifications', label: 'Thông báo',         icon: Bell },
-  { id: 'profile',       label: 'Profile của tôi',   icon: User },
   { id: 'settings',      label: 'Cài đặt',           icon: SettingsIcon },
 ]
 
@@ -154,6 +148,8 @@ const STATUS_BADGE = {
   draft: { label: 'Nháp', className: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-500/15 dark:text-zinc-400' },
   assistant: { label: 'Chờ Assistant', className: 'bg-violet-100 text-violet-700 hover:bg-violet-100 dark:bg-violet-500/15 dark:text-violet-400' },
   review: { label: 'Chờ duyệt', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400' },
+  ready: { label: 'Đã gộp — chờ duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
+  Ready: { label: 'Đã gộp — chờ duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
   tantou: { label: `Chờ ${LABEL_TANTOU_EDITOR}`, className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
   done: { label: 'Hoàn tất', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-400' },
 }
@@ -1573,11 +1569,15 @@ export default function Mangaka() {
         activeId={tab}
         onSelect={setTab}
         onLogout={handleLogout}
-        user={user}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
+
+        <WorkspaceTopBar
+          user={user}
+          onLogout={handleLogout}
+        />
 
         {/* Body Container */}
         <main className="flex-1 overflow-y-auto p-8 bg-zinc-50/50 dark:bg-zinc-950/20">
@@ -1590,6 +1590,7 @@ export default function Mangaka() {
                 inProgress: chapterRows.filter(c => c.status === 'InProduction').length,
                 completed: chapterRows.filter(c => c.status === 'Published' || c.status === 'done').length,
               }}
+              chapterRows={chapterRows}
               recentSeries={seriesList.slice(0, 4)}
               recentNotifications={notifications}
               onNavigateTab={setTab}
@@ -1684,41 +1685,6 @@ export default function Mangaka() {
 
           {tab === 'stats' && (
             <StatsView />
-          )}
-
-          {tab === 'notifications' && (
-            <div className="space-y-4 max-w-3xl">
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">Thông báo</h1>
-                <p className="text-sm text-muted-foreground">Tất cả các thông báo hoạt động của bạn.</p>
-              </div>
-              <Card className="border bg-card">
-                <CardContent className="p-6 divide-y space-y-4">
-                  {notifications.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-6">Không có thông báo nào.</p>
-                  ) : (
-                    notifications.map(n => (
-                      <div key={n.id} className="flex items-start gap-4 pt-4 first:pt-0">
-                        <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg">
-                          <Bell className="size-4" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-bold text-foreground">{n.title || n.message}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{n.content || n.description}</p>
-                          <p className="text-[10px] text-muted-foreground mt-2">
-                            {n.createdat ? new Date(n.createdat).toLocaleString('vi-VN') : 'Vừa xong'}
-                          </p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {tab === 'profile' && (
-            <ProfileView user={user} />
           )}
 
           {tab === 'settings' && (

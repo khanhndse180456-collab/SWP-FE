@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
  *  - activeId: string
  *  - onSelect: (id) => void
  *  - onLogout: () => void
- *  - user: any               thông tin user hiện tại (chỉ dùng cho avatar/tooltip nếu muốn)
+ *  - user: any               thông tin user hiện tại (chỉ dùng cho tooltip đăng xuất)
  *  - footerSlot: ReactNode   nút custom ở dưới cùng (vd. "Về workspace khác")
  *  - accentClass: string     class cho box icon logo, ví dụ "bg-primary"
  */

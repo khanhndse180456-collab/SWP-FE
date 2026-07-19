@@ -12,8 +12,6 @@ import {
   Sparkles,
   Upload,
 } from 'lucide-react'
-import Header from '@/components/User/Header/Header.jsx'
-import Footer from '@/components/User/Footer/Footer.jsx'
 import { getSession, logout } from '@/lib/auth.js'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -83,9 +81,7 @@ function DetailShell({ children, onLogout }) {
   const user = getSession()
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Header links={NAV_LINKS} onLogout={user ? onLogout : undefined} />
       <main className="page-container flex-1 py-8">{children}</main>
-      <Footer />
     </div>
   )
 }

@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Calendar, Clock, Loader2, Search, Sparkles, X } from 'lucide-react'
-import Header from '@/components/User/Header/Header.jsx'
-import Footer from '@/components/User/Footer/Footer.jsx'
 import { WorkspaceHero } from '@/components/layout/WorkspaceHero.jsx'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +15,6 @@ import { useTantouWorkspace } from '@/hooks/Usetantouworkspace.js'
 import { CoverThumb } from '@/components/User/Tantou/CoverThumb.jsx'
 import { SubmissionCard } from '@/components/User/Tantou/SubmissionCard.jsx'
 import { StudioChapterCard } from '@/components/User/Tantou/StudioChapterCard.jsx'
-import { SidebarFlow } from '@/components/User/Tantou/SidebarFlow.jsx'
 import TantouPageReview from './TantouPageReview.jsx'
 import './TantouEditor.css'
 
@@ -217,7 +214,6 @@ export default function TantouEditor() {
     }
     return (
       <div className="flex min-h-screen flex-col bg-background">
-        <Header links={NAV_LINKS} onLogout={user ? handleLogout : undefined} />
         <main className="page-container flex-1 py-8">
           <TantouPageReview
             submission={submission}
@@ -242,7 +238,6 @@ export default function TantouEditor() {
   // ── Main render ───────────────────────────────────────────────────────────
   return (
     <div className="ws-page--tantou flex min-h-screen flex-col bg-background">
-      <Header links={NAV_LINKS} onLogout={user ? handleLogout : undefined} />
 
       <WorkspaceHero
         className="from-sky-950 to-zinc-950"
@@ -396,7 +391,6 @@ export default function TantouEditor() {
                   </div>
                 )}
               </div>
-              <SidebarFlow onRefresh={loadSeries} />
             </div>
           </TabsContent>
 
@@ -581,8 +575,6 @@ export default function TantouEditor() {
           </TabsContent>
         </Tabs>
       </main>
-
-      <Footer />
     </div>
   )
 }
