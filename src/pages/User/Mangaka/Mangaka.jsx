@@ -1393,7 +1393,7 @@ export default function Mangaka() {
           setLocalSeriesList(prev => prev.map(s => s.title === newSeries.title ? updatedSeries : s))
         }
         toast.success('Đã tạo series trên server!')
-        navigate(seriesPath(updatedSeries), { state: { tab: 'annotate', series: updatedSeries.title } })
+        setTab('series')
       },
       onError: (err) => {
         const body = err?.response?.data
