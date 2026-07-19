@@ -24,18 +24,23 @@ function apiLayerToUi(raw) {
       index: 0,
     };
   }
+  const rawOpacity = raw.opacity ?? raw.Opacity ?? null;
+  const opacityVal = rawOpacity !== null
+    ? (Number(rawOpacity) <= 1.0 ? Number(rawOpacity) * 100 : Number(rawOpacity))
+    : 100;
+
   return {
     id: String(raw.layerid ?? raw.Layerid ?? raw.id ?? raw._id ?? ""),
     name: String(
-      raw.layername ?? raw.LayerName ?? raw.name ?? `Layer ${raw.index ?? 0}`,
+      raw.layer_name ?? raw.layername ?? raw.LayerName ?? raw.name ?? `Layer ${raw.index ?? 0}`
     ),
-    imageUrl: raw.fileurl ?? raw.Fileurl ?? raw.imageUrl ?? raw.url ?? "",
-    visible: raw.isvisible ?? raw.isVisible ?? raw.IsVisible ?? true,
-    opacity: Number(raw.opacity ?? raw.Opacity ?? 100),
+    imageUrl: raw.file_url ?? raw.fileurl ?? raw.Fileurl ?? raw.imageUrl ?? raw.url ?? "",
+    visible: raw.is_visible ?? raw.isvisible ?? raw.isVisible ?? raw.IsVisible ?? true,
+    opacity: opacityVal,
     blendMode: BLEND_OPTIONS.includes(raw.blendMode) ? raw.blendMode : "normal",
-    index: Number(raw.index ?? raw.zIndex ?? 0),
+    index: Number(raw.z_index ?? raw.index ?? raw.zIndex ?? 0),
     currentVersionNo:
-      raw.versionnumber ?? raw.versionNumber ?? raw.currentVersionNo ?? 1,
+      raw.version_number ?? raw.versionnumber ?? raw.versionNumber ?? raw.currentVersionNo ?? 1,
   };
 }
 

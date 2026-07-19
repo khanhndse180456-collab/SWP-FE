@@ -10,13 +10,14 @@ export const assistantLayersService = {
   },
 
   // Backend nhan: layerFile (IFormFile), pageid, uploaderid, layername, zindex, opacity
-  uploadLayer(pageId, { file, index, uploaderId, layerName }) {
+  uploadLayer(pageId, { file, index, uploaderId, layerName, opacity = 100 }) {
     const fd = new FormData()
     fd.append('layerFile', file)
     fd.append('pageid', String(pageId))
     if (uploaderId != null) fd.append('uploaderid', String(uploaderId))
     if (layerName) fd.append('layername', layerName)
     if (index != null) fd.append('zindex', String(index))
+    fd.append('opacity', (Number(opacity) / 100).toFixed(2))
     return axios.post('/PageLayers', fd).then(unwrap)
   },
 
@@ -25,7 +26,7 @@ export const assistantLayersService = {
     const fd = new FormData()
     if (patch.layerName !== undefined) fd.append('layername', patch.layerName)
     if (patch.zIndex !== undefined) fd.append('zindex', String(patch.zIndex))
-    if (patch.opacity !== undefined) fd.append('opacity', Number(patch.opacity).toFixed(2))
+    if (patch.opacity !== undefined) fd.append('opacity', (Number(patch.opacity) / 100).toFixed(2))
     if (patch.versionNumber !== undefined) fd.append('versionnumber', String(patch.versionNumber))
     if (patch.file !== undefined) fd.append('layerFile', patch.file)
     return axios.put(`/PageLayers/${layerId}`, fd).then(unwrap)

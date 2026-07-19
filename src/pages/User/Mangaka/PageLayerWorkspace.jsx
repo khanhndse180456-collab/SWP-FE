@@ -48,10 +48,10 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { getSession, logout } from '@/lib/auth.js'
-import { usePageLayers } from '@/hooks/usePageLayers.js'
 import {
   usePageById,
   usePages,
+  usePageLayers,
   useCreatePageLayer,
   useUpdatePageLayer,
   useDeletePageLayer,
@@ -434,15 +434,15 @@ export default function PageLayerWorkspace() {
 
   const allLayers = useMemo(() => {
     const serverItems = serverLayers.map((l, i) => ({
-      id: l.id ?? l.layerId ?? `srv-${i}`,
-      serverId: l.id ?? l.layerId,
-      name: l.layerName ?? l.name ?? `Layer ${i + 1}`,
-      layerType: l.layerType ?? l.type ?? 'other',
-      imageUrl: l.imageUrl ?? l.url ?? l.fileUrl,
+      id: l.id ?? l.layerid ?? l.layer_id ?? l.layerId ?? `srv-${i}`,
+      serverId: l.id ?? l.layerid ?? l.layer_id ?? l.layerId,
+      name: l.layer_name ?? l.layername ?? l.layerName ?? l.name ?? `Layer ${i + 1}`,
+      layerType: l.layer_type ?? l.layertype ?? l.layerType ?? l.type ?? 'other',
+      imageUrl: l.file_url ?? l.fileurl ?? l.fileUrl ?? l.imageUrl ?? l.url,
       dataUrl: null,
-      visible: l.visible !== false,
-      index: l.index ?? l.sortOrder ?? i,
-      createdAt: l.createdAt,
+      visible: l.is_visible !== false && l.isvisible !== false && l.visible !== false,
+      index: Number(l.z_index ?? l.zindex ?? l.index ?? l.sortOrder ?? i),
+      createdAt: l.created_at ?? l.createdat ?? l.createdAt,
     }))
     const localItems = localLayers.map((l, i) => ({
       id: l.localId,
