@@ -544,7 +544,7 @@ export default function Mangaka() {
         series: seriesTitle,
         num: c.chapternumber ?? c.Chapternumber ?? 1,
         title: c.title ?? `Chapter ${c.chapternumber}`,
-        pages: c.pages?.length ?? 0,
+        pages: c.pageCount ?? c.pagecount ?? c.PageCount ?? c.Pagecount ?? c.pages?.length ?? 0,
         createdAt: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
         deadline: c.deadline,
         status: status,
