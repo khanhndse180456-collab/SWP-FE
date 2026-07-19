@@ -43,13 +43,13 @@ import LayerEditor from '@/components/layer/LayerEditor.jsx'
 import CollaborationRequestsDialog from '@/components/CollaborationRequestsDialog.jsx'
 
 const SIDEBAR_ITEMS = [
-  { id: 'dashboard',     label: 'Dashboard',        icon: LayoutDashboard },
-  { id: 'tasks',         label: 'Chapter của tôi',  icon: Briefcase },
-  { id: 'submit',        label: 'Đã gửi Mangaka',   icon: Send },
-  { id: 'history',       label: 'Lịch sử',          icon: HistoryIcon },
-  { id: 'stats',         label: 'Thống kê',         icon: BarChart3 },
-  { id: 'profile',       label: 'Hồ sơ',            icon: User },
-  { id: 'settings',      label: 'Cài đặt',          icon: SettingsIcon },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'tasks', label: 'Chapter của tôi', icon: Briefcase },
+  { id: 'submit', label: 'Đã gửi Mangaka', icon: Send },
+  { id: 'history', label: 'Lịch sử', icon: HistoryIcon },
+  { id: 'stats', label: 'Thống kê', icon: BarChart3 },
+  { id: 'profile', label: 'Hồ sơ', icon: User },
+  { id: 'settings', label: 'Cài đặt', icon: SettingsIcon },
 ]
 
 const STATS = [
@@ -201,247 +201,247 @@ export default function Assistant() {
 
             {/* DASHBOARD TAB */}
             <TabsContent value="dashboard" className="space-y-6">
-        {/* Banner: cần sửa */}
-        {(() => {
-          const revisions = assignments.filter(a => String(a.status).toLowerCase() === 'revision')
-          if (!revisions.length) return null
-          return (
-            <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
-              <AlertTriangle className="size-5 shrink-0 text-red-500" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                  {revisions.length} chapter bị từ chối — cần sửa lại
-                </p>
-                <p className="text-xs text-red-600/80 dark:text-red-400/70">
-                  Xem ghi chú ở dưới editor, upload layer sửa rồi gộp & gửi lại.
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0 border-red-300 text-red-600 hover:bg-red-100"
-                onClick={() => setTaskFilter('revision')}
-              >
-                Xem ngay
-              </Button>
-            </div>
-          )
-        })()}
-
-        {/* Banner: có yêu cầu hợp tác */}
-        {pendingCount > 0 && (
-          <Card
-            className="mb-6 cursor-pointer border-violet-200 bg-gradient-to-br from-violet-500/5 via-background to-background transition-colors hover:border-violet-400 hover:bg-violet-500/10"
-            onClick={() => setCollabDialogOpen(true)}
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Handshake className="size-4 text-violet-600" />
-                {pendingCount} yêu cầu hợp tác mới
-              </CardTitle>
-              <CardDescription>
-                Nhấn để xem chi tiết và phản hồi.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        )}
-
-        {/* Main: 2 cột */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-          {/* LEFT: danh sách chapter */}
-          <aside className="space-y-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Chapter được giao</CardTitle>
-                <CardDescription>Chọn chapter để xử lý</CardDescription>
-                <div className="-mb-1 mt-1 flex flex-wrap gap-1 pt-2">
-                  {FILTERS.map(f => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => setTaskFilter(f.id)}
-                      className={cn(
-                        'rounded-full border px-2 py-0.5 text-[11px] transition-colors',
-                        taskFilter === f.id
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-muted text-muted-foreground hover:border-foreground/30 hover:text-foreground',
-                      )}
+              {/* Banner: cần sửa */}
+              {(() => {
+                const revisions = assignments.filter(a => String(a.status).toLowerCase() === 'revision')
+                if (!revisions.length) return null
+                return (
+                  <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
+                    <AlertTriangle className="size-5 shrink-0 text-red-500" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                        {revisions.length} chapter bị từ chối — cần sửa lại
+                      </p>
+                      <p className="text-xs text-red-600/80 dark:text-red-400/70">
+                        Xem ghi chú ở dưới editor, upload layer sửa rồi gộp & gửi lại.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 border-red-300 text-red-600 hover:bg-red-100"
+                      onClick={() => setTaskFilter('revision')}
                     >
-                      {f.label}
-                      {counts[f.id] > 0 && (
-                        <span className={cn(
-                          'ml-1 rounded-full px-1 py-0.5 text-[10px] font-bold',
-                          taskFilter === f.id
-                            ? 'bg-primary/20 text-primary'
-                            : 'bg-muted text-muted-foreground',
-                        )}>
-                          {counts[f.id]}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </CardHeader>
-              <CardContent className="px-0">
-                {assignmentsLoading ? (
-                  <div className="p-6 text-center text-xs text-muted-foreground">Đang tải…</div>
-                ) : filteredChapters.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-muted-foreground">Không có chapter nào.</div>
-                ) : (
-                  <div className="max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
-                    <ul className="space-y-1 p-3 pt-0">
-                      {filteredChapters.map(ch => {
-                        const badge = STATUS_BADGE[(ch.status ?? '').toLowerCase()] ?? STATUS_BADGE.pending
-                        const cover = ch.pages?.find(p => p.url) ?? ch.pages?.[0]
-                        const coverUrl = cover?.url ?? ch.mangakaImageUrl ?? ch.referenceImageUrl ?? null
-                        const notesCount = Array.isArray(ch.notes) ? ch.notes.length : 0
-                        // Use composite key to match deduplication logic
-                        const source = ch._source ?? (ch.id ? 'submission' : ch.contractId ? 'contract' : 'chapter')
-                        const itemKey = `${source}:${ch.id ?? ch.contractId ?? ch.chapterId}`
-                        const displayChapterId = ch.chapterId ?? ch.id
-                        const isSelected = displayChapterId === selectedChapterId
-                        return (
-                          <li key={itemKey}>
-                            <button
-                              type="button"
-                              onClick={() => handleSelectChapter(ch)}
-                              className={cn(
-                                'flex w-full items-start gap-3 rounded-lg p-3 text-left transition-colors',
-                                isSelected ? 'bg-primary/10' : 'hover:bg-muted/50',
-                              )}
-                            >
-                              <span className="shrink-0 size-12 overflow-hidden rounded border bg-muted">
-                                {coverUrl ? (
-                                  <img src={coverUrl} alt="" className="size-full object-cover" />
-                                ) : (
-                                  <span className="flex size-full items-center justify-center text-muted-foreground">
-                                    <ImageIcon className="size-4" />
-                                  </span>
-                                )}
+                      Xem ngay
+                    </Button>
+                  </div>
+                )
+              })()}
+
+              {/* Banner: có yêu cầu hợp tác */}
+              {pendingCount > 0 && (
+                <Card
+                  className="mb-6 cursor-pointer border-violet-200 bg-gradient-to-br from-violet-500/5 via-background to-background transition-colors hover:border-violet-400 hover:bg-violet-500/10"
+                  onClick={() => setCollabDialogOpen(true)}
+                >
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Handshake className="size-4 text-violet-600" />
+                      {pendingCount} yêu cầu hợp tác mới
+                    </CardTitle>
+                    <CardDescription>
+                      Nhấn để xem chi tiết và phản hồi.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              )}
+
+              {/* Main: 2 cột */}
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+                {/* LEFT: danh sách chapter */}
+                <aside className="space-y-4">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Chapter được giao</CardTitle>
+                      <CardDescription>Chọn chapter để xử lý</CardDescription>
+                      <div className="-mb-1 mt-1 flex flex-wrap gap-1 pt-2">
+                        {FILTERS.map(f => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setTaskFilter(f.id)}
+                            className={cn(
+                              'rounded-full border px-2 py-0.5 text-[11px] transition-colors',
+                              taskFilter === f.id
+                                ? 'border-primary bg-primary/10 text-primary'
+                                : 'border-muted text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+                            )}
+                          >
+                            {f.label}
+                            {counts[f.id] > 0 && (
+                              <span className={cn(
+                                'ml-1 rounded-full px-1 py-0.5 text-[10px] font-bold',
+                                taskFilter === f.id
+                                  ? 'bg-primary/20 text-primary'
+                                  : 'bg-muted text-muted-foreground',
+                              )}>
+                                {counts[f.id]}
                               </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold">
-                                  {ch.seriesTitle}
-                                </p>
-                                <p className="truncate text-xs text-muted-foreground">
-                                  Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {ch.pageCount ?? ch.pages?.length ?? 0} trang{ch.id && notesCount > 0 ? ` · ${notesCount} ghi chú` : ''}
-                                </p>
-                                <Badge className={cn('mt-1', badge.className)} variant="secondary">
-                                  {badge.label}
-                                </Badge>
-                              </div>
-                            </button>
-                          </li>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="px-0">
+                      {assignmentsLoading ? (
+                        <div className="p-6 text-center text-xs text-muted-foreground">Đang tải…</div>
+                      ) : filteredChapters.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-muted-foreground">Không có chapter nào.</div>
+                      ) : (
+                        <div className="max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
+                          <ul className="space-y-1 p-3 pt-0">
+                            {filteredChapters.map(ch => {
+                              const badge = STATUS_BADGE[(ch.status ?? '').toLowerCase()] ?? STATUS_BADGE.pending
+                              const cover = ch.pages?.find(p => p.url) ?? ch.pages?.[0]
+                              const coverUrl = cover?.url ?? ch.mangakaImageUrl ?? ch.referenceImageUrl ?? null
+                              const notesCount = Array.isArray(ch.notes) ? ch.notes.length : 0
+                              // Use composite key to match deduplication logic
+                              const source = ch._source ?? (ch.id ? 'submission' : ch.contractId ? 'contract' : 'chapter')
+                              const itemKey = `${source}:${ch.id ?? ch.contractId ?? ch.chapterId}`
+                              const displayChapterId = ch.chapterId ?? ch.id
+                              const isSelected = displayChapterId === selectedChapterId
+                              return (
+                                <li key={itemKey}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectChapter(ch)}
+                                    className={cn(
+                                      'flex w-full items-start gap-3 rounded-lg p-3 text-left transition-colors',
+                                      isSelected ? 'bg-primary/10' : 'hover:bg-muted/50',
+                                    )}
+                                  >
+                                    <span className="shrink-0 size-12 overflow-hidden rounded border bg-muted">
+                                      {coverUrl ? (
+                                        <img src={coverUrl} alt="" className="size-full object-cover" />
+                                      ) : (
+                                        <span className="flex size-full items-center justify-center text-muted-foreground">
+                                          <ImageIcon className="size-4" />
+                                        </span>
+                                      )}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-semibold">
+                                        {ch.seriesTitle}
+                                      </p>
+                                      <p className="truncate text-xs text-muted-foreground">
+                                        Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {ch.pageCount ?? ch.pages?.length ?? 0} trang{ch.id && notesCount > 0 ? ` · ${notesCount} ghi chú` : ''}
+                                      </p>
+                                      <Badge className={cn('mt-1', badge.className)} variant="secondary">
+                                        {badge.label}
+                                      </Badge>
+                                    </div>
+                                  </button>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Stats */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <TrendingUp className="size-4 text-primary" />
+                        Thống kê
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {statsDisplayed.map((s, i) => {
+                        const Icon = s.icon
+                        return (
+                          <div key={i} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Icon className={cn('size-4', `text-${s.color}-500`)} />
+                              <span className="text-xs text-muted-foreground">{s.label}</span>
+                            </div>
+                            <span className="font-semibold tabular-nums">{s.value}</span>
+                          </div>
                         )
                       })}
-                    </ul>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    </CardContent>
+                  </Card>
 
-            {/* Stats */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingUp className="size-4 text-primary" />
-                  Thống kê
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {statsDisplayed.map((s, i) => {
-                  const Icon = s.icon
-                  return (
-                    <div key={i} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Icon className={cn('size-4', `text-${s.color}-500`)} />
-                        <span className="text-xs text-muted-foreground">{s.label}</span>
-                      </div>
-                      <span className="font-semibold tabular-nums">{s.value}</span>
+                  {/* Process guide */}
+                  <Card className="border-primary/20 bg-primary/5">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Lightbulb className="size-4 text-primary" />
+                        Quy trình
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ol className="relative space-y-2 border-l border-muted pl-5">
+                        {[
+                          'Chọn chapter bên trái',
+                          'Chọn trang trong editor',
+                          'Upload layer theo thứ tự (0, 1, 2...)',
+                          'Điều chỉnh hiển thị / opacity',
+                          'Bấm "Gộp layer" để xuất ảnh hoàn chỉnh',
+                          'Bấm "Gửi Mangaka" khi đã xong tất cả trang',
+                        ].map((text, i) => (
+                          <li key={i} className="relative">
+                            <span className="absolute -left-[26px] flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground ring-2 ring-card">
+                              {i + 1}
+                            </span>
+                            <p className="text-xs text-muted-foreground">{text}</p>
+                          </li>
+                        ))}
+                      </ol>
+                    </CardContent>
+                  </Card>
+                </aside>
+
+                {/* RIGHT: Layer Editor */}
+                <div className="flex min-h-[calc(100vh-200px)] flex-col">
+                  {selectedAssignment ? (
+                    <div className="relative flex h-full min-h-0 flex-col">
+                      {/* Determine if this is a submission (has id field but no chapterId) */}
+                      {(() => {
+                        const isSubmission = Boolean(selectedAssignment.id) && !selectedAssignment.chapterId
+                        const pages = isSubmission && selectedAssignment.mangakaImageUrl
+                          ? [{ id: `sub-${selectedAssignment.id}-0`, url: selectedAssignment.mangakaImageUrl, pageNum: 1 }]
+                          : (selectedAssignment.pages ?? []).map(p => ({
+                            id: p.id,
+                            url: p.url,
+                            pageNum: p.pageNum,
+                          }))
+                        return (
+                          <LayerEditor
+                            chapter={{
+                              seriesTitle: selectedAssignment.seriesTitle,
+                              chapterNum: selectedAssignment.chapterNum,
+                              chapterId: selectedAssignment.chapterId,
+                              pages,
+                            }}
+                            pageId={isSubmission ? undefined : selectedAssignment.pages?.[0]?.id}
+                            pageIssues={isSubmission ? (selectedAssignment.notes ?? []) : undefined}
+                            onSubmitted={() => {
+                              void refresh()
+                              toast.success('Đã gửi chapter. Đang tải lại danh sách…')
+                            }}
+                          />
+                        )
+                      })()}
                     </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
-
-            {/* Process guide */}
-            <Card className="border-primary/20 bg-primary/5">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Lightbulb className="size-4 text-primary" />
-                  Quy trình
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ol className="relative space-y-2 border-l border-muted pl-5">
-                  {[
-                    'Chọn chapter bên trái',
-                    'Chọn trang trong editor',
-                    'Upload layer theo thứ tự (0, 1, 2...)',
-                    'Điều chỉnh hiển thị / opacity',
-                    'Bấm "Gộp layer" để xuất ảnh hoàn chỉnh',
-                    'Bấm "Gửi Mangaka" khi đã xong tất cả trang',
-                  ].map((text, i) => (
-                    <li key={i} className="relative">
-                      <span className="absolute -left-[26px] flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground ring-2 ring-card">
-                        {i + 1}
-                      </span>
-                      <p className="text-xs text-muted-foreground">{text}</p>
-                    </li>
-                  ))}
-                </ol>
-              </CardContent>
-            </Card>
-          </aside>
-
-          {/* RIGHT: Layer Editor */}
-          <div className="flex min-h-[calc(100vh-200px)] flex-col">
-            {selectedAssignment ? (
-              <div className="relative flex h-full min-h-0 flex-col">
-                {/* Determine if this is a submission (has id field but no chapterId) */}
-                {(() => {
-                  const isSubmission = Boolean(selectedAssignment.id) && !selectedAssignment.chapterId
-                  const pages = isSubmission && selectedAssignment.mangakaImageUrl
-                    ? [{ id: `sub-${selectedAssignment.id}-0`, url: selectedAssignment.mangakaImageUrl, pageNum: 1 }]
-                    : (selectedAssignment.pages ?? []).map(p => ({
-                        id: p.id,
-                        url: p.url,
-                        pageNum: p.pageNum,
-                      }))
-                  return (
-                    <LayerEditor
-                      chapter={{
-                        seriesTitle: selectedAssignment.seriesTitle,
-                        chapterNum: selectedAssignment.chapterNum,
-                        chapterId: selectedAssignment.chapterId,
-                        pages,
-                      }}
-                      pageId={isSubmission ? undefined : selectedAssignment.pages?.[0]?.id}
-                      pageIssues={isSubmission ? (selectedAssignment.notes ?? []) : undefined}
-                      onSubmitted={() => {
-                        void refresh()
-                        toast.success('Đã gửi chapter. Đang tải lại danh sách…')
-                      }}
-                    />
-                  )
-                })()}
+                  ) : (
+                    <Card className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
+                      <ImageIcon className="size-12 text-muted-foreground/40" />
+                      <p className="text-sm text-muted-foreground">
+                        Chọn một chapter bên trái để bắt đầu.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Upload layer → Gộp → Gửi Mangaka
+                      </p>
+                    </Card>
+                  )}
+                </div>
               </div>
-            ) : (
-              <Card className="flex flex-1 flex-col items-center justify-center gap-3 py-20 text-center">
-                <ImageIcon className="size-12 text-muted-foreground/40" />
-                <p className="text-sm text-muted-foreground">
-                  Chọn một chapter bên trái để bắt đầu.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Upload layer → Gộp → Gửi Mangaka
-                </p>
-              </Card>
-            )}
-          </div>
-        </div>
             </TabsContent>
 
             {/* TASKS TAB: danh sách chapter full-width */}

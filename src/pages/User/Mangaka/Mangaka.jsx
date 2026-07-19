@@ -1447,8 +1447,11 @@ export default function Mangaka() {
   }
 
   function deleteSeriesById(seriesId) {
-    const target = seriesList.find(x => x.id === seriesId)
-    if (!target) return
+    const target = seriesList.find(x => String(x.id) === String(seriesId))
+    if (!target) {
+      console.warn('[Mangaka] Cannot find series to delete with ID:', seriesId, 'in list:', seriesList)
+      return
+    }
     const title = target.title
     const ok = window.confirm(
       `Xóa series "${title}"?\n\nCác chapter của series này sẽ bị gỡ. Thao tác không hoàn tác.`,
