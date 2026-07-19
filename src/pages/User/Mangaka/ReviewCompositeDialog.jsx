@@ -44,12 +44,13 @@ import { layersService } from '@/api/layersService.js'
 export default function ReviewCompositeDialog({
   open,
   chapter,
+  initialPageId = null,
   onClose,
   onApprove,
   onRequestRevision,
   busy = false,
 }) {
-  const chapterId = chapter?.id ?? chapter?.chapterId ?? null
+  const chapterId = chapter?.id ?? chapter?.chapterId ?? chapter?.chapterid ?? chapter?.Chapterid ?? null
   const [pageIdx, setPageIdx] = useState(0)
   const [reviewNote, setReviewNote] = useState('')
   const [previewLayer, setPreviewLayer] = useState(null) // { id, name, url, z, opacity } | null
@@ -85,7 +86,7 @@ export default function ReviewCompositeDialog({
     ?? safePage?.pageId
     ?? safePage?.PageId
     ?? safePage?.Id
-    ?? safePageId
+    ?? safePage?.id
     ?? null
   // Log 1 lần keys của page đầu tiên để biết BE gọi field id là gì
   if (typeof window !== 'undefined' && window.console && pages.length > 0 && !window.__rcKeysLogged) {
@@ -277,10 +278,22 @@ export default function ReviewCompositeDialog({
     )
   }
 
-  // Reset về page đầu khi đổi chapter
+  // Reset về page đầu khi đổi chapter hoặc nhảy tới trang được chọn
   useEffect(() => {
-    if (open) setPageIdx(0)
-  }, [open, chapterId])
+    if (open) {
+      if (initialPageId && pages.length > 0) {
+        const idx = pages.findIndex(p => {
+          const pid = p.id ?? p.pageid ?? p.pageId ?? p.Pageid
+          return String(pid) === String(initialPageId)
+        })
+        if (idx !== -1) {
+          setPageIdx(idx)
+          return
+        }
+      }
+      setPageIdx(0)
+    }
+  }, [open, chapterId, initialPageId, pages])
 
   // Đếm số note của page hiện tại để hiện badge
   const { data: issueCount } = useQuery({
@@ -339,7 +352,7 @@ export default function ReviewCompositeDialog({
               <DialogTitle className="flex items-center gap-2 text-base">
                 <ImageIcon className="size-4 text-primary" />
                 {chapter?.series ?? chapter?.seriesTitle ?? 'Chapter'}
-                <span className="text-muted-foreground">· Ch.{chapter?.num ?? chapter?.chapterNum}</span>
+                <span className="text-muted-foreground">· Ch.{chapter?.num ?? chapter?.chapterNum ?? chapter?.chapternumber ?? chapter?.chapterNumber ?? '—'}</span>
               </DialogTitle>
               <DialogDescription>
                 {chapter?.title || 'Xem lại ảnh đã gộp trước khi duyệt.'}

@@ -288,7 +288,7 @@ export default function Assistant() {
                 ) : filteredChapters.length === 0 ? (
                   <div className="p-6 text-center text-xs text-muted-foreground">Không có chapter nào.</div>
                 ) : (
-                  <ScrollArea className="max-h-[calc(100vh-320px)]">
+                  <div className="max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
                     <ul className="space-y-1 p-3 pt-0">
                       {filteredChapters.map(ch => {
                         const badge = STATUS_BADGE[(ch.status ?? '').toLowerCase()] ?? STATUS_BADGE.pending
@@ -338,7 +338,7 @@ export default function Assistant() {
                         )
                       })}
                     </ul>
-                  </ScrollArea>
+                  </div>
                 )}
               </CardContent>
             </Card>

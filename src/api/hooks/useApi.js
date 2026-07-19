@@ -260,6 +260,7 @@ export function useUpdatePageStatus() {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['pages'] })
       qc.invalidateQueries({ queryKey: ['pages', id] })
+      qc.invalidateQueries({ queryKey: ['chapters'] })
     },
   })
 }

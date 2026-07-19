@@ -178,6 +178,11 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
             // để tránh che mất thông báo thành công của luồng gửi chính.
             await pagesService.composite(p.id, { silentError: true })
           } catch { /* đã có thì bỏ qua */ }
+          try {
+            await pagesService.updateStatus(p.id, 'Reviewing')
+          } catch (e) {
+            console.warn('[LayerEditor] Failed to transition page status to Reviewing:', e)
+          }
         }),
       )
       // Update chapter status

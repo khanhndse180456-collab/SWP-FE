@@ -114,18 +114,45 @@ export default function ChapterView({
   async function handleApprovePage(pageId) {
     if (!pageId) return
     try {
+      // 1. Cập nhật trạng thái trang sang Approved
       await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
-      toast.success('Đã duyệt trang này.')
+      // 2. Đồng thời chuyển Chapter sang Published
+      if (reviewChapter) {
+        const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
+        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' })
+      }
+      toast.success('Đã duyệt trang và hoàn tất chapter.')
       handleReviewClose()
-    } catch {
-      /* toast handled by hook */
+    } catch (err) {
+      // Fallback: nếu trang đang ở InWork, tự động chuyển InWork -> Reviewing -> Approved
+      const msg = err?.response?.data?.message ?? err?.message ?? ''
+      if (msg.includes('InWork')) {
+        try {
+          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Reviewing' })
+          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+          if (reviewChapter) {
+            const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
+            await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' })
+          }
+          toast.success('Đã duyệt trang và hoàn tất chapter.')
+          handleReviewClose()
+        } catch (fallbackErr) {
+          toast.error(fallbackErr?.response?.data?.message ?? 'Không thể chuyển trạng thái để duyệt.')
+        }
+      }
     }
   }
 
   async function handleRequestRevisionPage(pageId, note) {
     if (!pageId) return
     try {
+      // 1. Cập nhật trạng thái trang sang InWork
       await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'InWork' })
+      // 2. Chuyển Chapter về InProduction để Assistant vẽ lại
+      if (reviewChapter) {
+        const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
+        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' })
+      }
       toast.success(note ? `Đã gửi yêu cầu sửa: ${note}` : 'Đã gửi yêu cầu sửa cho Assistant.')
       handleReviewClose()
     } catch {

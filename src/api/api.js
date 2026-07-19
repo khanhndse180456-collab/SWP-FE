@@ -113,9 +113,12 @@ export const chaptersService = {
 
 // ── PAGES ─────────────────────────────────────────────────────────────────────
 export const pagesService = {
-  getAll: (chapterId) => {
-    console.log('[API] GET /Pages', { chapterId })
-    return axios.get('/Pages', { params: chapterId != null ? { chapterId } : undefined })
+  getAll: (chapterId, status) => {
+    console.log('[API] GET /Pages', { chapterId, status })
+    const params = {}
+    if (chapterId != null) params.chapterId = chapterId
+    if (status != null) params.status = status
+    return axios.get('/Pages', { params: Object.keys(params).length > 0 ? params : undefined })
   },
   getById: (id) => {
     console.log('[API] GET /Pages/:id', id)
