@@ -23,7 +23,6 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
   const updateStatus = useUpdateChapterStatus()
   const updatePageStatus = useUpdatePageStatus()
   const [activePageId, setActivePageId] = useState(null)
-  const [openChapter, setOpenChapter] = useState(null)
   const [busy, setBusy] = useState(false)
 
   // Fetch các page có status = Reviewing trực tiếp từ BE
@@ -38,31 +37,13 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
   })
 
   const pending = pendingPages ?? []
-
-  async function handleOpenPage(page) {
-    const pageId = page.id ?? page.pageid ?? page.pageId ?? page.Pageid ?? page.PageId
-    setActivePageId(pageId)
-
-    const chapId = page.chapterid ?? page.chapterId ?? page.Chapterid ?? page.ChapterId
-    if (chapId) {
-      setBusy(true)
-      try {
-        const res = await chaptersService.getById(chapId)
-        const chapObj = res?.data ?? res
-        setOpenChapter(chapObj)
-      } catch (err) {
-        console.warn('[MangakaPendingReviews] Failed to load chapter for page:', err)
-        const localChap = (chapterRows ?? []).find(c => String(c.id ?? c.chapterId ?? c.chapterid) === String(chapId))
-        setOpenChapter(localChap)
-      } finally {
-        setBusy(false)
-      }
-    }
-  }
+  const activePage = pending.find(p => String(p.id ?? p.pageid ?? p.pageId) === String(activePageId)) ?? null
+  const openChapter = activePage
+    ? (chapterRows ?? []).find(c => String(c.id ?? c.chapterId ?? c.chapterid) === String(activePage.chapterid ?? activePage.chapterId))
+    : null
 
   function closeDialog() {
     setActivePageId(null)
-    setOpenChapter(null)
     setBusy(false)
   }
 
@@ -72,10 +53,10 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
     try {
       // 1. Duyệt trang
       await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
-      
+
       // 2. Chuyển Chapter sang Published (Hoàn tất) nếu đây là chương có page này
       if (openChapter) {
-        const chapterId = openChapter.id ?? openChapter.chapterId ?? openChapter.chapterid ?? openChapter.Chapterid
+        const chapterId = openChapter.id ?? openChapter.chapterId
         await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' }).catch(() => null)
       }
     } catch (err) {
@@ -86,7 +67,7 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
           await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Reviewing' })
           await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
           if (openChapter) {
-            const chapterId = openChapter.id ?? openChapter.chapterId ?? openChapter.chapterid ?? openChapter.Chapterid
+            const chapterId = openChapter.id ?? openChapter.chapterId
             await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' }).catch(() => null)
           }
         } catch (fallbackErr) {
@@ -105,10 +86,10 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
     try {
       // 1. Cập nhật trạng thái trang sang InWork
       await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'InWork' })
-      
+
       // 2. Chuyển Chapter về InProduction để Assistant sửa
       if (openChapter) {
-        const chapterId = openChapter.id ?? openChapter.chapterId ?? openChapter.chapterid ?? openChapter.Chapterid
+        const chapterId = openChapter.id ?? openChapter.chapterId
         await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' }).catch(() => null)
       }
     } finally {
@@ -182,10 +163,10 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {pending.slice(0, 6).map(page => (
               <PendingPageReviewItem
-                key={page.id ?? page.pageid ?? page.pageId ?? page.Pageid ?? page.PageId}
+                key={page.id ?? page.pageid ?? page.pageId}
                 page={page}
                 chapterRows={chapterRows}
-                onOpen={() => handleOpenPage(page)}
+                onOpen={() => setActivePageId(page.id ?? page.pageid ?? page.pageId)}
               />
             ))}
           </ul>
@@ -221,24 +202,9 @@ function PendingPageReviewItem({ page, chapterRows, onOpen }) {
     ?? page?.composite_image_url
     ?? null
 
-  const chapId = page.chapterid ?? page.chapterId ?? page.Chapterid ?? page.ChapterId
-  const { data: fetchedChapter } = useQuery({
-    queryKey: ['chapter', chapId],
-    enabled: !!chapId,
-    queryFn: async () => {
-      const res = await chaptersService.getById(chapId)
-      return res?.data ?? res
-    },
-    staleTime: 60_000,
-  })
-
-  const localChapter = (chapterRows ?? []).find(
-    c => String(c.id ?? c.chapterId ?? c.chapterid) === String(chapId)
+  const chapter = (chapterRows ?? []).find(
+    c => String(c.id ?? c.chapterId ?? c.chapterid) === String(page.chapterid ?? page.chapterId)
   )
-
-  const chapter = fetchedChapter ?? localChapter ?? null
-
-  const pageNum = page.pagenumber ?? page.pageNumber ?? page.PageNumber ?? page.Pagenumber
 
   return (
     <li>
@@ -251,7 +217,7 @@ function PendingPageReviewItem({ page, chapterRows, onOpen }) {
           {compositeUrl ? (
             <img
               src={compositeUrl}
-              alt={`Page ${pageNum}`}
+              alt={`Page ${page.pagenumber}`}
               className="size-full object-cover transition-transform group-hover:scale-105"
             />
           ) : (
@@ -275,7 +241,7 @@ function PendingPageReviewItem({ page, chapterRows, onOpen }) {
             Ch.{chapter?.num ?? chapter?.chapterNum ?? '—'} · {chapter?.title || 'Không tiêu đề'}
           </p>
           <p className="text-[10px] text-muted-foreground">
-            Trang số {pageNum}
+            Trang số {page.pagenumber}
           </p>
         </div>
       </button>
