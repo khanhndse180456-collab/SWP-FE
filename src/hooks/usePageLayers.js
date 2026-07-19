@@ -12,6 +12,19 @@ const BLEND_OPTIONS = [
   "lighten",
 ];
 
+// UI luôn thao tác opacity theo thang 0–100 (khớp <input type="range">).
+// Backend lưu opacity dạng phân số 0.00–1.00 (decimal, out-of-range nếu > 1).
+// Hai hàm dưới đây là cặp convert 2 chiều, dùng thống nhất ở MỌI nơi gửi/nhận
+// opacity — tránh tình trạng đọc thì chia/nhân đúng mà lúc LƯU lại quên convert
+// ngược (đây chính là nguyên nhân lỗi "Parameter value '31.00' is out of range":
+// updateLayer trước đây gửi thẳng giá trị UI (vd 31) lên thay vì 0.31).
+function uiOpacityToApi(opacityUi) {
+  const n = Number(opacityUi);
+  if (!Number.isFinite(n)) return 1;
+  const frac = n / 100;
+  return Math.min(1, Math.max(0, Number(frac.toFixed(4))));
+}
+
 function apiLayerToUi(raw) {
   if (!raw || typeof raw !== "object") {
     return {
@@ -187,21 +200,68 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
   );
 
   const updateLayer = useCallback(
-    (layerId, patch) => {
+    async (layerId, patch) => {
       setLayers((cur) =>
         cur.map((l) => (l.id === layerId ? { ...l, ...patch } : l)),
       );
+      try {
+        // MỚI: backend bắt buộc LayerName ở mọi request update, kể cả khi
+        // chỉ đổi opacity/index — nên luôn lấy tên hiện tại nếu patch không có,
+        // tránh gửi layerName: undefined khiến backend trả 400.
+        const current = layers.find((l) => l.id === layerId);
+        const layerName = patch.name ?? current?.name ?? `Layer ${current?.index ?? 0}`;
+        // FIX: opacity trong state/patch luôn ở thang UI (0–100), nhưng backend
+        // lưu dạng phân số 0.00–1.00 (decimal) và validate range đó — gửi thẳng
+        // số 0–100 (vd 31) sẽ bị BE từ chối: "Parameter value '31.00' is out of
+        // range". Phải convert ngược bằng uiOpacityToApi trước khi gửi đi.
+        const opacityUi = patch.opacity ?? current?.opacity;
+        // FIX: isVisible trước đây bị rớt mất khi forward xuống layersService —
+        // khiến toggleVisibility (dùng chung hàm này) không bao giờ đổi được
+        // trạng thái hiển thị thật sự trên server, dù optimistic update ở UI
+        // vẫn chạy đúng (nên nhìn tưởng thành công nhưng F5 lại lỗi).
+        const isVisible = patch.isVisible ?? current?.visible;
+        await layersService.updateLayer(layerId, {
+          layerName,
+          zIndex: patch.index ?? current?.index,
+          opacity: opacityUi !== undefined ? uiOpacityToApi(opacityUi) : undefined,
+          isVisible,
+        });
+      } catch (err) {
+        toast.error(
+          err?.response?.data?.message ?? "Không cập nhật được layer.",
+        );
+        await refresh();
+      }
     },
-    [],
+    [layers, refresh],
   );
 
   const toggleVisibility = useCallback(
-    (layerId) => {
+    async (layerId) => {
+      const current = layers.find((l) => l.id === layerId);
+      if (!current) return;
+      const nextVisible = !current.visible;
       setLayers((cur) =>
-        cur.map((l) => (l.id === layerId ? { ...l, visible: !l.visible } : l)),
+        cur.map((l) => (l.id === layerId ? { ...l, visible: nextVisible } : l)),
       );
+      try {
+        // FIX: gọi thẳng layersService.updateLayer (không qua layersService.toggleVisibility,
+        // vốn quên forward isVisible và trước đó bị gọi thiếu tham số từ hook này) —
+        // luôn kèm layerName vì BE bắt buộc field này ở MỌI request PUT, kể cả khi
+        // chỉ đổi isvisible. Gọi trực tiếp layersService (không qua hàm updateLayer ở
+        // trên) để tránh setLayers optimistic update bị chạy chồng 2 lần.
+        await layersService.updateLayer(layerId, {
+          layerName: current.name || `Layer ${current.index ?? 0}`,
+          zIndex: current.index,
+          opacity: uiOpacityToApi(current.opacity),
+          isVisible: nextVisible,
+        });
+      } catch (err) {
+        toast.error("Không đổi được trạng thái hiển thị layer.");
+        await refresh();
+      }
     },
-    [],
+    [layers, refresh],
   );
 
   const setLocalVisibility = useCallback((layerId, visible) => {
@@ -235,18 +295,36 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
   );
 
   const reorderLayers = useCallback(
-    (orderedIds) => {
-      setLayers((cur) => {
-        const next = orderedIds
-          .map((id, idx) => {
-            const layer = cur.find((l) => l.id === id);
-            return layer ? { ...layer, index: idx } : null;
-          })
-          .filter(Boolean);
-        return next;
-      });
+    async (orderedIds) => {
+      const reordered = orderedIds
+        .map((id, idx) => {
+          const layer = layers.find((l) => l.id === id);
+          return layer ? { ...layer, index: idx } : null;
+        })
+        .filter(Boolean);
+      setLayers(reordered);
+      try {
+        await Promise.all(
+          orderedIds.map((id, idx) => {
+            // MỚI: kèm layerName + opacity hiện tại — backend yêu cầu
+            // LayerName bắt buộc ở mọi request update, kể cả khi chỉ đổi zIndex.
+            // FIX: opacity ở đây cũng ở thang UI (0–100) — phải convert bằng
+            // uiOpacityToApi trước khi gửi, cùng lý do với updateLayer() ở trên.
+            const layer = layers.find((l) => l.id === id);
+            return layersService.updateLayer(id, {
+              zIndex: idx,
+              layerName: layer?.name ?? `Layer ${idx}`,
+              opacity: layer?.opacity !== undefined ? uiOpacityToApi(layer.opacity) : undefined,
+              isVisible: layer?.visible,
+            });
+          }),
+        );
+      } catch (err) {
+        toast.error("Không sắp xếp lại được layer.");
+        await refresh();
+      }
     },
-    [],
+    [layers, refresh],
   );
 
   const finalize = useCallback(async () => {

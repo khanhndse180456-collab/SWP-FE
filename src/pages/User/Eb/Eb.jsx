@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList } from "lucide-react";
+import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon } from "lucide-react";
 import SidebarNav from "@/components/layout/SidebarNav.jsx";
 import WorkspaceTopBar from "@/components/layout/WorkspaceTopBar.jsx";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import "./Eb.css";
 const SIDEBAR_ITEMS = [
   { id: 'queue',  label: 'Chấm điểm',     icon: Gavel },
   { id: 'rubric', label: 'Quy chế chấm',  icon: ClipboardList },
+  { id: 'image',  label: 'Xem ảnh',       icon: ImageIcon },
 ];
 
 export default function Eb() {
@@ -452,11 +453,26 @@ export default function Eb() {
               <CardDescription>Hình preview của series đang được chấm.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="overflow-hidden rounded-2xl border bg-muted/30">
+              {/*
+                FIX 1: trước đây dùng className="aspect-[3/4] w-full object-cover" —
+                ép cứng khung theo tỉ lệ 3:4 trong khi ảnh gốc (trang manga dọc, độ
+                phân giải/tỉ lệ khác hẳn) khiến object-cover phải crop + zoom rất
+                mạnh để lấp đầy khung, chỉ hiện được một phần nhỏ ở góc trên ảnh
+                ("ảnh to quá" — thực chất là bị crop/zoom, không phải hiển thị lỗi
+                kích thước). Sửa: bỏ aspect-ratio ép cứng, dùng object-contain +
+                max-height để hiện TRỌN VẸN ảnh, tự co theo tỉ lệ gốc, không crop.
+
+                FIX 2: sau khi hết crop thì khung ngoài (viền + nền bg-muted/30) vẫn
+                rộng bằng cả card (w-full), trong khi ảnh dọc chỉ chiếm phần giữa
+                → dư khoảng trắng 2 bên, nhìn không "vừa vặn". Sửa: bỏ w-full trên
+                cả 2 phần tử, dùng w-fit + mx-auto để khung TỰ CO KHÍT theo đúng
+                kích thước ảnh sau khi scale, viền ôm sát ảnh thay vì ôm sát card.
+              */}
+              <div className="mx-auto flex max-h-[560px] w-fit items-center justify-center overflow-hidden rounded-2xl border bg-muted/30">
                 <img
                   src={activeSeriesImage}
                   alt={activeTitle ? `Ảnh series ${activeTitle}` : "Ảnh series đang chấm"}
-                  className="aspect-[3/4] w-full object-cover"
+                  className="max-h-[560px] w-auto object-contain"
                 />
               </div>
               <div className="space-y-2">
@@ -488,6 +504,40 @@ export default function Eb() {
                 </CardHeader>
                 <CardContent>
                   <ThresholdTable />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {tab === "image" && (
+            <div className="space-y-6">
+              <Card className="overflow-hidden">
+                <CardHeader>
+                  <CardTitle>Xem ảnh series</CardTitle>
+                  <CardDescription>
+                    {activeTitle
+                      ? <>Ảnh preview của <strong className="text-foreground">{activeTitle}</strong> — series đang chọn ở hàng chờ.</>
+                      : "Chọn một series ở hàng chờ bên trái để xem ảnh."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/*
+                    Dùng lại đúng cách fit đã sửa ở khối "Ảnh series từ Tantou":
+                    object-contain (không crop) + w-fit/mx-auto (khung ôm sát đúng
+                    kích thước ảnh, không dư khoảng trắng 2 bên).
+                  */}
+                  <div className="mx-auto flex max-h-[70vh] w-fit items-center justify-center overflow-hidden rounded-2xl border bg-muted/30">
+                    <img
+                      src={activeSeriesImage}
+                      alt={activeTitle ? `Ảnh series ${activeTitle}` : "Ảnh series đang chấm"}
+                      className="max-h-[70vh] w-auto object-contain"
+                    />
+                  </div>
+                  {activeSubmission?.synopsis && (
+                    <p className="mx-auto max-w-2xl text-center text-sm text-muted-foreground">
+                      {activeSubmission.synopsis}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>

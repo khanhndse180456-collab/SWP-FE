@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { notificationsService } from '@/api/notificationsService.js'
 import { getApiErrorMessage } from '@/api/api.js'
 
 const POLL_INTERVAL_MS = 45_000
+const MAX_ITEMS = 30
 
 function normalize(raw) {
   if (!raw) return null
@@ -11,12 +12,11 @@ function normalize(raw) {
     id: String(raw.id ?? raw.notificationId ?? ''),
     title: raw.title ?? 'Thong bao',
     message: raw.message ?? raw.body ?? '',
-    type: raw.type ?? 'info',
     isRead: Boolean(raw.isRead ?? raw.read),
     createdAt: raw.createdAt ?? null,
-    link: raw.link ?? null,
-    relatedEntityType: raw.related_entity_type ?? null,
-    relatedEntityId: raw.related_entity_id ?? null,
+    seriesId: raw.seriesId ?? null,
+    referenceType: raw.referenceType ?? null,
+    referenceId: raw.referenceId ?? null,
     raw,
   }
 }
@@ -25,30 +25,37 @@ export function useNotifications({ pollInterval = POLL_INTERVAL_MS, enabled = tr
   const [items, setItems] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(false)
-  const timerRef = { current: null }
-  const seenIdsRef = { current: new Set() }
-  const onNewRef = { current: onNew }
+
+  const timerRef = useRef(null)
+  const seenIdsRef = useRef(new Set())
+  const firstLoadRef = useRef(true)
+  const onNewRef = useRef(onNew)
+
+  useEffect(() => {
+    onNewRef.current = onNew
+  }, [onNew])
 
   const refresh = useCallback(async () => {
     if (!enabled) return
     setLoading(true)
     try {
-      const res = await notificationsService.list({ limit: 20 })
+      const res = await notificationsService.list()
       const list = (Array.isArray(res) ? res : []).map(normalize).filter(n => n.id)
 
       const seen = seenIdsRef.current
       const fresh = list.filter(n => !seen.has(n.id))
       for (const n of list) seen.add(n.id)
 
-      setItems(list)
+      setItems(list.slice(0, MAX_ITEMS))
       setUnreadCount(list.filter(n => !n.isRead).length)
 
-      if (fresh.length) {
+      if (fresh.length && !firstLoadRef.current) {
         const handler = onNewRef.current
         if (typeof handler === 'function') {
           for (const n of fresh) handler(n)
         }
       }
+      firstLoadRef.current = false
     } catch (err) {
       console.warn('[notifications] refresh failed', err?.message ?? err)
     } finally {
@@ -71,12 +78,13 @@ export function useNotifications({ pollInterval = POLL_INTERVAL_MS, enabled = tr
     setUnreadCount(prev => Math.max(0, prev - 1))
     try {
       await notificationsService.markRead(id)
+      await refresh()
     } catch (err) {
       setItems(prev => prev.map(n => (n.id === id ? { ...n, isRead: false } : n)))
       setUnreadCount(prev => prev + 1)
       toast.error(getApiErrorMessage(err, 'Khong danh dau duoc da doc.'))
     }
-  }, [])
+  }, [refresh])
 
   const markAllRead = useCallback(async () => {
     const prevItems = items
@@ -85,12 +93,13 @@ export function useNotifications({ pollInterval = POLL_INTERVAL_MS, enabled = tr
     setUnreadCount(0)
     try {
       await notificationsService.markAllRead()
+      await refresh()
     } catch (err) {
       setItems(prevItems)
       setUnreadCount(prevCount)
       toast.error(getApiErrorMessage(err, 'Khong danh dau duoc tat ca.'))
     }
-  }, [items, unreadCount])
+  }, [items, unreadCount, refresh])
 
   return { items, unreadCount, loading, refresh, markRead, markAllRead }
 }

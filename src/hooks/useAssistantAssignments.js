@@ -4,7 +4,9 @@ import { getSession } from '@/lib/auth'
 import { chaptersService } from '@/api'
 import { seriesService } from '@/api'
 import { pagesService } from '@/api'
+import { pageIssuesService } from '@/api/api.js'
 import axiosClient from '@/api/axiosClient.js'
+import { normalizeChapterStatus, normalizeContractStatus, isOpenRevisionIssue } from '@/utils/statusMap.js'
 
 // LƯU Ý QUAN TRỌNG:
 // Backend KHÔNG có controller `Submissions` hay `Contracts` (đã kiểm tra
@@ -16,6 +18,27 @@ import axiosClient from '@/api/axiosClient.js'
 //   - GET /api/MangakaAssistant (quan hệ hợp tác Mangaka-Assistant)
 // TODO: nếu sản phẩm cần luồng "Assistant nộp bài / submission review",
 // cần đề xuất DUYKHANH thêm SubmissionsController thật ở backend.
+
+// Đếm số page_issues đang mở (Revision + Reported/InProgress) cho 1 danh
+// sách pageId. BE chỉ có endpoint lọc theo pageId nên phải gọi song song
+// theo từng trang — nếu sau này BE thêm filter theo chapterId, gộp lại
+// thành 1 request duy nhất ở đây.
+async function countOpenRevisionsForPages(pageIds) {
+  if (!pageIds.length) return 0
+  const results = await Promise.all(
+    pageIds.map(async (pid) => {
+      try {
+        const res = await pageIssuesService.getAll({ pageId: pid })
+        const raw = res?.data
+        const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : []
+        return list.filter(isOpenRevisionIssue).length
+      } catch {
+        return 0
+      }
+    }),
+  )
+  return results.reduce((sum, n) => sum + n, 0)
+}
 
 async function enrichChapterWithSeries(chapter) {
   const cid = chapter.chapterid ?? chapter.Chapterid ?? chapter.id ?? null
@@ -35,6 +58,9 @@ async function enrichChapterWithSeries(chapter) {
     pageList = Array.isArray(pagesRes?.data) ? pagesRes.data : []
   } catch { /* ignore */ }
 
+  const pageIds = pageList.map(p => p.pageid).filter(Boolean)
+  const openRevisionCount = await countOpenRevisionsForPages(pageIds)
+
   return {
     contractId: null,
     mangakaId: chapter.mangakaid ?? chapter.Mangakaid ?? null,
@@ -44,7 +70,8 @@ async function enrichChapterWithSeries(chapter) {
     seriesTitle: seriesTitle ?? 'Unknown Series',
     chapterNum: chapter.chapter_number ?? chapter.chapternumber ?? chapter.ChapterNumber ?? null,
     title: chapter.title ?? chapter.Title ?? null,
-    status: chapter.status ?? 'pending',
+    status: normalizeChapterStatus(chapter.status ?? chapter.Status ?? 'InProduction'),
+    openRevisionCount,
     pages: pageList.map(p => ({
       id: p.pageid,
       url: p.pageimageurl,
@@ -66,7 +93,8 @@ async function enrichMangakaAssistantRow(row) {
     seriesTitle: null,
     chapterNum: null,
     title: null,
-    status: row.status ?? 'Active',
+    status: normalizeContractStatus(row.status ?? 'Active'),
+    openRevisionCount: 0,
     pages: [],
     pageCount: 0,
   }

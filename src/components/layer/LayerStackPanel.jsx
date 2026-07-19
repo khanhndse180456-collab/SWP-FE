@@ -17,6 +17,13 @@ const ACCENT_BY_INDEX = [
 function LayerRow({ layer, accent, draggable, onDragStart, onDragOver, onDrop, onToggle, onOpacity, onRemove, onPickFile, onRename, uploading }) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(layer.name)
+  // FIX: trước đây cả <li> luôn draggable={true}, nên chỉ cần bấm/di chuột nhẹ
+  // vào BẤT KỲ đâu trong dòng (icon mắt, thumbnail, tên layer...) trình duyệt
+  // đã hiểu nhầm thành bắt đầu kéo-thả HTML5 (tạo "ghost" nổi đè lên UI, các nút
+  // bấm không nhận click đúng) — gây cảm giác "lệch/lỗi cả layer".
+  // Sửa: chỉ bật draggable khi mousedown bắt đầu đúng từ tay cầm (GripVertical);
+  // các thao tác khác trong dòng (click nút, kéo opacity...) không kích hoạt kéo.
+  const [canDrag, setCanDrag] = useState(false)
 
   const commitName = () => {
     setEditing(false)
@@ -26,10 +33,11 @@ function LayerRow({ layer, accent, draggable, onDragStart, onDragOver, onDrop, o
 
   return (
     <li
-      draggable={draggable}
+      draggable={draggable && canDrag}
       onDragStart={(e) => onDragStart?.(e, layer.id)}
       onDragOver={(e) => onDragOver?.(e, layer.id)}
       onDrop={(e) => onDrop?.(e, layer.id)}
+      onDragEnd={() => setCanDrag(false)}
       className={cn(
         'group rounded-lg border p-2.5 transition-colors',
         layer.visible
@@ -40,7 +48,12 @@ function LayerRow({ layer, accent, draggable, onDragStart, onDragOver, onDrop, o
     >
       <div className="flex items-center gap-2">
         {draggable && (
-          <GripVertical className="size-4 shrink-0 cursor-grab text-white/30" />
+          <GripVertical
+            className="size-4 shrink-0 cursor-grab text-white/30 active:cursor-grabbing"
+            onMouseDown={() => setCanDrag(true)}
+            onMouseUp={() => setCanDrag(false)}
+            title="Kéo để sắp xếp thứ tự layer"
+          />
         )}
 
         <Button
@@ -103,13 +116,32 @@ function LayerRow({ layer, accent, draggable, onDragStart, onDragOver, onDrop, o
         </Button>
       </div>
 
-      <div className="mt-2 flex items-center gap-2">
+      {/*
+        FIX: <li> cha ở trên có draggable={true} (để kéo sắp xếp thứ tự layer bằng
+        HTML5 drag-and-drop). Nếu không chặn, một cú mousedown bắt đầu trên
+        <input type="range"> bên trong vẫn bị trình duyệt hiểu là điểm bắt đầu kéo
+        cả dòng layer (vì nó tìm ancestor gần nhất có draggable=true), nên KHÔNG
+        kéo được thanh trượt opacity — đây là lỗi kinh điển của range input đặt
+        trong container draggable.
+
+        Cách sửa: stopPropagation ngay tại mousedown để sự kiện không lan lên
+        <li>, đồng thời đặt draggable={false} tường minh cho khu vực này và cho
+        chính input — trình duyệt sẽ không còn coi đây là điểm khởi tạo kéo-thả
+        layer nữa, thanh trượt opacity hoạt động bình thường.
+      */}
+      <div
+        className="mt-2 flex items-center gap-2"
+        draggable={false}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <span className="shrink-0 text-[10px] text-white/40">Opacity</span>
         <input
           type="range"
           min={0}
           max={100}
           value={layer.opacity}
+          draggable={false}
+          onMouseDown={(e) => e.stopPropagation()}
           onChange={(e) => onOpacity(layer.id, Number(e.target.value))}
           className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-white/10 accent-violet-500"
         />

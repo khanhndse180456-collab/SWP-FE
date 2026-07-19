@@ -15,6 +15,9 @@ const BLEND_TO_GLOBAL = {
 const ZOOM_STEP = 0.15
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 5
+// Khoảng đệm (px) chừa quanh canvas trong khung — để 0 để canvas fit sát khung ngoài,
+// không còn khung đen nhỏ hơn nằm lọt thỏm bên trong nữa.
+const FIT_PADDING = 0
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -35,6 +38,14 @@ export default function LayerCanvas({
   notes = [],
   showNotes = true,
   fullscreen = false,
+  // 'contain' (mặc định, an toàn): ảnh luôn nằm trọn trong khung, có thể dư viền
+  // đen nếu tỉ lệ khung khác tỉ lệ ảnh — không bao giờ bị crop hay phóng to quá đà.
+  // 'cover': ảnh phủ kín khung, phần dư bị crop — chỉ nên dùng khi khung chứa có
+  // tỉ lệ gần giống tỉ lệ ảnh (vd. khung đọc trang manga dọc trong LayerEditor).
+  // Với khung rất rộng (như modal LayerInspectDialog, có thêm sidebar bên cạnh),
+  // 'cover' sẽ ép zoom rất lớn để lấp đầy chiều ngang → ảnh bị phóng to/mờ/tràn,
+  // nên các khung dạng đó nên giữ mặc định 'contain'.
+  fitMode = 'contain',
 }) {
   const containerRef = useRef(null)
   const canvasRef = useRef(null)
@@ -45,6 +56,44 @@ export default function LayerCanvas({
   const panStart = useRef(null)
   const [panMode, setPanMode] = useState(false)
   const [renderError, setRenderError] = useState(null)
+
+  // Kích thước thật của khung chứa (đo bằng ResizeObserver) — dùng ref để đo/tính
+  // fit-zoom mà KHÔNG khiến effect chạy lại liên tục mỗi lần khung đổi kích thước
+  // (khác với dùng state trực tiếp làm dependency, vốn sẽ liên tục ghi đè zoom
+  // thủ công của người dùng mỗi khi cửa sổ resize).
+  const containerSizeRef = useRef({ w: 0, h: 0 })
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    containerSizeRef.current = { w: el.clientWidth, h: el.clientHeight }
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      containerSizeRef.current = {
+        w: entry.contentRect.width,
+        h: entry.contentRect.height,
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Tính zoom sao cho canvas (width x height thật) vừa khung chứa, theo fitMode:
+  // 'cover' (Math.max) = phủ kín khung, crop phần dư — dùng cho khung có tỉ lệ
+  // gần giống ảnh (LayerEditor). 'contain' (Math.min) = ảnh luôn nằm trọn trong
+  // khung, không crop, không phóng to quá đà — an toàn cho khung rất rộng/lệch
+  // tỉ lệ (LayerInspectDialog), tránh lặp lại lỗi ảnh bị zoom khổng lồ và mờ.
+  const computeFitZoom = useCallback(() => {
+    const { w: cw, h: ch } = containerSizeRef.current
+    if (!cw || !ch) return 1
+    const availW = Math.max(50, cw - FIT_PADDING)
+    const availH = Math.max(50, ch - FIT_PADDING)
+    const scale = fitMode === 'cover'
+      ? Math.max(availW / width, availH / height)
+      : Math.min(availW / width, availH / height)
+    return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +scale.toFixed(3)))
+  }, [width, height, fitMode])
 
   const sorted = useMemo(() => [...layers].sort((a, b) => a.index - b.index), [layers])
   const visibleCount = sorted.filter((l) => l.visible).length
@@ -91,9 +140,14 @@ export default function LayerCanvas({
           ctx.fillRect(0, 0, canvas.width, canvas.height)
         }
 
-        // Vẽ layers đè lên (đảo ngược — index thấp vẽ sau, đè lên trên)
-        const reversed = [...sorted].reverse().filter((l) => l.visible)
-        for (const layer of reversed) {
+        // FIX: trước đây dùng [...sorted].reverse() khiến layer index THẤP
+        // (thêm TRƯỚC, vd "Default") lại được vẽ SAU CÙNG → đè lên trên layer
+        // thêm sau (vd "Layer 2") — ngược với kỳ vọng "layer thêm sau phải
+        // chồng lên layer thêm trước". `sorted` đã tăng dần theo index sẵn,
+        // nên chỉ cần vẽ tuần tự đúng thứ tự đó: index thấp vẽ trước (làm nền),
+        // index cao vẽ sau cùng (đè lên trên) — không cần reverse nữa.
+        const drawOrder = sorted.filter((l) => l.visible)
+        for (const layer of drawOrder) {
           const img = imgCache[layer.imageUrl]
           if (!img) continue
           const op = (layer.opacity ?? 100) / 100
@@ -159,29 +213,20 @@ export default function LayerCanvas({
     draw()
   }, [sorted, imgCache, baseImage, notes, showNotes])
 
-  // Reset pan/zoom khi đổi page
+  // Reset pan/zoom khi đổi page — zoom về đúng mức "vừa khung" (fit) thay vì
+  // hardcode 100%, vì canvas luôn vẽ ở kích thước pixel thật (width x height)
+  // và khung chứa thường nhỏ hơn nhiều so với đó.
+  // requestAnimationFrame để đảm bảo containerRef đã có layout/kích thước đo
+  // được (đặc biệt ở lần mount đầu tiên, trước khi ResizeObserver kịp bắn).
   useEffect(() => {
     setPan({ x: 0, y: 0 })
-    setZoom(1)
-  }, [baseImage])
+    const id = requestAnimationFrame(() => setZoom(computeFitZoom()))
+    return () => cancelAnimationFrame(id)
+  }, [baseImage, computeFitZoom])
 
-  const handleWheel = useCallback((e) => {
-    e.preventDefault()
-    if (e.ctrlKey || e.metaKey) {
-      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
-      setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2))))
-    } else {
-      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }))
-    }
-  }, [])
-
-  // Attach non-passive wheel listener to avoid "Unable to preventDefault inside passive" warning
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    el.addEventListener('wheel', handleWheel, { passive: false })
-    return () => el.removeEventListener('wheel', handleWheel)
-  }, [handleWheel])
+  // Đã bỏ pan/zoom bằng lăn chuột (wheel) — trước đây lăn chuột dọc/ngang sẽ dịch
+  // pan, dễ khiến ảnh bị "trôi" lệch ra khỏi vị trí fit ban đầu ngoài ý muốn.
+  // Zoom giờ chỉ điều khiển qua nút +/- hoặc kéo chuột (khi bật chế độ Move).
 
   const handleMouseDown = useCallback((e) => {
     if (e.button === 0) {
@@ -214,10 +259,11 @@ export default function LayerCanvas({
     setZoom((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2)))
   }, [])
 
+  // Reset view → quay về đúng mức zoom "vừa khung" (fit), không phải luôn luôn 100%.
   const handleZoomReset = useCallback(() => {
-    setZoom(1)
+    setZoom(computeFitZoom())
     setPan({ x: 0, y: 0 })
-  }, [])
+  }, [computeFitZoom])
 
   const zoomPercent = Math.round(zoom * 100)
 
@@ -236,7 +282,7 @@ export default function LayerCanvas({
       onDoubleClick={handleZoomReset}
     >
       <div
-        className="relative overflow-hidden rounded-sm shadow-2xl ring-1 ring-white/10"
+        className="relative overflow-hidden"
         style={{
           width,
           height,
@@ -292,7 +338,7 @@ export default function LayerCanvas({
           size="icon-sm"
           className="pointer-events-auto size-7 text-white/80 hover:bg-white/10 hover:text-white"
           onClick={handleZoomOut}
-          title="Thu nhỏ (Ctrl + Wheel)"
+          title="Thu nhỏ"
         >
           <ZoomOut className="size-3.5" />
         </Button>
@@ -309,7 +355,7 @@ export default function LayerCanvas({
           size="icon-sm"
           className="pointer-events-auto size-7 text-white/80 hover:bg-white/10 hover:text-white"
           onClick={handleZoomIn}
-          title="Phóng to (Ctrl + Wheel)"
+          title="Phóng to"
         >
           <ZoomIn className="size-3.5" />
         </Button>
@@ -333,7 +379,7 @@ export default function LayerCanvas({
           size="icon-sm"
           className="pointer-events-auto size-7 text-white/80 hover:bg-white/10 hover:text-white"
           onClick={handleZoomReset}
-          title="Reset view"
+          title="Reset view (vừa khung)"
         >
           <RotateCcw className="size-3.5" />
         </Button>
