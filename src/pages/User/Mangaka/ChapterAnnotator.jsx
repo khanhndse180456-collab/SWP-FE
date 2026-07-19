@@ -30,6 +30,7 @@ import {
   useDeleteChapter,
   useCreateChapter,
   useCreatePage,
+  useDeletePage,
   useCreatePageIssue,
   useUpdatePageIssue,
   useDeletePageIssue,
@@ -183,6 +184,7 @@ export default function ChapterAnnotator({
   const [localRosterTick, setLocalRosterTick] = useState(0)
   const [tantouDialogOpen, setTantouDialogOpen] = useState(false)
   const [selectedTantouId, setSelectedTantouId] = useState(null)
+  const [deletePageConfirmOpen, setDeletePageConfirmOpen] = useState(false)
   
   const [selectedTantouForSeries, setSelectedTantouForSeries] = useState('')
   const [isSubmittingSeriesReview, setIsSubmittingSeriesReview] = useState(false)
@@ -228,6 +230,7 @@ export default function ChapterAnnotator({
 
   const createChapterMutation = useCreateChapter()
   const createPage = useCreatePage()
+  const deletePageMutation = useDeletePage()
   const createPageIssue = useCreatePageIssue()
   const updatePageIssue = useUpdatePageIssue()
   const deletePageIssue = useDeletePageIssue()
@@ -1011,47 +1014,81 @@ export default function ChapterAnnotator({
     if (!activeChapterId || !activeChapter) return
     const chId = activeChapterId
     const idx = pageIndex
-    const oldPages = activeChapter.pages
-    if (oldPages.length === 0) return
+    if (pages.length === 0) return
 
-    const removed = oldPages[idx]
+    const removed = pages[idx]
     if (removed?.url?.startsWith('blob:')) URL.revokeObjectURL(removed.url)
 
-    const newPages = oldPages.filter((_, i) => i !== idx)
-    const chapterRemoved = newPages.length === 0
+    // Call Delete API if page is saved on server
+    const targetPageId = removed?.serverPageId ?? removed?.apiPageId ?? removed?.pageid ?? removed?.pageId ?? removed?.id
+    if (targetPageId && !String(targetPageId).startsWith('srv-page-') && !String(targetPageId).startsWith('local-page-')) {
+      deletePageMutation.mutate(Number(targetPageId), {
+        onSuccess: () => {
+          toast.success('Đã gỡ trang trên server thành công!', {
+            style: {
+              background: '#f0fdf4',
+              color: '#15803d',
+              border: '1px solid #bbf7d0',
+              borderRadius: '12px',
+              fontWeight: '500',
+            }
+          })
+          queryClient.invalidateQueries({ queryKey: ['pages'] })
+          queryClient.invalidateQueries({ queryKey: ['chapters'] })
+          setDeletePageConfirmOpen(false)
+        },
+        onError: (err) => {
+          console.error('[ChapterAnnotator] Failed to soft-delete page:', err)
+          toast.error('Không gỡ được trang trên server.', {
+            style: {
+              background: '#fef2f2',
+              color: '#b91c1c',
+              border: '1px solid #fecaca',
+              borderRadius: '12px',
+              fontWeight: '500',
+            }
+          })
+          setDeletePageConfirmOpen(false)
+        }
+      })
+    } else {
+      // Local-only pages deletion logic
+      const newPages = (activeChapter.pages || []).filter((_, i) => i !== idx)
+      const chapterRemoved = newPages.length === 0
 
-    setNotes((prev) => {
-      const next = {}
-      for (const k of Object.keys(prev)) {
-        if (!k.startsWith(`${chId}-`)) next[k] = prev[k]
-      }
-      let ni = 0
-      for (let oi = 0; oi < oldPages.length; oi++) {
-        if (oi === idx) continue
-        next[`${chId}-${ni}`] = prev[`${chId}-${oi}`] ?? []
-        ni++
-      }
-      return next
-    })
-    setSelectedNoteId(null)
-    setTool('draw')
+      setNotes((prev) => {
+        const next = {}
+        for (const k of Object.keys(prev)) {
+          if (!k.startsWith(`${chId}-`)) next[k] = prev[k]
+        }
+        let ni = 0
+        for (let oi = 0; oi < (activeChapter.pages || []).length; oi++) {
+          if (oi === idx) continue
+          next[`${chId}-${ni}`] = prev[`${chId}-${oi}`] ?? []
+          ni++
+        }
+        return next
+      })
+      setSelectedNoteId(null)
+      setTool('draw')
 
-    if (chapterRemoved) {
-      const wasIdx = chapters.findIndex(c => c.id === chId)
-      const out = chapters.filter(c => c.id !== chId)
-      const pick = out.length ? out[Math.min(Math.max(wasIdx, 0), out.length - 1)] : null
-      setChapters(out)
-      setActiveChapterId(pick ? pick.id : null)
-      setPageIndex(0)
-      return
+      if (chapterRemoved) {
+        const wasIdx = chapters.findIndex(c => c.id === chId)
+        const out = chapters.filter(c => c.id !== chId)
+        const pick = out.length ? out[Math.min(Math.max(wasIdx, 0), out.length - 1)] : null
+        setChapters(out)
+        setActiveChapterId(pick ? pick.id : null)
+        setPageIndex(0)
+      } else {
+        setChapters(prev => prev.map(ch => (ch.id === chId ? { ...ch, pages: newPages } : ch)))
+        setPageIndex((pi) => {
+          const max = newPages.length - 1
+          return pi > max ? max : pi
+        })
+      }
+      setDeletePageConfirmOpen(false)
     }
-
-    setChapters(prev => prev.map(ch => (ch.id === chId ? { ...ch, pages: newPages } : ch)))
-    setPageIndex((pi) => {
-      const max = newPages.length - 1
-      return pi > max ? max : pi
-    })
-  }, [activeChapter, activeChapterId, pageIndex, chapters, setChapters, setNotes, setActiveChapterId, setPageIndex])
+  }, [activeChapter, activeChapterId, pageIndex, pages, chapters, setChapters, setNotes, setActiveChapterId, setPageIndex, deletePageMutation, queryClient])
 
   const draftRect = drawStart && drawCurrent ? {
     x: Math.min(drawStart.x, drawCurrent.x),
@@ -1120,7 +1157,7 @@ export default function ChapterAnnotator({
             size="sm"
             variant="ghost"
             className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={removeCurrentPage}
+            onClick={() => setDeletePageConfirmOpen(true)}
             title="Gỡ ảnh trang đang xem"
           >
             <Trash2 className="size-3.5" />
@@ -2068,6 +2105,29 @@ export default function ChapterAnnotator({
           </div>
         </div>
       ) : null}
+      {/* Custom Delete Page Confirmation Dialog */}
+      <Dialog open={deletePageConfirmOpen} onOpenChange={setDeletePageConfirmOpen}>
+        <DialogContent className="sm:max-w-[420px] bg-card border">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2 font-bold text-lg">
+              Xác nhận gỡ Trang
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-sm text-muted-foreground leading-relaxed">
+              Bạn có chắc chắn muốn gỡ trang số <strong className="text-foreground">{pageIndex + 1}</strong> của chapter này?
+              <br /><br />
+              Hành động này sẽ gỡ hoàn toàn trang truyện khỏi hệ thống và <strong className="text-destructive">không thể hoàn tác</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2 sm:gap-0 flex justify-end">
+            <Button variant="ghost" onClick={() => setDeletePageConfirmOpen(false)} className="hover:bg-muted font-medium text-xs">
+              Hủy
+            </Button>
+            <Button variant="destructive" onClick={removeCurrentPage} className="bg-red-600 text-white font-semibold text-xs hover:bg-red-700">
+              Gỡ trang
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
