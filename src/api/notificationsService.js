@@ -6,7 +6,7 @@ function unwrap(res) {
 
 export const notificationsService = {
   list(params = {}) {
-    return axios.get('/Notifications', { params }).then(unwrap).catch(() => [])
+    return axios.get('/Notifications', { params }).then(unwrap)
   },
 
   markRead(id) {

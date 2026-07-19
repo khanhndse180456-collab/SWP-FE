@@ -370,6 +370,20 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
           <div
             className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-3"
           >
+            {/*
+              LayerCanvas tự đo kích thước khung chứa (containerRef, qua ResizeObserver)
+              và tự tính zoom để canvas fit đúng khung — không cần ép aspect-ratio bằng
+              CSS ở đây nữa (cách cũ dùng style aspectRatio từng xung đột với logic fit
+              JS bên trong, khiến container luôn khớp sẵn tỉ lệ 800:1100 một cách giả tạo).
+
+              fitMode="contain": ảnh trang luôn hiện TRỌN VẸN trong khung, không bao
+              giờ bị crop mất góc hay note đánh dấu ở rìa (như từng xảy ra với
+              fitMode="cover" trước đây — giả định "tỉ lệ khung gần giống tỉ lệ
+              trang" hoá ra không đúng với dữ liệu thực tế, khiến các note ở góc
+              trên bị cắt cụt). Đánh đổi duy nhất là có thể dư viền đen 2 bên nếu
+              tỉ lệ trang khác tỉ lệ khung — chấp nhận được để đổi lấy việc không
+              bao giờ mất nội dung/note.
+            */}
             <LayerCanvas
               layers={layers}
               width={CANVAS_W}
@@ -377,7 +391,8 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
               mode="edit"
               fullscreen={fullscreen}
               baseImage={baseImage}
-              className="absolute inset-0 h-full w-full"
+              className="h-full w-full"
+              fitMode="contain"
               notes={pageNotes}
               showNotes={showNotes}
             />

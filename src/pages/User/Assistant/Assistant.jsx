@@ -60,26 +60,29 @@ const STATS = [
   { label: 'Thu nhập', icon: TrendingUp, color: 'rose' },
 ]
 
+// Khớp đúng các giá trị được normalizeChapterStatus() trả về
+// (xem utils/statusMap.js). Không thêm status "ảo" không tồn tại ở BE nữa.
 const STATUS_BADGE = {
-  Drafting: { label: 'Đang soạn', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
-  StudioWorking: { label: 'Studio làm', className: 'bg-violet-100 text-violet-700 hover:bg-violet-100' },
-  MangakaReview: { label: 'Chờ Mangaka duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100' },
-  Approved: { label: 'Đã duyệt', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
-  Revision: { label: 'Cần sửa', className: 'bg-red-100 text-red-700 hover:bg-red-100' },
-  pending: { label: 'Chờ nhận', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
-  in_progress: { label: 'Đang xử lý', className: 'bg-violet-100 text-violet-700 hover:bg-violet-100' },
-  submitted: { label: 'Đã gửi', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100' },
-  approved: { label: 'Đã duyệt', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
-  revision: { label: 'Cần sửa', className: 'bg-red-100 text-red-700 hover:bg-red-100' },
+  pending:      { label: 'Chờ nhận',      className: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
+  in_progress:  { label: 'Đang xử lý',    className: 'bg-violet-100 text-violet-700 hover:bg-violet-100' },
+  submitted:    { label: 'Chờ Mangaka duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100' },
+  approved:     { label: 'Đã duyệt',      className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+  delayed:      { label: 'Trễ deadline',  className: 'bg-orange-100 text-orange-700 hover:bg-orange-100' },
+  cancelled:    { label: 'Đã hủy',        className: 'bg-zinc-200 text-zinc-600 hover:bg-zinc-200' },
+  // Trạng thái của "quan hệ hợp tác" (mangaka_assistants), không phải chapter
+  contract_pending:   { label: 'Hợp tác: chờ duyệt', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
+  contract_active:    { label: 'Đang hợp tác',        className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+  contract_suspended: { label: 'Tạm dừng hợp tác',    className: 'bg-orange-100 text-orange-700 hover:bg-orange-100' },
+  contract_inactive:  { label: 'Ngừng hợp tác',       className: 'bg-zinc-200 text-zinc-600 hover:bg-zinc-200' },
 }
 
 const FILTERS = [
   { id: 'all', label: 'Tất cả' },
   { id: 'pending', label: 'Chờ nhận' },
   { id: 'in_progress', label: 'Đang làm' },
-  { id: 'submitted', label: 'Đã gửi' },
+  { id: 'submitted', label: 'Chờ duyệt' },
   { id: 'approved', label: 'Đã xong' },
-  { id: 'revision', label: 'Bị từ chối' },
+  { id: 'delayed', label: 'Trễ deadline' },
 ]
 
 export default function Assistant() {
@@ -157,6 +160,18 @@ export default function Assistant() {
     ]
   }, [assignments])
 
+  // Danh sách chapter đang có note "cần sửa" mở — lấy từ dữ liệu thật
+  // (page_issues.issue_type = Revision, status Reported/InProgress),
+  // KHÔNG dùng chapter.status vì DB không có giá trị "Revision" cho chapter.
+  const revisionChapters = useMemo(
+    () => assignments.filter(a => (a.openRevisionCount ?? 0) > 0),
+    [assignments],
+  )
+  const totalOpenRevisionIssues = useMemo(
+    () => revisionChapters.reduce((sum, a) => sum + (a.openRevisionCount ?? 0), 0),
+    [revisionChapters],
+  )
+
   function handleLogout() {
     logout()
     navigate('/login')
@@ -166,6 +181,12 @@ export default function Assistant() {
     // Submissions have id but no chapterId; use id for selection
     const key = chapter.chapterId ?? chapter.id ?? null
     setSelectedChapterId(key)
+  }
+
+  function handleGoToRevisions() {
+    if (!revisionChapters.length) return
+    setSelectedChapterId(revisionChapters[0].chapterId ?? revisionChapters[0].id ?? null)
+    setTab('dashboard')
   }
 
   return (
@@ -201,32 +222,28 @@ export default function Assistant() {
 
             {/* DASHBOARD TAB */}
             <TabsContent value="dashboard" className="space-y-6">
-        {/* Banner: cần sửa */}
-        {(() => {
-          const revisions = assignments.filter(a => String(a.status).toLowerCase() === 'revision')
-          if (!revisions.length) return null
-          return (
-            <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
-              <AlertTriangle className="size-5 shrink-0 text-red-500" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                  {revisions.length} chapter bị từ chối — cần sửa lại
-                </p>
-                <p className="text-xs text-red-600/80 dark:text-red-400/70">
-                  Xem ghi chú ở dưới editor, upload layer sửa rồi gộp & gửi lại.
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0 border-red-300 text-red-600 hover:bg-red-100"
-                onClick={() => setTaskFilter('revision')}
-              >
-                Xem ngay
-              </Button>
+        {/* Banner: cần sửa — dựa trên page_issues thật, không dựa chapter.status */}
+        {revisionChapters.length > 0 && (
+          <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
+            <AlertTriangle className="size-5 shrink-0 text-red-500" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                {revisionChapters.length} chapter có {totalOpenRevisionIssues} note cần sửa
+              </p>
+              <p className="text-xs text-red-600/80 dark:text-red-400/70">
+                Xem ghi chú ở dưới editor, upload layer sửa rồi gộp & gửi lại.
+              </p>
             </div>
-          )
-        })()}
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-red-300 text-red-600 hover:bg-red-100"
+              onClick={handleGoToRevisions}
+            >
+              Xem ngay
+            </Button>
+          </div>
+        )}
 
         {/* Banner: có yêu cầu hợp tác */}
         {pendingCount > 0 && (
@@ -294,7 +311,7 @@ export default function Assistant() {
                         const badge = STATUS_BADGE[(ch.status ?? '').toLowerCase()] ?? STATUS_BADGE.pending
                         const cover = ch.pages?.find(p => p.url) ?? ch.pages?.[0]
                         const coverUrl = cover?.url ?? ch.mangakaImageUrl ?? ch.referenceImageUrl ?? null
-                        const notesCount = Array.isArray(ch.notes) ? ch.notes.length : 0
+                        const notesCount = ch.openRevisionCount ?? 0
                         // Use composite key to match deduplication logic
                         const source = ch._source ?? (ch.id ? 'submission' : ch.contractId ? 'contract' : 'chapter')
                         const itemKey = `${source}:${ch.id ?? ch.contractId ?? ch.chapterId}`
@@ -327,11 +344,19 @@ export default function Assistant() {
                                   Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {ch.pageCount ?? ch.pages?.length ?? 0} trang{ch.id && notesCount > 0 ? ` · ${notesCount} ghi chú` : ''}
+                                  {ch.pageCount ?? ch.pages?.length ?? 0} trang
+                                  {notesCount > 0 ? ` · ${notesCount} note cần sửa` : ''}
                                 </p>
-                                <Badge className={cn('mt-1', badge.className)} variant="secondary">
-                                  {badge.label}
-                                </Badge>
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                  <Badge className={badge.className} variant="secondary">
+                                    {badge.label}
+                                  </Badge>
+                                  {notesCount > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-red-600">
+                                      <AlertTriangle className="size-2.5" /> {notesCount} note
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </button>
                           </li>
@@ -504,7 +529,7 @@ export default function Assistant() {
                             const badge = STATUS_BADGE[(ch.status ?? '').toLowerCase()] ?? STATUS_BADGE.pending
                             const cover = ch.pages?.find(p => p.url) ?? ch.pages?.[0]
                             const coverUrl = cover?.url ?? ch.mangakaImageUrl ?? ch.referenceImageUrl ?? null
-                            const notesCount = Array.isArray(ch.notes) ? ch.notes.length : 0
+                            const notesCount = ch.openRevisionCount ?? 0
                             const source = ch._source ?? (ch.id ? 'submission' : ch.contractId ? 'contract' : 'chapter')
                             const itemKey = `${source}:${ch.id ?? ch.contractId ?? ch.chapterId}`
                             const displayChapterId = ch.chapterId ?? ch.id
@@ -536,11 +561,19 @@ export default function Assistant() {
                                       Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
                                     </p>
                                     <p className="text-xs text-muted-foreground">
-                                      {ch.pageCount ?? ch.pages?.length ?? 0} trang{ch.id && notesCount > 0 ? ` · ${notesCount} ghi chú` : ''}
+                                      {ch.pageCount ?? ch.pages?.length ?? 0} trang
+                                      {notesCount > 0 ? ` · ${notesCount} note cần sửa` : ''}
                                     </p>
-                                    <Badge className={cn('mt-1', badge.className)} variant="secondary">
-                                      {badge.label}
-                                    </Badge>
+                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                      <Badge className={badge.className} variant="secondary">
+                                        {badge.label}
+                                      </Badge>
+                                      {notesCount > 0 && (
+                                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-red-600">
+                                          <AlertTriangle className="size-2.5" /> {notesCount} note
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </button>
                               </li>
@@ -586,7 +619,7 @@ export default function Assistant() {
                                   Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
                                 </p>
                               </div>
-                              <Badge className={cn(badge.className)} variant="secondary">
+                              <Badge className={badge.className} variant="secondary">
                                 {badge.label}
                               </Badge>
                             </li>
@@ -608,14 +641,14 @@ export default function Assistant() {
                     Lịch sử xử lý
                   </CardTitle>
                   <CardDescription>
-                    Các chapter đã hoàn tất (đã duyệt / bị từ chối).
+                    Các chapter đã hoàn tất (đã duyệt / trễ deadline / bị hủy).
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {(() => {
                     const closed = assignments.filter(a => {
                       const s = String(a.status).toLowerCase()
-                      return s === 'approved' || s === 'revision'
+                      return s === 'approved' || s === 'delayed' || s === 'cancelled'
                     })
                     if (closed.length === 0) {
                       return <p className="text-sm text-muted-foreground">Chưa có lịch sử.</p>
@@ -632,7 +665,7 @@ export default function Assistant() {
                                   Ch.{ch.chapterNum}{ch.title ? ` · ${ch.title}` : ''}
                                 </p>
                               </div>
-                              <Badge className={cn(badge.className)} variant="secondary">
+                              <Badge className={badge.className} variant="secondary">
                                 {badge.label}
                               </Badge>
                             </li>

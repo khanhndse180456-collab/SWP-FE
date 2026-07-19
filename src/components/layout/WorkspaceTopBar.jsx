@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import {
   Bell,
   Check,
@@ -55,6 +56,11 @@ function timeAgo(iso) {
 function TopBarBell() {
   const { items, unreadCount, loading, refresh, markAllRead, markRead } = useNotifications({
     enabled: true,
+    onNew: (n) => {
+      if (n.referenceType === 'PageIssue') {
+        toast.warning(n.title, { description: n.message })
+      }
+    },
   })
   const list = useMemo(() => items.slice(0, 8), [items])
 
