@@ -21,6 +21,7 @@ import { usePageLayers } from '@/hooks/usePageLayers.js'
 import { chaptersService, usersService, pageIssuesService, pagesService } from '@/api/api.js'
 import LayerCanvas from './LayerCanvas.jsx'
 import LayerStackPanel from './LayerStackPanel.jsx'
+import LayerInspectDialog from './LayerInspectDialog.jsx'
 import { ImageLightbox } from './ImageLightbox.jsx'
 
 const CANVAS_W = 800
@@ -33,6 +34,7 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
   const [showOriginal, setShowOriginal] = useState(true)
   const [showNotes, setShowNotes] = useState(true)
   const [lightbox, setLightbox] = useState(null)
+  const [inspectOpen, setInspectOpen] = useState(false)
   const [pageNotes, setPageNotes] = useState(pageIssuesProp ?? [])
   const [notesLoading, setNotesLoading] = useState(false)
   const [user, setUser] = useState(null)
@@ -147,13 +149,22 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
         pages.map(async (p) => {
           if (!p?.id) return
           try {
-            await pagesService.composite(p.id)
+            // silentError: true — vài trang chưa có layer sẽ fail 400
+            // "Không có layer hợp lệ để ghép ảnh", đây là hành vi dự kiến
+            // (không phải lỗi thật), nên không cho toast global hiện lên
+            // để tránh che mất thông báo thành công của luồng gửi chính.
+            await pagesService.composite(p.id, { silentError: true })
           } catch { /* đã có thì bỏ qua */ }
         }),
       )
       // Update chapter status
+      // LƯU Ý: backend chỉ chấp nhận các trạng thái Chapter: InProduction, Ready,
+      // Delayed, Cancelled, Published (xem _validTransitions trong ChapterService.cs).
+      // "MangakaReview" không tồn tại trong state machine này (đó là status của
+      // Submission, không phải Chapter) nên trước đây bị BE từ chối với lỗi 400.
+      // Từ InProduction, bước hợp lệ để báo "đã xong, chờ Mangaka duyệt" là "Ready".
       if (chaptersService.updateStatus) {
-        await chaptersService.updateStatus(chapter.chapterId, 'MangakaReview')
+        await chaptersService.updateStatus(chapter.chapterId, 'Ready')
       }
       toast.success('Đã gửi chapter cho Mangaka.')
       onSubmitted?.()
@@ -165,6 +176,7 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
   }, [chapter?.chapterId, pages, onSubmitted])
 
   const baseFileName = `${chapter?.seriesTitle ?? 'chapter'}-Ch${chapter?.chapterNum ?? ''}`
+  const pageLabel = `Trang ${safeIdx + 1}`
 
   return (
     <div
@@ -326,6 +338,18 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
             <RefreshCw className="size-4" />
           </Button>
 
+          {/* Xem từng layer — mở modal kiểm tra bật/tắt riêng lẻ */}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="size-8 text-white/50 hover:bg-white/10 hover:text-white"
+            onClick={() => setInspectOpen(true)}
+            disabled={layers.length === 0}
+            title="Xem từng layer"
+          >
+            <LayersIcon className="size-4" />
+          </Button>
+
           <Button
             size="icon-sm"
             variant="ghost"
@@ -429,7 +453,8 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
               </div>
               <div
                 className="group/final relative cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-white/5"
-                onClick={() => setLightbox({ src: resultImage, title: `Ảnh gộp trang ${safeIdx + 1}` })}
+                onClick={() => setInspectOpen(true)}
+                title="Click để kiểm tra từng layer"
               >
                 <img
                   src={resultImage}
@@ -439,7 +464,7 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
                 />
                 <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/final:bg-black/40">
                   <div className="flex items-center gap-1 rounded-full border border-white/20 bg-black/70 px-2 py-1 text-[10px] font-medium text-white opacity-0 backdrop-blur transition-opacity group-hover/final:opacity-100">
-                    <Maximize2 className="size-3" /> Xem
+                    <LayersIcon className="size-3" /> Xem layer
                   </div>
                 </div>
               </div>
@@ -476,6 +501,16 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
           onClose={() => setLightbox(null)}
         />
       )}
+
+      <LayerInspectDialog
+        open={inspectOpen}
+        onClose={() => setInspectOpen(false)}
+        layers={layers}
+        baseImage={baseImage}
+        width={CANVAS_W}
+        height={CANVAS_H}
+        pageLabel={pageLabel}
+      />
     </div>
   )
 }

@@ -208,12 +208,22 @@ instance.interceptors.response.use(
 
     if (status === 403) {
       const backendMsg = errorMsg && errorMsg !== 'Ban khong co quyen thuc hien thao tac nay' ? ` (${errorMsg})` : ''
-      toast.error(`Ban khong co quyen thuc hien thao tac nay${backendMsg}`)
+      // silentError vẫn được tôn trọng cho 403 để nhất quán
+      if (!err.config?.silentError) {
+        toast.error(`Ban khong co quyen thuc hien thao tac nay${backendMsg}`)
+      }
       return Promise.reject(err)
     }
 
     const userMsg = buildUserErrorMsg(status, errorMsg, method)
-    toast.error(userMsg)
+    // MỚI: cho phép nơi gọi request đánh dấu `silentError: true` trong config
+    // để tự xử lý lỗi riêng (vd: composite hàng loạt khi gửi chapter, chấp nhận
+    // vài page fail vì chưa có layer) mà không bị toast global này che mất
+    // thông báo thành công của luồng chính (vd: "Đã gửi chapter cho Mangaka").
+    // Cách dùng ở nơi gọi: axios.post(url, data, { silentError: true })
+    if (!err.config?.silentError) {
+      toast.error(userMsg)
+    }
 
     return Promise.reject(err)
   },

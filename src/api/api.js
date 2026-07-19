@@ -133,9 +133,12 @@ export const pagesService = {
     console.log('[API] PUT /Pages/:id', id, entries)
     return axios.put(`/Pages/${id}`, formData)
   },
-  composite: (pageId) => {
+  // MỚI: nhận thêm `options` (vd { silentError: true }) và forward xuống axios
+  // để nơi gọi có thể tắt toast lỗi global — dùng khi cố tình gọi composite
+  // hàng loạt và chấp nhận một số page fail vì chưa có layer (xem LayerEditor.jsx).
+  composite: (pageId, options = {}) => {
     console.log('[API] POST /Pages/:id/composite', pageId)
-    return axios.post(`/Pages/${pageId}/composite`)
+    return axios.post(`/Pages/${pageId}/composite`, undefined, options)
   },
   updateStatus: (id, status) => {
     console.log('[API] PATCH /Pages/:id/status', id, status)

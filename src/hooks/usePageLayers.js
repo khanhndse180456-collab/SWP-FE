@@ -30,18 +30,42 @@ function apiLayerToUi(raw) {
     : 100;
 
   return {
-    id: String(raw.layerid ?? raw.Layerid ?? raw.id ?? raw._id ?? ""),
+    id: String(raw.layer_id ?? raw.layerid ?? raw.Layerid ?? raw.LayerId ?? raw.id ?? raw._id ?? ""),
     name: String(
       raw.layer_name ?? raw.layername ?? raw.LayerName ?? raw.name ?? `Layer ${raw.index ?? 0}`
     ),
-    imageUrl: raw.file_url ?? raw.fileurl ?? raw.Fileurl ?? raw.imageUrl ?? raw.url ?? "",
+    imageUrl: raw.file_url ?? raw.fileurl ?? raw.Fileurl ?? raw.FileUrl ?? raw.imageUrl ?? raw.url ?? "",
     visible: raw.is_visible ?? raw.isvisible ?? raw.isVisible ?? raw.IsVisible ?? true,
     opacity: opacityVal,
     blendMode: BLEND_OPTIONS.includes(raw.blendMode) ? raw.blendMode : "normal",
-    index: Number(raw.z_index ?? raw.index ?? raw.zIndex ?? 0),
+    index: Number(raw.z_index ?? raw.index ?? raw.zIndex ?? raw.ZIndex ?? 0),
     currentVersionNo:
-      raw.version_number ?? raw.versionnumber ?? raw.versionNumber ?? raw.currentVersionNo ?? 1,
+      raw.version_number ?? raw.versionnumber ?? raw.versionNumber ?? raw.VersionNumber ?? raw.currentVersionNo ?? 1,
   };
+}
+
+// Backend có thể trả về layer theo nhiều "hình dạng" khác nhau tuỳ endpoint:
+// - object layer trực tiếp: { layerId, layerName, ... }
+// - bọc trong { data: {...} }
+// - bọc trong { layer: {...} }
+// - bọc trong { result: {...} }
+// - bọc trong { message, data: {...} } (như finalize())
+// Hàm này thử từng khả năng, ưu tiên object nào có field id nhận diện được layer.
+function extractLayerPayload(res) {
+  const candidates = [
+    res,
+    res?.data,
+    res?.layer,
+    res?.result,
+    res?.data?.layer,
+    res?.data?.result,
+  ].filter((c) => c && typeof c === "object");
+
+  const hasIdField = (obj) =>
+    obj.layer_id ?? obj.layerid ?? obj.Layerid ?? obj.LayerId ?? obj.id ?? obj._id;
+
+  const found = candidates.find((c) => hasIdField(c) !== undefined && hasIdField(c) !== null);
+  return found ?? res?.data ?? res;
 }
 
 export function usePageLayers(pageId, { uploaderId } = {}) {
@@ -70,11 +94,13 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
         layersService.list(pageId),
       ]);
 
-      if (pageRes?.status === "fulfilled") {
-        const p = pageRes.value?.data ?? pageRes.value;
-        setOriginalImage(p?.pageimageurl ?? p?.Pageimageurl ?? null);
-        setResultImage(p?.pageimageurl ?? p?.Pageimageurl ?? null);
-      }
+      // LƯU Ý: Promise.all trả về giá trị resolve trực tiếp (khác Promise.allSettled),
+      // nên KHÔNG có field { status, value } — trước đây check "fulfilled" luôn false,
+      // khiến originalImage/resultImage không bao giờ được set lúc refresh() (vd sau F5),
+      // dù backend đã lưu Pageimageurl đúng.
+      const p = pageRes?.data ?? pageRes;
+      setOriginalImage(p?.pageimageurl ?? p?.Pageimageurl ?? null);
+      setResultImage(p?.pageimageurl ?? p?.Pageimageurl ?? null);
 
       const rawLayers = Array.isArray(layersRes) ? layersRes : [];
       setLayers(rawLayers.map(apiLayerToUi));
@@ -101,9 +127,25 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
           uploaderId,
           layerName: layerName || `Layer ${nextIdx + 1}`,
         });
-        const raw = res?.data ?? res;
+
+        // DEBUG TẠM: nếu vẫn lỗi, mở console và copy log này gửi lại để mình xem field thật.
+        console.log("[usePageLayers] uploadLayer raw response:", res);
+
+        const raw = extractLayerPayload(res);
         const ui = apiLayerToUi(raw);
-        if (!ui.id) throw new Error("Backend không trả về layer sau khi tạo.");
+
+        if (!ui.id) {
+          // Backend không trả về layer nhận diện được -> fallback: refresh lại toàn bộ
+          // danh sách layer từ server thay vì crash cứng, để không chặn luồng upload.
+          console.warn(
+            "[usePageLayers] Không tìm thấy id layer trong response, fallback sang refresh().",
+            res
+          );
+          await refresh();
+          toast.success(`Đã thêm layer #${nextIdx}.`);
+          return null;
+        }
+
         setLayers((cur) => {
           const next = [...cur.filter((l) => l.id !== ui.id), ui];
           next.sort((a, b) => a.index - b.index);
@@ -118,7 +160,7 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
         setUploading(false);
       }
     },
-    [pageId, uploaderId, layers.length],
+    [pageId, uploaderId, layers.length, refresh],
   );
 
   const updateLayer = useCallback(
@@ -128,10 +170,15 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
         cur.map((l) => (l.id === layerId ? { ...l, ...patch } : l)),
       );
       try {
+        // MỚI: backend bắt buộc LayerName ở mọi request update, kể cả khi
+        // chỉ đổi opacity/index — nên luôn lấy tên hiện tại nếu patch không có,
+        // tránh gửi layerName: undefined khiến backend trả 400.
+        const current = layers.find((l) => l.id === layerId);
+        const layerName = patch.name ?? current?.name ?? `Layer ${current?.index ?? 0}`;
         await layersService.updateLayer(layerId, {
-          layerName: patch.name,
-          zIndex: patch.index,
-          opacity: patch.opacity,
+          layerName,
+          zIndex: patch.index ?? current?.index,
+          opacity: patch.opacity ?? current?.opacity,
         });
       } catch (err) {
         toast.error(
@@ -140,7 +187,7 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
         await refresh();
       }
     },
-    [pageId, refresh],
+    [pageId, refresh, layers],
   );
 
   const toggleVisibility = useCallback(
@@ -198,9 +245,16 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       setLayers(reordered);
       try {
         await Promise.all(
-          orderedIds.map((id, idx) =>
-            layersService.updateLayer(id, { zIndex: idx }),
-          ),
+          orderedIds.map((id, idx) => {
+            // MỚI: kèm layerName + opacity hiện tại — backend yêu cầu
+            // LayerName bắt buộc ở mọi request update, kể cả khi chỉ đổi zIndex.
+            const layer = layers.find((l) => l.id === id);
+            return layersService.updateLayer(id, {
+              zIndex: idx,
+              layerName: layer?.name ?? `Layer ${idx}`,
+              opacity: layer?.opacity,
+            });
+          }),
         );
       } catch (err) {
         toast.error("Không sắp xếp lại được layer.");
