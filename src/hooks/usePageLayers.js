@@ -302,7 +302,15 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
           ),
         );
       }
-      toast.success("Đã lưu tất cả thay đổi.");
+      toast.success("Đã lưu tất cả thay đổi.", {
+        style: {
+          background: '#f0fdf4',
+          color: '#15803d',
+          border: '1px solid #bbf7d0',
+          borderRadius: '12px',
+          fontWeight: '500',
+        }
+      });
       setDbLayers(JSON.parse(JSON.stringify(layers)));
     } catch (err) {
       toast.error(err?.response?.data?.message ?? "Không lưu được thay đổi.");

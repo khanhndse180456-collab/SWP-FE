@@ -30,7 +30,7 @@ export default function SidebarNav({
   accentClass = 'bg-primary text-primary-foreground',
 }) {
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r bg-zinc-950 text-zinc-100">
+    <aside className="flex w-64 shrink-0 flex-col border-r bg-zinc-950 text-zinc-100 h-screen sticky top-0">
       {/* Logo */}
       <div className="flex h-16 items-center gap-2.5 border-b border-zinc-800 px-6">
         <span

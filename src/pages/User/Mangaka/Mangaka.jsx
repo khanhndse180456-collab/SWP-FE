@@ -385,6 +385,8 @@ export default function Mangaka() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectChapterId, setRejectChapterId] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [seriesToDelete, setSeriesToDelete] = useState(null)
 
   const [tab, setTab] = useState('dashboard')
   // annotateSeries must read from location.state first (navigation carries the correct series),
@@ -1452,16 +1454,43 @@ export default function Mangaka() {
       console.warn('[Mangaka] Cannot find series to delete with ID:', seriesId, 'in list:', seriesList)
       return
     }
-    const title = target.title
-    const ok = window.confirm(
-      `Xóa series "${title}"?\n\nCác chapter của series này sẽ bị gỡ. Thao tác không hoàn tác.`,
-    )
-    if (!ok) return
+    setSeriesToDelete(target)
+    setDeleteConfirmOpen(true)
+  }
+
+  function handleConfirmDelete() {
+    if (!seriesToDelete) return
+    const seriesId = seriesToDelete.id
+    const title = seriesToDelete.title
 
     // Delete from API
     deleteSeries.mutate(seriesId, {
-      onSuccess: () => toast.success('Đã xóa series trên server!'),
-      onError: () => toast.error('Không xóa được series trên server.'),
+      onSuccess: () => {
+        toast.success('Đã xóa series thành công!', {
+          style: {
+            background: '#f0fdf4',
+            color: '#15803d',
+            border: '1px solid #bbf7d0',
+            borderRadius: '12px',
+            fontWeight: '500',
+          }
+        })
+        setDeleteConfirmOpen(false)
+        setSeriesToDelete(null)
+      },
+      onError: () => {
+        toast.error('Không xóa được series trên server.', {
+          style: {
+            background: '#fef2f2',
+            color: '#b91c1c',
+            border: '1px solid #fecaca',
+            borderRadius: '12px',
+            fontWeight: '500',
+          }
+        })
+        setDeleteConfirmOpen(false)
+        setSeriesToDelete(null)
+      },
     })
 
     removeEbDebutApproval(title)
@@ -1774,6 +1803,30 @@ export default function Mangaka() {
               disabled={!selectedTantouForReview || assignTantouEditor.isPending || updateSeriesStatus.isPending}
             >
               {assignTantouEditor.isPending || updateSeriesStatus.isPending ? 'Đang gửi...' : 'Gửi duyệt'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-[420px] bg-card border">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2 font-bold text-lg">
+              Xác nhận xóa Series
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-sm text-muted-foreground leading-relaxed">
+              Bạn có chắc chắn muốn xóa series <strong className="text-foreground">"{seriesToDelete?.title}"</strong>?
+              <br /><br />
+              Tất cả các chapter thuộc series này sẽ bị gỡ bỏ. Hành động này <strong className="text-destructive">không thể hoàn tác</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2 sm:gap-0 flex justify-end">
+            <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)} className="hover:bg-muted font-medium text-xs">
+              Hủy
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete} className="bg-red-600 text-white font-semibold text-xs hover:bg-red-700">
+              Xóa ngay
             </Button>
           </DialogFooter>
         </DialogContent>
