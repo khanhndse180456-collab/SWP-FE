@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import ReviewCompositeDialog from './ReviewCompositeDialog.jsx'
 import { pagesService } from '@/api/api.js'
-import { useUpdateChapterStatus } from '@/api/hooks/useApi.js'
+import { useUpdateChapterStatus, useUpdatePageStatus } from '@/api/hooks/useApi.js'
 import { toast } from 'sonner'
 
 const STATUS_FILTERS = [
@@ -53,6 +53,7 @@ export default function ChapterView({
   const [statusFilter, setStatusFilter] = useState('all')
   const [reviewChapter, setReviewChapter] = useState(null)
   const updateStatus = useUpdateChapterStatus()
+  const updatePageStatus = useUpdatePageStatus()
 
   const activeSeries = useMemo(() => {
     return seriesList.find(s => String(s.id) === selectedSeriesId)
@@ -103,6 +104,28 @@ export default function ChapterView({
     if (!chapterId) return
     try {
       await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' })
+      toast.success(note ? `Đã gửi yêu cầu sửa: ${note}` : 'Đã gửi yêu cầu sửa cho Assistant.')
+      handleReviewClose()
+    } catch {
+      /* toast handled by hook */
+    }
+  }
+
+  async function handleApprovePage(pageId) {
+    if (!pageId) return
+    try {
+      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+      toast.success('Đã duyệt trang này.')
+      handleReviewClose()
+    } catch {
+      /* toast handled by hook */
+    }
+  }
+
+  async function handleRequestRevisionPage(pageId, note) {
+    if (!pageId) return
+    try {
+      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'InWork' })
       toast.success(note ? `Đã gửi yêu cầu sửa: ${note}` : 'Đã gửi yêu cầu sửa cho Assistant.')
       handleReviewClose()
     } catch {
@@ -234,11 +257,9 @@ export default function ChapterView({
           open={!!reviewChapter}
           chapter={reviewChapter}
           onClose={handleReviewClose}
-          onApprove={() => handleApprove(reviewChapter.id ?? reviewChapter.chapterId)}
-          onRequestRevision={(note) =>
-            handleRequestRevision(reviewChapter.id ?? reviewChapter.chapterId, note)
-          }
-          busy={updateStatus.isPending}
+          onApprove={handleApprovePage}
+          onRequestRevision={handleRequestRevisionPage}
+          busy={updatePageStatus.isPending}
         />
       )}
     </div>

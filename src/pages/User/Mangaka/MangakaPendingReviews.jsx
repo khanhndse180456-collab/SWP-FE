@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ImageIcon, Loader2, Sparkles } from 'lucide-react'
 import { pagesService } from '@/api/api.js'
-import { useUpdateChapterStatus } from '@/api/hooks/useApi.js'
+import { useUpdateChapterStatus, useUpdatePageStatus } from '@/api/hooks/useApi.js'
 import { layersService } from '@/api/layersService.js'
 import ReviewCompositeDialog from './ReviewCompositeDialog.jsx'
 
@@ -27,6 +27,7 @@ import ReviewCompositeDialog from './ReviewCompositeDialog.jsx'
 export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
   const pending = (chapterRows ?? []).filter(c => String(c.status).toLowerCase() === 'ready')
   const updateStatus = useUpdateChapterStatus()
+  const updatePageStatus = useUpdatePageStatus()
   const [openChapterId, setOpenChapterId] = useState(null)
   const [busy, setBusy] = useState(false)
 
@@ -41,10 +42,6 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
     if (!chapterId) return
     setBusy(true)
     try {
-      // Duyệt → chapter chuyển sang "tantou" để Tantou tiếp tục
-      // (khớp state machine backend: Ready → TantouReview hoặc giữ Ready
-      // cho tới khi Mangaka forward). Ở đây giữ nguyên Ready sau duyệt
-      // vì status forward là do TantouEditor bật, chỉ cần đóng dialog.
       await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Ready' })
     } finally {
       setBusy(false)
@@ -56,8 +53,29 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
     if (!chapterId) return
     setBusy(true)
     try {
-      // Yêu cầu sửa lại → quay Assistant "InProduction"
       await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' })
+    } finally {
+      setBusy(false)
+      closeDialog()
+    }
+  }
+
+  async function handleApprovePage(pageId) {
+    if (!pageId) return
+    setBusy(true)
+    try {
+      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+    } finally {
+      setBusy(false)
+      closeDialog()
+    }
+  }
+
+  async function handleRequestRevisionPage(pageId) {
+    if (!pageId) return
+    setBusy(true)
+    try {
+      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'InWork' })
     } finally {
       setBusy(false)
       closeDialog()
@@ -131,9 +149,9 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
           open={!!openChapter}
           chapter={openChapter}
           onClose={closeDialog}
-          onApprove={() => handleApprove(openChapter.id ?? openChapter.chapterId)}
-          onRequestRevision={() => handleRequestRevision(openChapter.id ?? openChapter.chapterId)}
-          busy={busy || updateStatus.isPending}
+          onApprove={handleApprovePage}
+          onRequestRevision={handleRequestRevisionPage}
+          busy={busy || updatePageStatus.isPending}
         />
       )}
     </>

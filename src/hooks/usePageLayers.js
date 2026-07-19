@@ -70,9 +70,11 @@ function extractLayerPayload(res) {
 
 export function usePageLayers(pageId, { uploaderId } = {}) {
   const [layers, setLayers] = useState([]);
+  const [dbLayers, setDbLayers] = useState([]);
   const [originalImage, setOriginalImage] = useState(null);
   const [resultImage, setResultImage] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState(null);
@@ -117,7 +119,9 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       setResultImage(resultUrl);
 
       const rawLayers = Array.isArray(layersRes) ? layersRes : [];
-      setLayers(rawLayers.map(apiLayerToUi));
+      const uiLayers = rawLayers.map(apiLayerToUi);
+      setLayers(uiLayers);
+      setDbLayers(JSON.parse(JSON.stringify(uiLayers)));
     } catch (err) {
       setError(err?.message ?? "Lỗi không xác định");
     } finally {
@@ -165,6 +169,11 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
           next.sort((a, b) => a.index - b.index);
           return next;
         });
+        setDbLayers((cur) => {
+          const next = [...cur.filter((l) => l.id !== ui.id), ui];
+          next.sort((a, b) => a.index - b.index);
+          return next;
+        });
         toast.success(`Đã thêm layer #${ui.index}.`);
         return ui;
       } catch (err) {
@@ -178,45 +187,21 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
   );
 
   const updateLayer = useCallback(
-    async (layerId, patch) => {
-      if (!pageId) return;
+    (layerId, patch) => {
       setLayers((cur) =>
         cur.map((l) => (l.id === layerId ? { ...l, ...patch } : l)),
       );
-      try {
-        // MỚI: backend bắt buộc LayerName ở mọi request update, kể cả khi
-        // chỉ đổi opacity/index — nên luôn lấy tên hiện tại nếu patch không có,
-        // tránh gửi layerName: undefined khiến backend trả 400.
-        const current = layers.find((l) => l.id === layerId);
-        const layerName = patch.name ?? current?.name ?? `Layer ${current?.index ?? 0}`;
-        await layersService.updateLayer(layerId, {
-          layerName,
-          zIndex: patch.index ?? current?.index,
-          opacity: patch.opacity ?? current?.opacity,
-        });
-      } catch (err) {
-        toast.error(
-          err?.response?.data?.message ?? "Không cập nhật được layer.",
-        );
-        await refresh();
-      }
     },
-    [pageId, refresh, layers],
+    [],
   );
 
   const toggleVisibility = useCallback(
-    async (layerId) => {
+    (layerId) => {
       setLayers((cur) =>
         cur.map((l) => (l.id === layerId ? { ...l, visible: !l.visible } : l)),
       );
-      try {
-        await layersService.toggleVisibility(layerId);
-      } catch (err) {
-        toast.error("Không đổi được trạng thái hiển thị layer.");
-        await refresh();
-      }
     },
-    [refresh],
+    [],
   );
 
   const setLocalVisibility = useCallback((layerId, visible) => {
@@ -240,6 +225,7 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       try {
         await layersService.softDeleteLayer(layerId);
         setLayers((cur) => cur.filter((l) => l.id !== layerId));
+        setDbLayers((cur) => cur.filter((l) => l.id !== layerId));
         toast.success("Đã xóa layer.");
       } catch (err) {
         toast.error(err?.response?.data?.message ?? "Không xóa được layer.");
@@ -249,33 +235,18 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
   );
 
   const reorderLayers = useCallback(
-    async (orderedIds) => {
-      const reordered = orderedIds
-        .map((id, idx) => {
-          const layer = layers.find((l) => l.id === id);
-          return layer ? { ...layer, index: idx } : null;
-        })
-        .filter(Boolean);
-      setLayers(reordered);
-      try {
-        await Promise.all(
-          orderedIds.map((id, idx) => {
-            // MỚI: kèm layerName + opacity hiện tại — backend yêu cầu
-            // LayerName bắt buộc ở mọi request update, kể cả khi chỉ đổi zIndex.
-            const layer = layers.find((l) => l.id === id);
-            return layersService.updateLayer(id, {
-              zIndex: idx,
-              layerName: layer?.name ?? `Layer ${idx}`,
-              opacity: layer?.opacity,
-            });
-          }),
-        );
-      } catch (err) {
-        toast.error("Không sắp xếp lại được layer.");
-        await refresh();
-      }
+    (orderedIds) => {
+      setLayers((cur) => {
+        const next = orderedIds
+          .map((id, idx) => {
+            const layer = cur.find((l) => l.id === id);
+            return layer ? { ...layer, index: idx } : null;
+          })
+          .filter(Boolean);
+        return next;
+      });
     },
-    [layers, refresh],
+    [],
   );
 
   const finalize = useCallback(async () => {
@@ -304,6 +275,57 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
     }
   }, [pageId]);
 
+  const saveChanges = useCallback(async () => {
+    if (!pageId) return;
+    setSaving(true);
+    try {
+      const changedLayers = layers.filter((cur) => {
+        const db = dbLayers.find((l) => l.id === cur.id);
+        if (!db) return false;
+        return (
+          db.name !== cur.name ||
+          db.visible !== cur.visible ||
+          db.opacity !== cur.opacity ||
+          db.index !== cur.index
+        );
+      });
+
+      if (changedLayers.length > 0) {
+        await Promise.all(
+          changedLayers.map((l) =>
+            layersService.updateLayer(l.id, {
+              layerName: l.name,
+              zIndex: l.index,
+              opacity: l.opacity / 100,
+              isVisible: l.visible,
+            }),
+          ),
+        );
+      }
+      toast.success("Đã lưu tất cả thay đổi.");
+      setDbLayers(JSON.parse(JSON.stringify(layers)));
+    } catch (err) {
+      toast.error(err?.response?.data?.message ?? "Không lưu được thay đổi.");
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  }, [pageId, layers, dbLayers, refresh]);
+
+  const hasChanges = useMemo(() => {
+    if (layers.length !== dbLayers.length) return true;
+    return layers.some((cur) => {
+      const db = dbLayers.find((l) => l.id === cur.id);
+      if (!db) return true;
+      return (
+        db.name !== cur.name ||
+        db.visible !== cur.visible ||
+        db.opacity !== cur.opacity ||
+        db.index !== cur.index
+      );
+    });
+  }, [layers, dbLayers]);
+
   const visibleLayers = useMemo(
     () => layers.filter((l) => l.visible),
     [layers],
@@ -315,9 +337,11 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
     originalImage,
     resultImage,
     loading,
+    saving,
     uploading,
     finalizing,
     error,
+    hasChanges,
     refresh,
     addLayer,
     updateLayer,
@@ -327,5 +351,6 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
     deleteLayer,
     reorderLayers,
     finalize,
+    saveChanges,
   };
 }
