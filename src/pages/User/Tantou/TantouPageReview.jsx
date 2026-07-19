@@ -430,7 +430,6 @@ export default function TantouPageReview({
   if (!submission) return null
 
   const isDebut = submission.pipeline === 'debut'
-  const hasComment = editorialComment.trim().length > 0
   const pageImageUrl = currentPage?.url ?? submission.mangakaImageUrl ?? null
   const noPagesAvailable = pages.length === 0 // MỚI: chưa có trang nào để hiển thị/nhận xét
 
@@ -753,29 +752,6 @@ export default function TantouPageReview({
             </Card>
           )}
 
-          <Card className="flex-1 border-primary/20 shadow-md">
-            <CardHeader>
-              <CardTitle className="text-base">Ghi chú tổng quát</CardTitle>
-              <CardDescription>
-                Ghi chú cho toàn bộ bản thảo. Bắt buộc nếu chọn "Yêu cầu chỉnh sửa".
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea
-                rows={6}
-                placeholder="Ghi chú cho Mangaka..."
-                value={editorialComment}
-                onChange={e => onEditorialCommentChange(e.target.value)}
-                className="min-h-[120px] resize-y"
-              />
-              {editorialComment.trim() ? (
-                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => onEditorialCommentChange('')}>
-                  Xóa ghi chú
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-
           {tantouBoxes.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
@@ -823,8 +799,6 @@ export default function TantouPageReview({
             <Button
               variant="outline"
               onClick={onRequestRevision}
-              disabled={!hasComment}
-              title={!hasComment ? 'Nhập ghi chú trước khi yêu cầu Mangaka chỉnh sửa' : undefined}
               className="gap-2"
             >
               <XCircle className="size-4" />

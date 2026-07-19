@@ -23,7 +23,7 @@ export function validateScore(value) {
   if (Number.isNaN(parsed)) return "Điểm phải là số.";
   if (parsed < 0 || parsed > SCORE_MAX) return `Điểm phải trong khoảng 0 - ${SCORE_MAX}.`;
   const stepped = Math.round(parsed * 2) / 2;
-  if (Math.abs(stepped - parsed) > 0.001) return "Điểm chỉ nhận bước 0.5 (ví dụ: 3.5, 4.0, 4.5).";
+  if (Math.abs(stepped - parsed) > 0.001) return "Điểm chỉ nhận bước 0.5 (ví dụ: 7.5, 8.0, 8.5).";
   return "";
 }
 
@@ -35,31 +35,20 @@ export function buildInitialScores() {
   return { plotDialogue: "", artDesign: "", panelingCamera: "", pacingHook: "", coloring: "", toneShading: "" };
 }
 
+// Ngưỡng đạt trên thang điểm 10 — chỉnh số này nếu muốn ngưỡng khác
+export const PASS_THRESHOLD = 5.0;
+
 export function getClassification(average) {
-  if (average < 2.5) {
+  if (average < PASS_THRESHOLD) {
     return {
       label: "KHÔNG ĐẠT",
       note: "Series chưa đạt chất lượng, cần chỉnh sửa lớn trước khi xét lại.",
       className: "border-red-200 bg-red-50 text-red-700",
     };
   }
-  if (average < 3.5) {
-    return {
-      label: "ĐẠT",
-      note: "Series có thể thông qua, nhưng cần cải thiện theo ghi chú.",
-      className: "border-amber-200 bg-amber-50 text-amber-700",
-    };
-  }
-  if (average < 4.25) {
-    return {
-      label: "TỐT",
-      note: "Chất lượng series ổn định, phù hợp duyệt nhanh.",
-      className: "border-sky-200 bg-sky-50 text-sky-700",
-    };
-  }
   return {
-    label: "XUẤT SẮC",
-    note: "Series chất lượng cao, phù hợp đẩy nổi bật/banner.",
+    label: "ĐẠT",
+    note: "Series đạt yêu cầu chất lượng, có thể thông qua.",
     className: "border-emerald-200 bg-emerald-50 text-emerald-700",
   };
 }

@@ -80,8 +80,6 @@ export default function TantouEditor() {
     closeReview,
     handleForwardEb,
     handleRequestRevision,
-    savingScheduleId,
-    handleSetSchedule,
   } = useTantouWorkspace()
 
   const [tab, setTab] = useState('debut')
@@ -439,12 +437,12 @@ export default function TantouEditor() {
             )}
           </TabsContent>
 
-          {/* ── Tab: Lịch xuất bản ── */}
+          {/* ── Tab: Lịch xuất bản (chỉ xem) ── */}
           <TabsContent value="schedule" className="space-y-4">
             <div>
               <h2 className="text-xl font-semibold">Lịch phát hành</h2>
               <p className="text-sm text-muted-foreground">
-                Series đã được {LABEL_EDITOR_BOARD} chấp nhận.
+                Series đã được {LABEL_EDITOR_BOARD} chấp nhận. Mục này chỉ để xem, không chỉnh sửa được ở đây.
               </p>
             </div>
             {loading ? (
@@ -458,42 +456,21 @@ export default function TantouEditor() {
                 </CardContent>
               </Card>
             ) : (
-              scheduleSeries.map(row => {
-                const isSaving = savingScheduleId === row.seriesid
-                return (
-                  <Card key={row.seriesid}>
-                    <CardHeader>
-                      <CardTitle>{row.title}</CardTitle>
-                      <CardDescription>
-                        {row.agerating}
-                        {row.cadence
-                          ? ` · Đang phát hành: ${row.cadence === 'weekly' ? 'Theo tuần' : 'Theo tháng'}`
-                          : ' · Chưa đặt lịch phát hành'}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardFooter className="gap-2">
-                      <Button
-                        variant={row.cadence === 'weekly' ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={isSaving}
-                        onClick={() => handleSetSchedule(row.seriesid, 'weekly')}
-                      >
-                        {isSaving && <Loader2 className="size-4 animate-spin" />}
-                        Theo tuần
-                      </Button>
-                      <Button
-                        variant={row.cadence === 'monthly' ? 'default' : 'outline'}
-                        size="sm"
-                        disabled={isSaving}
-                        onClick={() => handleSetSchedule(row.seriesid, 'monthly')}
-                      >
-                        {isSaving && <Loader2 className="size-4 animate-spin" />}
-                        Theo tháng
-                      </Button>
-                    </CardFooter>
-                  </Card>
-                )
-              })
+              scheduleSeries.map(row => (
+                <Card key={row.seriesid}>
+                  <CardHeader>
+                    <CardTitle>{row.title}</CardTitle>
+                    <CardDescription>{row.agerating}</CardDescription>
+                  </CardHeader>
+                  <CardFooter>
+                    <Badge variant={row.cadence ? 'default' : 'outline'}>
+                      {row.cadence
+                        ? `Đang phát hành: ${row.cadence === 'weekly' ? 'Theo tuần' : 'Theo tháng'}`
+                        : 'Chưa đặt lịch phát hành'}
+                    </Badge>
+                  </CardFooter>
+                </Card>
+              ))
             )}
           </TabsContent>
         </Tabs>

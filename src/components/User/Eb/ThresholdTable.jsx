@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { PASS_THRESHOLD } from "@/pages/User/Eb/Eb.helpers.js";
 
 export function ThresholdTable() {
   const [open, setOpen] = useState(false);
@@ -15,10 +16,14 @@ export function ThresholdTable() {
       </button>
       {open && (
         <div className="border-t px-3 pb-3 pt-2 space-y-1.5 text-sm">
-          <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Dưới 2.5 điểm</span><span className="font-medium text-red-700">KHÔNG ĐẠT</span></div>
-          <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Từ 2.5 đến dưới 3.5 điểm</span><span className="font-medium text-amber-700">ĐẠT</span></div>
-          <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Từ 3.5 đến dưới 4.25 điểm</span><span className="font-medium text-sky-700">TỐT</span></div>
-          <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Từ 4.25 đến 5.0 điểm</span><span className="font-medium text-emerald-700">XUẤT SẮC</span></div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Dưới {PASS_THRESHOLD.toFixed(1)} điểm</span>
+            <span className="font-medium text-red-700">KHÔNG ĐẠT</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Từ {PASS_THRESHOLD.toFixed(1)} đến 10.0 điểm</span>
+            <span className="font-medium text-emerald-700">ĐẠT</span>
+          </div>
         </div>
       )}
     </div>
