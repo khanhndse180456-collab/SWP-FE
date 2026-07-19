@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, Gavel, Loader2, Search, X, XCircle } from "lucide-react";
-import Header from "@/components/User/Header/Header.jsx";
-import Footer from "@/components/User/Footer/Footer.jsx";
-import { WorkspaceHero } from "@/components/layout/WorkspaceHero.jsx";
+import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList } from "lucide-react";
+import SidebarNav from "@/components/layout/SidebarNav.jsx";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,13 +24,18 @@ import { Input } from "@/components/ui/input";
 import { getSession, logout } from "@/lib/auth.js";
 import { placeholderPageDataUrl } from "@/utils/assistantWorkspaceStorage.js";
 import { LABEL_EDITOR_BOARD } from "@/constants/roleTerminology.js";
-import { NAV_LINKS, SCORE_MAX } from "@/constants/eb.js";
+import { SCORE_MAX } from "@/constants/eb.js";
 import { useEbWorkspace } from "@/hooks/useEbWorkspace.js";
 import { getClassification } from "@/pages/User/Eb/Eb.helpers.js";
 import { CouncilScoresTable } from "@/components/User/Eb/CouncilScoresTable.jsx";
 import { ScoreFieldCard } from "@/components/User/Eb/ScoreFieldCard.jsx";
 import { ThresholdTable } from "@/components/User/Eb/ThresholdTable.jsx";
 import "./Eb.css";
+
+const SIDEBAR_ITEMS = [
+  { id: 'queue',  label: 'Chấm điểm',     icon: Gavel },
+  { id: 'rubric', label: 'Quy chế chấm',  icon: ClipboardList },
+];
 
 export default function Eb() {
   const navigate = useNavigate();
@@ -73,6 +76,7 @@ export default function Eb() {
 
   function handleLogout() { logout(); navigate("/login"); }
 
+  const [tab, setTab] = useState("queue");
   const [queueSearch, setQueueSearch] = useState("");
 
   const filteredPending = useMemo(() => {
@@ -94,22 +98,181 @@ export default function Eb() {
     placeholderPageDataUrl(activeTitle || "Chưa chọn series");
 
   return (
-    <div className="ws-page--eb flex min-h-screen flex-col bg-background">
-      <Header links={NAV_LINKS} onLogout={user ? handleLogout : undefined} />
-      <WorkspaceHero
-        label={`${LABEL_EDITOR_BOARD} · Hội đồng`}
-        title={`Xin chào${user?.name ? `, ${user.name}` : ""}`}
-        description="Nhập điểm từng thành viên Hội đồng — bảng tổng hợp cập nhật realtime từ API."
-        className="ws-hero--eb"
+    <div className="ws-page--eb flex min-h-screen bg-slate-900/5 dark:bg-zinc-950">
+      {/* Sidebar menu — đồng bộ y hệt Mangaka */}
+      <SidebarNav
+        logoIcon={BookOpen}
+        appName="MangaPublish"
+        items={SIDEBAR_ITEMS}
+        activeId={tab}
+        onSelect={setTab}
+        onLogout={user ? handleLogout : undefined}
+        user={user}
+        accentClass="bg-emerald-600 text-white"
       />
 
-      <main className="page-container flex-1 space-y-8 py-8">
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.9fr)]">
-          <Card>
-            <CardHeader className="space-y-2">
-              <CardTitle>Nhập điểm (tài khoản đại diện)</CardTitle>
-              <CardDescription>Chọn series trong hàng chờ, chọn thành viên, nhập điểm rồi Lưu.</CardDescription>
-            </CardHeader>
+      {/* Panel Hàng chờ duyệt — ngay cạnh sidebar, scroll riêng */}
+      <aside className="flex w-80 shrink-0 flex-col border-r bg-white dark:bg-zinc-950">
+        <div className="flex h-16 items-center justify-between gap-2 border-b border-zinc-200 px-5 dark:border-zinc-800">
+          <div className="flex items-center gap-2">
+            <Gavel className="size-4 text-primary" />
+            <h2 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Hàng chờ duyệt
+            </h2>
+          </div>
+          <Badge variant="secondary" className="text-[11px]">{pending.length}</Badge>
+        </div>
+
+        {!loadingQueue && pending.length > 0 && (
+          <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+              <Input
+                placeholder="Tìm theo tên series..."
+                value={queueSearch}
+                onChange={e => setQueueSearch(e.target.value)}
+                className="h-9 pl-8 pr-8 text-sm"
+              />
+              {queueSearch && (
+                <button
+                  type="button"
+                  onClick={() => setQueueSearch("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 space-y-2 overflow-y-auto p-3">
+          {loadingQueue ? (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-200 px-3 py-8 text-sm text-zinc-500 dark:border-zinc-800">
+              <Loader2 className="size-4 animate-spin" />Đang tải…
+            </div>
+          ) : filteredPending.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-8 text-center text-xs text-zinc-500 dark:border-zinc-800">
+              {pending.length === 0
+                ? "Chưa có series nào chờ duyệt."
+                : "Không tìm thấy series khớp."}
+            </div>
+          ) : (
+            filteredPending.map((p, idx) => {
+              const id = p._resolvedId;
+              const title = p.title ?? p.series_title ?? `Series #${id}`;
+              const assessment = getQueueAssessment(id);
+              const isActive = id === selectedId;
+              return (
+                <button
+                  key={id ?? idx}
+                  type="button"
+                  onClick={() => { setSelectedId(id); setTab("queue"); }}
+                  className={`flex w-full items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all ${
+                    isActive
+                      ? "border-primary bg-primary/5 shadow-sm dark:bg-primary/10"
+                      : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+                  }`}
+                >
+                  {(p.coverimageurl || p.cover_image_url) ? (
+                    <img
+                      src={p.coverimageurl ?? p.cover_image_url}
+                      alt=""
+                      className="size-10 shrink-0 rounded-md object-cover"
+                    />
+                  ) : (
+                    <div className={`flex size-10 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${
+                      isActive ? "bg-primary/15 text-primary" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                    }`}>
+                      {(title?.[0] ?? "?").toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className={`line-clamp-1 text-xs font-semibold ${
+                      isActive ? "text-primary" : "text-zinc-900 dark:text-zinc-100"
+                    }`}>
+                      {title}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                        {p.status ?? p.Status ?? "EBReview"}
+                      </Badge>
+                      {assessment.isSelected && assessment.scoredCount > 0 ? (
+                        <Badge variant="secondary" className={`border px-1.5 py-0 text-[10px] ${assessment.classification.className}`}>
+                          {assessment.scoredCount}/{assessment.total} · {assessment.classification.label}
+                        </Badge>
+                      ) : (
+                        <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                          Chưa chấm
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="border-b bg-white px-8 py-5 dark:bg-zinc-950">
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">{LABEL_EDITOR_BOARD} · Hội đồng</p>
+          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">
+            Xin chào{user?.name ? `, ${user.name}` : ""}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Nhập điểm từng thành viên Hội đồng — bảng tổng hợp cập nhật realtime từ API.
+          </p>
+        </div>
+
+        {tab === "queue" && selectedId && activeSubmission && (() => {
+          const assessment = getQueueAssessment(selectedId);
+          const notReady = !assessment.isSelected || assessment.scoredCount < assessment.total;
+          const title = activeSubmission.title ?? activeSubmission.series_title ?? `Series #${selectedId}`;
+          return (
+            <div className="flex items-center gap-3 border-b bg-white px-8 py-3 dark:bg-zinc-950">
+              <p className="text-sm">
+                <span className="text-muted-foreground">Đang chấm:</span>{" "}
+                <strong className="text-foreground">{title}</strong>
+                {assessment.scoredCount > 0 && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    ({assessment.scoredCount}/{assessment.total} đã chấm)
+                  </span>
+                )}
+              </p>
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  onClick={() => handleReject(selectedId, title)}
+                  disabled={notReady}
+                  title={notReady ? "Cần chấm đủ điểm trước khi duyệt" : undefined}
+                >
+                  <XCircle className="size-4" />Từ chối
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => handleApprove(selectedId, title)}
+                  disabled={notReady}
+                  title={notReady ? "Cần chấm đủ điểm trước khi duyệt" : undefined}
+                >
+                  <CheckCircle2 className="size-4" />Chấp nhận
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
+
+        <main className="flex-1 overflow-y-auto p-8">
+          {tab === "queue" && (
+          <div className="space-y-6">
+              <Card>
+                <CardHeader className="space-y-2">
+                  <CardTitle>Nhập điểm (tài khoản đại diện)</CardTitle>
+                  <CardDescription>Chọn series trong hàng chờ, chọn thành viên, nhập điểm rồi Lưu.</CardDescription>
+                </CardHeader>
             <CardContent className="space-y-6">
               {/* Banner đại diện */}
               <div className="eb-rep-banner rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
@@ -280,7 +443,6 @@ export default function Eb() {
             </CardContent>
           </Card>
 
-          {/* Ảnh series */}
           <Card className="overflow-hidden">
             <CardHeader>
               <CardTitle>Ảnh series từ Tantou</CardTitle>
@@ -309,141 +471,26 @@ export default function Eb() {
               </div>
             </CardContent>
           </Card>
-        </section>
-
-        {/* Hàng chờ duyệt */}
-        <section className="space-y-4">
-          <div>
-            <h2 className="flex items-center gap-2 text-xl font-semibold">
-              <Gavel className="size-5 text-primary" />Hàng chờ duyệt EB
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Series đang ở trạng thái EBReview — click để chọn và nhập điểm.
-            </p>
           </div>
-
-          {!loadingQueue && pending.length > 0 && (
-            <div className="relative max-w-sm">
-              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Tìm theo tên series hoặc mô tả..."
-                value={queueSearch}
-                onChange={e => setQueueSearch(e.target.value)}
-                className="h-9 pl-8 pr-8 text-sm"
-              />
-              {queueSearch && (
-                <button
-                  type="button"
-                  onClick={() => setQueueSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
           )}
-          {loadingQueue
-            ? (
+
+          {tab === "rubric" && (
+            <div className="space-y-6">
               <Card>
-                <CardContent className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
-                  <Loader2 className="size-5 animate-spin" />Đang tải hàng chờ…
+                <CardHeader>
+                  <CardTitle>Quy chế chấm điểm</CardTitle>
+                  <CardDescription>
+                    Mỗi series được chấm trên 4 tiêu chí chính + đổ màu (nếu là bản màu). Thang điểm 0–10.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ThresholdTable />
                 </CardContent>
               </Card>
-            )
-            : filteredPending.length === 0
-              ? (
-                <Card>
-                  <CardContent className="py-16 text-center text-muted-foreground">
-                    {pending.length === 0
-                      ? "Không có series trong hàng chờ EB duyệt."
-                      : "Không tìm thấy series khớp từ khoá tìm kiếm."}
-                  </CardContent>
-                </Card>
-              )
-              : (
-                <div className="grid gap-4">
-                  {filteredPending.map((p, idx) => {
-                    const id = p._resolvedId;
-                    const title = p.title ?? p.series_title ?? `Series #${id}`;
-                    const assessment = getQueueAssessment(id);
-                    const isActive = id === selectedId;
-                    const notReady = !assessment.isSelected || assessment.scoredCount < assessment.total;
-                    const lockReason = !assessment.isSelected
-                      ? "Click vào thẻ để chọn series này trước"
-                      : assessment.scoredCount < assessment.total
-                        ? `Cần chấm đủ điểm (${assessment.scoredCount}/${assessment.total} thành viên)`
-                        : undefined;
-
-                    return (
-                      <Card
-                        key={id ?? idx}
-                        onClick={() => setSelectedId(id)}
-                        className={`cursor-pointer transition-shadow hover:shadow-md ${isActive ? "ring-2 ring-primary" : ""}`}
-                      >
-                        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex gap-4">
-                            {(p.coverimageurl || p.cover_image_url) && (
-                              <div className="size-14 shrink-0 overflow-hidden rounded-lg">
-                                <img
-                                  src={p.coverimageurl ?? p.cover_image_url}
-                                  alt=""
-                                  className="size-full object-cover"
-                                />
-                              </div>
-                            )}
-                            <div className="space-y-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="font-semibold">{title}</h3>
-                                <Badge variant="secondary">✦ {p.status ?? p.Status ?? "EBReview"}</Badge>
-                                {p.agerating && <Badge variant="outline" className="text-[11px]">{p.agerating}</Badge>}
-                                {assessment.isSelected && assessment.scoredCount > 0
-                                  ? (
-                                    <Badge variant="secondary" className={`border text-[11px] ${assessment.classification.className}`}>
-                                      {assessment.scoredCount}/{assessment.total} đã chấm · {assessment.classification.label}
-                                    </Badge>
-                                  )
-                                  : <Badge variant="outline" className="text-[11px] text-muted-foreground">
-                                      {assessment.isSelected ? "Chưa có điểm" : "Click để xem điểm"}
-                                    </Badge>}
-                              </div>
-                              <p className="text-sm text-muted-foreground line-clamp-2">
-                                {p.synopsis ?? ""}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                                onClick={() => handleReject(id, title)}
-                                disabled={notReady}
-                                title={lockReason}
-                              >
-                                <XCircle className="size-4" />Từ chối
-                              </Button>
-                              <Button
-                                onClick={() => handleApprove(id, title)}
-                                disabled={notReady}
-                                title={lockReason}
-                              >
-                                <CheckCircle2 className="size-4" />Chấp nhận
-                              </Button>
-                            </div>
-                            {notReady && (
-                              <p className="text-[11px] text-muted-foreground">{lockReason}</p>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-        </section>
-      </main>
-
-      <Footer />
+            </div>
+          )}
+        </main>
+      </div>
 
       {/* Confirm Dialog */}
       {confirmDialog && (

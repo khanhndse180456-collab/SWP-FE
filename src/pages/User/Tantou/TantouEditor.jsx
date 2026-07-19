@@ -1,9 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Calendar, Clock, Loader2, Search, Sparkles, X } from 'lucide-react'
-import Header from '@/components/User/Header/Header.jsx'
-import Footer from '@/components/User/Footer/Footer.jsx'
-import { WorkspaceHero } from '@/components/layout/WorkspaceHero.jsx'
+import { AlertTriangle, BookOpen, Calendar, Clock, Loader2, Search, Sparkles, X } from 'lucide-react'
+import SidebarNav from '@/components/layout/SidebarNav.jsx'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { getSession, logout } from '@/lib/auth.js'
 import { LABEL_EDITOR_BOARD, LABEL_TANTOU_EDITOR } from '@/constants/roleTerminology.js'
-import { NAV_LINKS } from '@/constants/tantou.js'
 import { useTantouWorkspace } from '@/hooks/Usetantouworkspace.js'
 import { normalizeStatus, isDebutStatus, isApprovedStatus, isEbStatus, statusLabel } from './TantouEditor.helpers.jsx'
 import { CoverThumb } from '@/components/User/Tantou/CoverThumb.jsx'
@@ -20,6 +17,12 @@ import { StudioChapterCard } from '@/components/User/Tantou/StudioChapterCard.js
 import { SidebarFlow } from '@/components/User/Tantou/SidebarFlow.jsx'
 import TantouPageReview from './TantouPageReview.jsx'
 import './TantouEditor.css'
+
+const SIDEBAR_ITEMS = [
+  { id: 'debut',   label: 'Lần đầu → EB',   icon: Sparkles },
+  { id: 'studio',  label: 'Tiến độ studio',  icon: Clock },
+  { id: 'schedule', label: 'Lịch xuất bản',  icon: Calendar },
+]
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const URGENT_THRESHOLD_DAYS = 14  // deadline còn ≤ 14 ngày → coi là gấp
@@ -159,16 +162,15 @@ export default function TantouEditor() {
   if (reviewOpen && selectedSub) {
     return (
       <div className="flex min-h-screen flex-col bg-background">
-        <Header links={NAV_LINKS} onLogout={user ? handleLogout : undefined} />
         <main className="page-container flex-1 py-8">
-          {reviewPagesLoading || !reviewSubmission ? (   // ← SỬA: chờ data thật trước khi render
+          {reviewPagesLoading || !reviewSubmission ? (
             <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
               <Loader2 className="size-5 animate-spin" />
               Đang tải trang truyện...
             </div>
           ) : (
             <TantouPageReview
-              submission={reviewSubmission}              // ← SỬA: dùng submission đã ráp sẵn
+              submission={reviewSubmission}
               editorialComment={editorialComment}
               onEditorialCommentChange={setEditorialComment}
               onBack={closeReview}
@@ -190,18 +192,29 @@ export default function TantouEditor() {
 
   // ── Main render ───────────────────────────────────────────────────────────
   return (
-    <div className="ws-page--tantou flex min-h-screen flex-col bg-background">
-      <Header links={NAV_LINKS} onLogout={user ? handleLogout : undefined} />
-
-      <WorkspaceHero
-        className="from-sky-950 to-zinc-950"
-        label={LABEL_TANTOU_EDITOR}
-        title={`Xin chào${user?.name ? `, ${user.name}` : ''}`}
-        description={`Nhận bản thảo từ Mangaka · viết nhận xét · chuyển ${LABEL_EDITOR_BOARD} · theo dõi tiến độ studio.`}
+    <div className="ws-page--tantou flex min-h-screen bg-slate-900/5 dark:bg-zinc-950">
+      <SidebarNav
+        logoIcon={BookOpen}
+        items={SIDEBAR_ITEMS}
+        activeId={tab}
+        onSelect={setTab}
+        onLogout={user ? handleLogout : undefined}
+        user={user}
+        accentClass="bg-sky-600 text-white"
       />
 
-      <main className="page-container flex-1 py-8">
-        <Tabs value={tab} onValueChange={setTab} className="space-y-6">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="border-b bg-white px-8 py-5 dark:bg-zinc-950">
+          <p className="text-xs font-semibold uppercase tracking-wider text-sky-600">{LABEL_TANTOU_EDITOR}</p>
+          <h1 className="mt-0.5 text-2xl font-bold tracking-tight">
+            Xin chào{user?.name ? `, ${user.name}` : ''}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Nhận bản thảo từ Mangaka · viết nhận xét · chuyển {LABEL_EDITOR_BOARD} · theo dõi tiến độ studio.
+          </p>
+        </div>
+        <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-8 dark:bg-zinc-950/20">
+          <Tabs value={tab} onValueChange={setTab} className="space-y-6">
           <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="debut" className="gap-2">
               <Sparkles className="size-4" />
@@ -474,9 +487,8 @@ export default function TantouEditor() {
             )}
           </TabsContent>
         </Tabs>
-      </main>
-
-      <Footer />
+        </main>
+      </div>
     </div>
   )
 }

@@ -25,13 +25,13 @@ import {
 } from 'lucide-react'
 import Header from '@/components/User/Header/Header.jsx'
 import Footer from '@/components/User/Footer/Footer.jsx'
+import SidebarNav from '@/components/layout/SidebarNav.jsx'
 import { WorkspaceHero } from '@/components/layout/WorkspaceHero.jsx'
 import {
   LayoutDashboard,
   Layers,
   FileSignature,
   Settings as SettingsIcon,
-  LogOut,
   BarChart3,
   User,
   Bell,
@@ -128,6 +128,19 @@ import '@/styles/mangaPage.css'
 import './Mangaka.css'
 
 const NAV_LINKS = [{ to: '/', label: 'Trang chủ' }]
+
+const SIDEBAR_ITEMS = [
+  { id: 'dashboard',     label: 'Dashboard',         icon: LayoutDashboard },
+  { id: 'series',        label: 'Series của tôi',    icon: BookOpen },
+  { id: 'chapter',       label: 'Chapter',           icon: FileText },
+  { id: 'page',          label: 'Workspace',         icon: Layers },
+  { id: 'assistants',    label: 'Assistant',         icon: UserPlus },
+  { id: 'contract',      label: 'Hợp đồng',          icon: FileSignature },
+  { id: 'stats',         label: 'Thống kê',          icon: BarChart3 },
+  { id: 'notifications', label: 'Thông báo',         icon: Bell },
+  { id: 'profile',       label: 'Profile của tôi',   icon: User },
+  { id: 'settings',      label: 'Cài đặt',           icon: SettingsIcon },
+]
 
 const STAT_DEFS = [
   { label: 'Series draft', icon: BookOpen, color: 'rose' },
@@ -1527,60 +1540,14 @@ export default function Mangaka() {
 
   return (
     <div className="flex min-h-screen bg-slate-900/5 dark:bg-zinc-950">
-      {/* Sidebar */}
-      <aside className="w-64 border-r bg-zinc-950 text-zinc-100 flex flex-col shrink-0">
-        {/* Logo Section */}
-        <div className="h-16 flex items-center gap-2.5 px-6 border-b border-zinc-800">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs">
-            <BookOpen className="size-4" />
-          </span>
-          <span className="font-bold tracking-tight text-white text-lg">MangaPublish</span>
-        </div>
-
-        {/* Menu Items */}
-        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          {[
-            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-            { id: 'series', label: 'Series của tôi', icon: BookOpen },
-            { id: 'chapter', label: 'Chapter', icon: FileText },
-            { id: 'page', label: 'Workspace', icon: Layers },
-            { id: 'assistants', label: 'Assistant', icon: UserPlus },
-            { id: 'contract', label: 'Hợp đồng', icon: FileSignature },
-            { id: 'stats', label: 'Thống kê', icon: BarChart3 },
-            { id: 'notifications', label: 'Thông báo', icon: Bell },
-            { id: 'profile', label: 'Profile của tôi', icon: User },
-            { id: 'settings', label: 'Cài đặt', icon: SettingsIcon },
-          ].map((item) => {
-            const Icon = item.icon
-            const active = tab === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => setTab(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold text-left transition-all cursor-pointer ${
-                  active
-                    ? 'bg-primary text-white shadow-xs'
-                    : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
-                }`}
-              >
-                <Icon className="size-4" />
-                {item.label}
-              </button>
-            )
-          })}
-        </nav>
-
-        {/* Logout at bottom */}
-        <div className="p-4 border-t border-zinc-800">
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold text-zinc-400 hover:bg-red-500/10 hover:text-red-500 transition-colors cursor-pointer"
-          >
-            <LogOut className="size-4" />
-            Đăng xuất
-          </button>
-        </div>
-      </aside>
+      <SidebarNav
+        logoIcon={BookOpen}
+        items={SIDEBAR_ITEMS}
+        activeId={tab}
+        onSelect={setTab}
+        onLogout={handleLogout}
+        user={user}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">

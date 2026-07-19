@@ -21,4 +21,5 @@ export const SCORE_MAX = 10;
 
 export const EB_STATUSES = new Set([
   "ebreview", "underreview", "eb_review", "eb-review",
+  "editorreview", "submitted", "readyforreview", "ready_for_review",
 ]);

@@ -50,7 +50,9 @@ export function useEbWorkspace() {
       const all = Array.isArray(raw) ? raw : (raw?.data ?? []);
       const ebData = all.filter(s => isEbStatus(s.status));
 
-      console.log('[EbWorkspace] filtered EB status count:', ebData.length);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[EbWorkspace] DEBUG: total=%d, eb-match=%d', all.length, ebData.length);
+      }
 
       const normalized = ebData.map(item => ({
         ...item,
