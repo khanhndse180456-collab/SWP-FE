@@ -348,7 +348,7 @@ export default function Assistant() {
                                         {notesCount > 0 ? ` · ${notesCount} note cần sửa` : ''}
                                       </p>
                                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                        <Badge className={badge.className} variant="secondary">
+                                        <Badge className={cn('mt-1', badge.className)} variant="secondary">
                                           {badge.label}
                                         </Badge>
                                         {notesCount > 0 && (
@@ -365,6 +365,30 @@ export default function Assistant() {
                           </ul>
                         </ScrollArea>
                       )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Stats */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <TrendingUp className="size-4 text-primary" />
+                        Thống kê
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {statsDisplayed.map((s, i) => {
+                        const Icon = s.icon
+                        return (
+                          <div key={i} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Icon className={cn('size-4', `text-${s.color}-500`)} />
+                              <span className="text-xs text-muted-foreground">{s.label}</span>
+                            </div>
+                            <span className="font-semibold tabular-nums">{s.value}</span>
+                          </div>
+                        )
+                      })}
                     </CardContent>
                   </Card>
 
