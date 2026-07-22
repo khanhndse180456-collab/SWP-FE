@@ -295,16 +295,25 @@ export default function ChapterView({
 
 function ChapterRow({ chapter, badge, isReady, onView, onEdit, onDelete, onReview }) {
   const chapterId = chapter.id ?? chapter.chapterId
-  const { data: pages, isLoading } = useQuery({
+  const isServerId = chapterId != null && !String(chapterId).startsWith('u-') && !isNaN(Number(chapterId))
+  const { data: pages = [], isLoading } = useQuery({
     queryKey: ['pages', chapterId],
-    enabled: !!chapterId && isReady,
+    enabled: !!chapterId && isServerId,
     queryFn: async () => {
-      const res = await pagesService.getAll(chapterId)
+      const res = await pagesService.getAll(Number(chapterId))
       const raw = res?.data
       return Array.isArray(raw) ? raw : (raw?.data ?? [])
     },
     staleTime: 30_000,
   })
+
+  const displayPageCount = React.useMemo(() => {
+    if (pages && pages.length > 0) return pages.length
+    if (Array.isArray(chapter.pages)) return chapter.pages.length
+    if (typeof chapter.pages === 'number') return chapter.pages
+    return 0
+  }, [pages, chapter.pages])
+
   const firstPage = Array.isArray(pages) ? pages[0] : null
   const compositeUrl =
     firstPage?.pageimageurl
@@ -358,7 +367,7 @@ function ChapterRow({ chapter, badge, isReady, onView, onEdit, onDelete, onRevie
           {chapter.title}
         </span>
         <span className="ml-2 text-xs text-muted-foreground">
-          ({chapter.pages || 0} trang)
+          ({displayPageCount} trang)
         </span>
       </td>
       <td className="p-4">
