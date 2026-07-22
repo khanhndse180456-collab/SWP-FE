@@ -534,12 +534,29 @@ export default function Mangaka() {
   // → React throw "Maximum update depth exceeded" → ErrorBoundary hiện trang trắng báo lỗi.
   const [filterSeriesId, setFilterSeriesId] = useState('all')
 
-  const seriesList = useMemo(
-    () => Object.values(
+  const seriesList = useMemo(() => {
+    const list = Object.values(
       [...apiSeries, ...localSeriesList].reduce((acc, s) => ({ ...acc, [s.id]: s }), {}),
-    ),
-    [apiSeries, localSeriesList],
-  )
+    )
+    return list.map(s => {
+      const serverCount = (apiChapters || []).filter(c => {
+        const sId = c.seriesid ?? c.Seriesid
+        return sId != null && String(sId) === String(s.id ?? s.seriesid)
+      }).length
+
+      const localOnlyCount = (localChapterRows || []).filter(c => {
+        return String(c.series) === String(s.title) && !apiChapters.some(ac =>
+          String(ac.seriesid ?? ac.Seriesid) === String(s.id ?? s.seriesid) &&
+          Number(ac.chapternumber ?? ac.Chapternumber ?? ac.num) === Number(c.num)
+        )
+      }).length
+
+      return {
+        ...s,
+        chapters: serverCount + localOnlyCount,
+      }
+    })
+  }, [apiSeries, localSeriesList, apiChapters, localChapterRows])
 
   const mappedApiChapters = useMemo(() => {
     return (apiChapters || []).map(c => {
