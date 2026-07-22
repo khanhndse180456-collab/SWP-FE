@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import axiosClient from '@/api/axiosClient.js'
 import { useChapters, usePages } from '@/api/hooks'
@@ -12,6 +13,8 @@ import {
 } from '@/pages/User/Tantou/TantouEditor.helpers.jsx'
 
 export function useTantouWorkspace() {
+  const queryClient = useQueryClient()
+
   // ── Series ──────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true)
   const [series, setSeries] = useState([])
@@ -45,6 +48,9 @@ export function useTantouWorkspace() {
   }, [])
 
   // ── Load chapter studio (phụ thuộc seriesById) ────────────────────────────
+  // LƯU Ý: filter KHÔNG loại bỏ 'draft'/'submitted'/'ready' để Tantou luôn thấy
+  // chapter Mantou vừa gửi — kể cả khi BE chưa đổi status (lỗi 400) hoặc status
+  // nằm ngoài whitelist. Chỉ loại 'cancelled' (xóa) và 'published' (đã xong).
   const loadStudioChapters = useCallback(async (seriesMap) => {
     if (seriesMap.size === 0) return
     setStudioLoading(true)
@@ -55,8 +61,8 @@ export function useTantouWorkspace() {
         const st = normalizeStatus(ch.status)
         return (
           seriesMap.has(ch.seriesid) &&
-          st !== 'draft' &&
-          st !== 'cancelled'
+          st !== 'cancelled' &&
+          st !== 'published'
         )
       })
       setStudioChapters(active)
@@ -72,6 +78,51 @@ export function useTantouWorkspace() {
     series.forEach(s => map.set(s.seriesid, s))
     loadStudioChapters(map)
   }, [loading, series, loadStudioChapters])
+
+  // MỚI: tự động refetch chapter + series khi Tantou quay lại tab trình duyệt
+  // hoặc tab app — đảm bảo chapter mới do Mangaka gửi sẽ hiện ngay khi Tantou
+  // mở lại trang studio, không phải F5 thủ công. Pattern giống Mangaka: dùng
+  // queryClient.invalidateQueries sau mỗi thao tác.
+  useEffect(() => {
+    function refreshOnVisible() {
+      if (document.visibilityState !== 'visible') return
+      queryClient.invalidateQueries({ queryKey: ['chapters'] })
+      queryClient.invalidateQueries({ queryKey: ['series'] })
+    }
+    document.addEventListener('visibilitychange', refreshOnVisible)
+    window.addEventListener('focus', refreshOnVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', refreshOnVisible)
+      window.removeEventListener('focus', refreshOnVisible)
+    }
+  }, [queryClient])
+
+  // MỚI: polling mỗi 30 giây để đảm bảo Tantou luôn thấy chapter mới nhất
+  // do Mangaka gửi mà không cần thao tác tay. Cùng cadence với
+  // useNotifications (staleTime: 30_000). Dừng khi tab ẩn để tiết kiệm.
+  useEffect(() => {
+    let id = null
+    function start() {
+      if (id) return
+      id = setInterval(() => {
+        queryClient.invalidateQueries({ queryKey: ['chapters'] })
+        queryClient.invalidateQueries({ queryKey: ['series'] })
+      }, 30_000)
+    }
+    function stop() {
+      if (id) { clearInterval(id); id = null }
+    }
+    function sync() {
+      if (document.visibilityState === 'visible') start()
+      else stop()
+    }
+    sync()
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', sync)
+    }
+  }, [queryClient])
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const seriesById = useMemo(() => {
@@ -237,6 +288,10 @@ export function useTantouWorkspace() {
     const map = new Map()
     series.forEach(s => map.set(s.seriesid, s))
     loadStudioChapters(map)
+    // MỚI: đồng bộ cache React Query giống pattern Mangaka — đảm bảo useChapters()
+    // ở TantouPageReview cũng được refetch, không chỉ studioQueue state.
+    queryClient.invalidateQueries({ queryKey: ['chapters'] })
+    queryClient.invalidateQueries({ queryKey: ['series'] })
   }
 
   return {

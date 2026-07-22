@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import axiosClient from "@/api/axiosClient.js";
+import { notificationsService } from "@/api/notificationsService.js";
+import { getSession } from "@/lib/auth.js";
+import { getApiErrorMessage } from "@/api/api.js";
 import {
   buildCouncilAggregateFromMembers,
   buildInitialScores,
   buildScoreFields,
   clampScore,
+  computeCouncilAverageForSeries,
   getClassification,
   isEbStatus,
   mapEvalDetailToScores,
+  normalizeStatus,
   validateScore,
 } from "@/pages/User/Eb/Eb.helpers.js";
 
@@ -30,6 +35,164 @@ export function useEbWorkspace() {
   const [saving, setSaving] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null); // { message, onConfirm, onCancel, danger? }
   const [publishFormatDialog, setPublishFormatDialog] = useState(null); // { seriesId, title, onSelect, onCancel }
+
+  // ── Đổi định dạng phát hành từ tab Lịch sử (sửa sau khi đã chấp nhận) ────
+  const [editFormatDialog, setEditFormatDialog] = useState(null); // { seriesId, title, currentFormat, onSelect, onCancel }
+
+  // ── Derived (đặt sớm để loadHistory dùng được) ────────────────────────────
+  const scoreFields = useMemo(() => buildScoreFields(), []);
+
+// Lịch sử chấp nhận / từ chối — suy ra từ Series.Status (BE không có audit log,
+// DTO Update của BoardEvaluation cũng thiếu field FinalDecision).
+//
+// Quy ước:
+//   Status = "Publishing" → action = "approve"
+//   Status = "Cancelled"  → action = "reject"
+//   Status khác           → bỏ qua (chưa quyết)
+// Thời gian: ưu tiên Approvedat, fallback Createdat.
+const TERMINAL_STATUSES = new Set(["Publishing", "Cancelled"]);
+const ACTION_OF = new Map([
+  ["Publishing", "approve"],
+  ["Cancelled", "reject"],
+]);
+
+const [history, setHistory] = useState([]);
+const [loadingHistory, setLoadingHistory] = useState(false);
+
+// Lịch sử thông báo đã gửi (do hệ thống tạo khi duyệt/từ chối/chấm điểm)
+const [notifications, setNotifications] = useState([]);
+const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+// EB đang thao tác (từ session) — dùng để loại trừ khỏi danh sách thông báo
+const currentSession = getSession();
+const currentUserId = currentSession?.id ?? currentSession?.userid ?? currentSession?.userId ?? null;
+
+const loadHistory = useCallback(async () => {
+  setLoadingHistory(true);
+  try {
+    const [seriesRes, evalsRes] = await Promise.allSettled([
+      axiosClient.get("/Series"),
+      axiosClient.get("/BoardEvaluation"),
+    ]);
+    const raw = seriesRes.status === "fulfilled"
+      ? (seriesRes.value.data?.data ?? seriesRes.value.data ?? [])
+      : [];
+    const series = Array.isArray(raw) ? raw : [];
+    const evals = evalsRes.status === "fulfilled"
+      ? (Array.isArray(evalsRes.value.data?.data ?? evalsRes.value.data) ? (evalsRes.value.data?.data ?? evalsRes.value.data) : [])
+      : [];
+
+    // Group evals theo series để tính DTB HĐ — dùng helper chung với loadRanking
+    // để 2 tab Bảng xếp hạng + Lịch sử luôn hiển thị cùng một số.
+    const evalsBySeries = new Map();
+    for (const e of evals) {
+      const sid = String(e.seriesid ?? e.Seriesid ?? e.seriesId ?? "");
+      if (!sid) continue;
+      const arr = evalsBySeries.get(sid) ?? [];
+      arr.push(e);
+      evalsBySeries.set(sid, arr);
+    }
+
+    const items = series
+      .map((s, idx) => {
+        const status = s.status ?? s.Status ?? "";
+        if (!TERMINAL_STATUSES.has(status)) return null;
+        const sid = String(s.seriesid ?? s.Seriesid ?? s.seriesId ?? s.id ?? "");
+        const at = s.approvedAt ?? s.Approvedat ?? s.approvedat
+                ?? s.updatedAt ?? s.Updatedat ?? s.updatedat
+                ?? s.createdAt ?? s.Createdat ?? s.createdat
+                ?? null;
+        const format = s.publishformat ?? s.Publishformat ?? s.publishFormat ?? null;
+        const seriesEvals = evalsBySeries.get(sid) ?? [];
+        const { councilAverage, scoredCount } = computeCouncilAverageForSeries(seriesEvals, scoreFields);
+        return {
+          id: `${sid}-${status}`,
+          action: ACTION_OF.get(status),
+          seriesId: sid,
+          seriesTitle: s.title ?? s.Title ?? s.series_title ?? `Series #${sid}`,
+          at: at ? new Date(at).toISOString() : new Date(0).toISOString(),
+          by: scoredCount > 0 ? `${scoredCount} TV` : "EB", // BE không lưu actor; hiển thị số thành viên chấm
+          score: councilAverage,
+          format: format || null,
+          _sortKey: idx,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const ta = new Date(a.at).getTime();
+        const tb = new Date(b.at).getTime();
+        const aReal = ta > 0 ? ta : -a._sortKey;
+        const bReal = tb > 0 ? tb : -b._sortKey;
+        return bReal - aReal;
+      })
+      .map(({ _sortKey, ...rest }) => rest);
+
+    if (import.meta.env.DEV) {
+      const dist = series.reduce((m, s) => {
+        const v = s.status ?? s.Status ?? "(empty)";
+        m[v] = (m[v] ?? 0) + 1; return m;
+      }, {});
+      console.log("[history] series=", series.length, "items=", items.length,
+        "evals=", evals.length, "status-dist=", dist);
+    }
+    setHistory(items);
+  } catch (err) {
+    console.warn("[history] load failed", err);
+    setHistory([]);
+  } finally {
+    setLoadingHistory(false);
+  }
+}, [scoreFields]);
+
+// Load lịch sử thông báo của user hiện tại (EB) — /Notifications?userId=...
+const loadNotifications = useCallback(async () => {
+  setLoadingNotifications(true);
+  try {
+    const res = await axiosClient.get("/Notifications", {
+      params: currentUserId ? { userId: Number(currentUserId) } : undefined,
+    });
+    const raw = res.data;
+    const list = Array.isArray(raw) ? raw : (raw?.data ?? []);
+    // Chuẩn hoá về camelCase
+    const normalized = list
+      .map((n, idx) => ({
+        id: n.notification_id ?? n.notificationId ?? n.id ?? `n-${idx}`,
+        userId: n.user_id ?? n.userId ?? n.userid ?? null,
+        seriesId: n.series_id ?? n.seriesId ?? n.seriesid ?? null,
+        title: n.title ?? "(không tiêu đề)",
+        message: n.message ?? "",
+        createdAt: n.created_at ?? n.createdAt ?? n.createdat ?? n.created_at ?? null,
+        read: Boolean(n.read ?? n.is_read ?? n.isRead ?? false),
+      }))
+      .sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      });
+    setNotifications(normalized);
+  } catch (err) {
+    console.warn("[notifications] load failed", err);
+    setNotifications([]);
+  } finally {
+    setLoadingNotifications(false);
+  }
+}, [currentUserId]);
+
+// Xóa 1 notification khỏi lịch sử (gọi BE rồi remove khỏi state local để UI cập nhật ngay)
+const deleteNotification = useCallback(async (id) => {
+  if (!id) return;
+  const prev = notifications;
+  // Optimistic remove
+  setNotifications(prev.filter((n) => String(n.id) !== String(id)));
+  try {
+    await notificationsService.delete(id);
+    toast.success("Đã xóa thông báo");
+  } catch (err) {
+    // Rollback nếu BE lỗi
+    setNotifications(prev);
+    toast.error(getApiErrorMessage(err, "Không xóa được thông báo"));
+  }
+}, [notifications]);
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [selectedId, setSelectedId] = useState(null);
@@ -179,8 +342,111 @@ export function useEbWorkspace() {
     setScoreErrors(buildInitialScores());
   }, [activeMemberId, members]);
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-  const scoreFields = useMemo(() => buildScoreFields(), []);
+  // ── Derived (đã khai báo ở đầu hook để loadHistory dùng được) ──────────────
+// const scoreFields = useMemo(() => buildScoreFields(), []);
+
+  // ── Ranking: điểm TB HĐ của tất cả series trong hàng chờ ──────────────────
+  // Phải đặt SAU `scoreFields` vì loadRanking đọc scoreFields để tính average.
+  const [ranking, setRanking] = useState([]);
+  const [loadingRanking, setLoadingRanking] = useState(false);
+
+  const loadRanking = useCallback(async () => {
+    setLoadingRanking(true);
+    try {
+      // Lấy song song: hàng chờ (cùng nguồn /Series như loadQueue) + tất cả evaluations + tất cả evaluators
+      const [queueRes, evalsRes, usersRes] = await Promise.allSettled([
+        axiosClient.get("/Series"),
+        axiosClient.get("/BoardEvaluation"),
+        axiosClient.get("/users/evaluators"),
+      ]);
+
+      // Pending list — ranking lấy trực tiếp từ /Series (KHÔNG lọc isEbStatus
+      // như queue) rồi chỉ giữ những series đã được chấp nhận (status = "Publishing").
+      // Sau khi "Chấp nhận", status rời khỏi nhóm EB_STATUSES → isEbStatus sẽ loại
+      // mất series đã duyệt, nên ta bỏ isEbStatus khỏi filter cho ranking.
+      const queueRaw = queueRes.status === "fulfilled"
+        ? (queueRes.value.data?.data ?? queueRes.value.data ?? [])
+        : [];
+      const queueList = Array.isArray(queueRaw) ? queueRaw : [];
+      const resolved = queueList
+        .map((s, idx) => {
+          const id = s.series_id ?? s.seriesid ?? s.SeriesId ?? s.seriesId ?? s.id ?? s._id ?? idx;
+          return { ...s, _resolvedId: String(id) };
+        })
+        .filter(s => normalizeStatus(s.status ?? s.Status) === "publishing");
+
+      // Map evaluator id → name (để hiển thị cột người chấm)
+      const userListRaw = usersRes.status === "fulfilled"
+        ? (usersRes.value.data?.data ?? usersRes.value.data ?? [])
+        : [];
+      const userList = Array.isArray(userListRaw) ? userListRaw : [];
+      const userMap = new Map();
+      for (const u of userList) {
+        const uid = String(u.id ?? u.Id ?? u.userid ?? u.UserId ?? "");
+        const name = u.fullname ?? u.Fullname ?? u.name ?? u.Name ?? u.username ?? `User #${uid}`;
+        if (uid) userMap.set(uid, { id: uid, name });
+      }
+
+      // All evaluations
+      const evalsRaw = evalsRes.status === "fulfilled" ? (evalsRes.value.data?.data ?? evalsRes.value.data ?? []) : [];
+      const evalsAll = Array.isArray(evalsRaw) ? evalsRaw : [];
+
+      // Tính aggregate per series — dùng helper chung với tab Lịch sử
+      // để đảm bảo DTB hiển thị giống hệt nhau ở cả hai nơi.
+      const rows = resolved.map((s) => {
+        const sid = s._resolvedId;
+        const seriesEvals = evalsAll.filter(e => {
+          const eSid = String(e.seriesid ?? e.Seriesid ?? "");
+          return eSid === sid;
+        });
+        const { councilAverage, scoredCount } = computeCouncilAverageForSeries(seriesEvals, scoreFields);
+        const memberRows = seriesEvals.map((e, eIdx) => {
+          const eUid = String(e.inputtedbyid ?? e.Inputtedbyid ?? `eval-${sid}-${eIdx}`);
+          const userInfo = userMap.get(eUid);
+          const scores = mapEvalDetailToScores(e);
+          const vals = scoreFields.map(f => Number(scores[f.key] ?? 0));
+          const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+          return {
+            id: eUid,
+            name: userInfo?.name ?? `Thành viên #${eUid}`,
+            scored: true,
+            scores,
+            average: parseFloat(avg.toFixed(2)),
+          };
+        });
+
+        return {
+          seriesId: sid,
+          title: s.title ?? s.series_title ?? `Series #${sid}`,
+          author: s.authorname ?? s.authorname ?? s.author ?? s.Authorname ?? null,
+          genre: s.genre ?? s.Genre ?? null,
+          coverimageurl: s.coverimageurl ?? s.cover_image_url ?? null,
+          status: s.status ?? s.Status ?? "EBReview",
+          scoredCount,
+          total: REQUIRED_COUNCIL_MEMBERS,
+          councilAverage: councilAverage ?? 0,
+          memberRows,
+          classification: scoredCount >= REQUIRED_COUNCIL_MEMBERS ? getClassification(councilAverage ?? 0) : null,
+        };
+      });
+
+      // Sort: chỉ sort theo DTB HĐ giảm dần.
+      // Vì đã filter status=Publishing + có điểm, không cần nhánh "chưa đủ".
+      const ranked = rows
+        .filter(r => r.scoredCount > 0)
+        .sort((a, b) => b.councilAverage - a.councilAverage);
+
+      setRanking(ranked);
+    } catch {
+      setRanking([]);
+    } finally {
+      setLoadingRanking(false);
+    }
+  }, [scoreFields]);
+
+  useEffect(() => {
+    loadRanking();
+  }, [loadRanking]);
 
   const councilAggregate = useMemo(
     () => buildCouncilAggregateFromMembers(members, scoreFields),
@@ -262,6 +528,41 @@ export function useEbWorkspace() {
       toast.success(
         `Đã lưu điểm ${activeMember?.name ?? "thành viên"} · DTB cá nhân ${average.toFixed(1)}`
       );
+
+      // Bắn thông báo tới Tantou + các EB khác khi có thành viên vừa chấm điểm
+      try {
+        const submission = pending.find(p => p._resolvedId === String(selectedId));
+        const tantouId = submission?.tantoueditorid ?? submission?.tantou_editor_id ?? submission?.tantouEditorId;
+        const seriesTitle = submission?.title ?? submission?.Title ?? submission?.series_title ?? `Series #${selectedId}`;
+        const newScoredCount = councilAggregate.memberRows?.filter(r => r.scored).length ?? 0;
+
+        const targets = [];
+        if (tantouId && Number(tantouId) !== Number(currentUserId)) targets.push({
+          userId: Number(tantouId),
+          title: "Hội đồng vừa chấm điểm tác phẩm phụ trách",
+          message: `Thành viên Hội đồng vừa chấm điểm cho "${seriesTitle}" (${newScoredCount}/${REQUIRED_COUNCIL_MEMBERS} TV đã chấm). DTB hiện tại: ${(councilAggregate.councilAverage ?? 0).toFixed(1)}/5.`,
+        });
+        (councilAggregate.memberRows || [])
+          .map(r => r.id)
+          .filter(id => id != null && Number(id) !== Number(currentUserId) && Number(id) !== Number(activeMemberId))
+          .forEach(ebId => {
+            if (Number(ebId) === Number(tantouId)) return;
+            targets.push({
+              userId: Number(ebId),
+              title: "Có thành viên vừa chấm điểm",
+              message: `Một thành viên vừa chấm điểm cho "${seriesTitle}". Tiến độ: ${newScoredCount}/${REQUIRED_COUNCIL_MEMBERS} thành viên.`,
+            });
+          });
+
+        await Promise.all(
+          targets.map(t =>
+            axiosClient.post("/Notifications/send", { ...t, seriesId: Number(selectedId) })
+              .catch((err) => console.warn("[notify] failed →", t.userId, err?.message))
+          )
+        );
+      } catch (notifyErr) {
+        console.warn("[notify] handleSaveAssessment notify error", notifyErr);
+      }
     } catch (err) {
       console.error('[handleSaveAssessment] Error:', err?.response?.data ?? err);
       // axiosClient interceptor đã toast lỗi
@@ -327,12 +628,83 @@ export function useEbWorkspace() {
       // 2. Cập nhật status sang Publishing
       await axiosClient.patch(`/Series/${seriesId}/status`, { status: "Publishing" });
 
-      // 3. Chấp nhận và hoàn tất
+      // Chuẩn bị nội dung thông báo
+      const submission = pending.find(p => p._resolvedId === String(seriesId));
+      const mangakaId = submission?.mangakaid ?? submission?.manga_ka_id ?? submission?.mangaka_id;
+      const tantouId  = submission?.tantoueditorid ?? submission?.tantou_editor_id ?? submission?.tantouEditorId;
+      const councilAvg = councilAggregate.councilAverage.toFixed(1);
+      const evalFeedback = councilAggregate.memberRows
+        .filter(r => r.scored)
+        .map(r => `${r.name}: ${r.average.toFixed(1)}`)
+        .join(", ");
+
+      const targets = [];
+      // 1) Mangaka (tác giả)
+      if (mangakaId) targets.push({
+        userId: Number(mangakaId),
+        title: "Tác phẩm được chấp nhận phát hành",
+        message: `Tác phẩm "${title}" đã được Hội đồng chấp nhận và chuyển sang phát hành. DTB Hội đồng: ${councilAvg}/5. Điểm thành viên: ${evalFeedback || "N/A"}.`,
+      });
+      // 2) Tantou (biên tập viên phụ trách)
+      if (tantouId && Number(tantouId) !== Number(mangakaId)) targets.push({
+        userId: Number(tantouId),
+        title: "Tác phẩm phụ trách được duyệt phát hành",
+        message: `Tác phẩm "${title}" mà bạn phụ trách đã được Hội đồng chấp nhận và chuyển sang phát hành theo định dạng ${format}. DTB Hội đồng: ${councilAvg}/5.`,
+      });
+      // 3) Các EB khác trong Hội đồng (loại trừ EB đang thao tác — currentUserId)
+      const ebList = (councilAggregate.memberRows || [])
+        .map(r => r.id)
+        .filter(id => id != null && Number(id) !== Number(currentUserId));
+      ebList.forEach(ebId => {
+        if (Number(ebId) === Number(mangakaId) || Number(ebId) === Number(tantouId)) return;
+        targets.push({
+          userId: Number(ebId),
+          title: "Có tác phẩm mới được Hội đồng duyệt",
+          message: `Hội đồng đã chấp nhận phát hành "${title}" theo định dạng ${format}. DTB Hội đồng: ${councilAvg}/5.`,
+        });
+      });
+
+      // Gửi song song, không block nếu một cái fail
+      await Promise.all(
+        targets.map(t =>
+          axiosClient.post("/Notifications/send", { ...t, seriesId: Number(seriesId) })
+            .catch((err) => console.warn("[notify] failed →", t.userId, err?.message))
+        )
+      );
+
       toast.success(`Đã chấp nhận "${title}" — chuyển sang phát hành.`);
+      // Reload history từ API (đã có FinalDecision = Approve trong DB).
+      loadHistory();
       setSelectedId(null);
       loadedRef.current = false;
       loadQueue();
     } catch { /* interceptor toast */ }
+  }
+
+  // ── Đổi định dạng phát hành (gọi từ bảng Lịch sử) ────────────────────────
+  function openChangeFormatDialog(item) {
+    setEditFormatDialog({
+      seriesId: item.seriesId,
+      title: item.seriesTitle,
+      currentFormat: item.format,
+      onSelect: async (newFormat) => {
+        setEditFormatDialog(null);
+        await doChangePublishFormat(item.seriesId, item.seriesTitle, newFormat);
+      },
+      onCancel: () => setEditFormatDialog(null),
+    });
+  }
+
+  async function doChangePublishFormat(seriesId, title, newFormat) {
+    if (!newFormat) return;
+    try {
+      await axiosClient.patch(`/Series/${seriesId}/publish-format`, { publishformat: newFormat });
+      toast.success(`Đã đổi "${title}" → ${newFormat}.`);
+      loadHistory();
+    } catch (err) {
+      console.warn("[history] change format failed", err);
+      toast.error("Đổi định dạng thất bại. Vui lòng thử lại.");
+    }
   }
 
   async function handleReject(seriesId, title) {
@@ -361,7 +733,50 @@ export function useEbWorkspace() {
     try {
       await axiosClient.patch(`/Series/${seriesId}/status`, { status: "Cancelled" });
 
+      // Gửi thông báo cho Mangaka + Tantou + các EB khác
+      const submission = pending.find(p => p._resolvedId === String(seriesId));
+      const mangakaId = submission?.mangakaid ?? submission?.manga_ka_id ?? submission?.mangaka_id;
+      const tantouId  = submission?.tantoueditorid ?? submission?.tantou_editor_id ?? submission?.tantouEditorId;
+      const councilAvg = councilAggregate.councilAverage.toFixed(1);
+      const evalFeedback = councilAggregate.memberRows
+        .filter(r => r.scored)
+        .map(r => `${r.name}: ${r.average.toFixed(1)}`)
+        .join(", ");
+
+      const targets = [];
+      if (mangakaId) targets.push({
+        userId: Number(mangakaId),
+        title: "Tác phẩm bị Hội đồng từ chối",
+        message: `Tác phẩm "${title}" đã bị Hội đồng từ chối và trả về chỉnh sửa. DTB Hội đồng: ${councilAvg}/5. Điểm thành viên: ${evalFeedback || "N/A"}.`,
+      });
+      if (tantouId && Number(tantouId) !== Number(mangakaId)) targets.push({
+        userId: Number(tantouId),
+        title: "Tác phẩm phụ trách bị từ chối",
+        message: `Tác phẩm "${title}" bạn phụ trách đã bị Hội đồng từ chối và trả về Mangaka chỉnh sửa. DTB Hội đồng: ${councilAvg}/5.`,
+      });
+      (councilAggregate.memberRows || [])
+        .map(r => r.id)
+        .filter(id => id != null && Number(id) !== Number(currentUserId))
+        .forEach(ebId => {
+          if (Number(ebId) === Number(mangakaId) || Number(ebId) === Number(tantouId)) return;
+          targets.push({
+            userId: Number(ebId),
+            title: "Có tác phẩm bị Hội đồng từ chối",
+            message: `Hội đồng vừa từ chối "${title}". DTB Hội đồng: ${councilAvg}/5.`,
+          });
+        });
+
+      await Promise.all(
+        targets.map(t =>
+          axiosClient.post("/Notifications/send", { ...t, seriesId: Number(seriesId) })
+            .catch((err) => console.warn("[notify] failed →", t.userId, err?.message))
+        )
+      );
+
       toast.success(`Đã từ chối "${title}" — trả về Mangaka.`);
+      // Series đã bị Cancelled — lịch sử Approve/Reject vẫn do BoardEvaluation quyết định,
+      // nên reload từ API.
+      loadHistory();
       setSelectedId(null);
       loadedRef.current = false;
       loadQueue();
@@ -380,6 +795,15 @@ export function useEbWorkspace() {
     setPublishFormatDialog,
     selectedPublishFormat,
     setSelectedPublishFormat,
+    // history (hành động duyệt)
+    history,
+    loadingHistory,
+    loadHistory,
+    // notifications (lịch sử thông báo)
+    notifications,
+    loadingNotifications,
+    loadNotifications,
+    deleteNotification,
     // UI state
     selectedId,
     setSelectedId,
@@ -404,6 +828,17 @@ export function useEbWorkspace() {
     handleReject,
     getQueueAssessment,
     loadQueue,
+    // ranking
+    ranking,
+    loadingRanking,
+    loadRanking,
+    // history (chấp nhận / từ chối — load từ API BoardEvaluation)
+    history,
+    loadingHistory,
+    loadHistory,
+    // đổi định dạng phát hành từ bảng lịch sử
+    openChangeFormatDialog,
+    editFormatDialog,
   };
 }
 

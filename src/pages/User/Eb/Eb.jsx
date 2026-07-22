@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon } from "lucide-react";
+import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon, Trophy, History, Pencil } from "lucide-react";
 import SidebarNav from "@/components/layout/SidebarNav.jsx";
 import WorkspaceTopBar from "@/components/layout/WorkspaceTopBar.jsx";
 import { Button } from "@/components/ui/button";
@@ -34,9 +34,11 @@ import { ThresholdTable } from "@/components/User/Eb/ThresholdTable.jsx";
 import "./Eb.css";
 
 const SIDEBAR_ITEMS = [
-  { id: 'queue',  label: 'Chấm điểm',     icon: Gavel },
-  { id: 'rubric', label: 'Quy chế chấm',  icon: ClipboardList },
-  { id: 'image',  label: 'Xem ảnh',       icon: ImageIcon },
+  { id: 'queue',    label: 'Chấm điểm',    icon: Gavel },
+  { id: 'ranking',  label: 'Xếp hạng',     icon: Trophy },
+  { id: 'rubric',   label: 'Quy chế chấm', icon: ClipboardList },
+  { id: 'image',    label: 'Xem ảnh',      icon: ImageIcon },
+  { id: 'history',  label: 'Lịch sử',      icon: History },
 ];
 
 export default function Eb() {
@@ -74,12 +76,25 @@ export default function Eb() {
     setPublishFormatDialog,
     selectedPublishFormat,
     setSelectedPublishFormat,
+    ranking,
+    loadingRanking,
+    loadRanking,
+    history,
+    loadingHistory,
+    loadHistory,
+    openChangeFormatDialog,
+    editFormatDialog,
   } = useEbWorkspace();
 
   function handleLogout() { logout(); navigate("/login"); }
 
   const [tab, setTab] = useState("queue");
   const [queueSearch, setQueueSearch] = useState("");
+
+  // Mở tab "history" → gọi API lấy lịch sử chấp nhận / từ chối.
+  useEffect(() => {
+    if (tab === "history") loadHistory();
+  }, [tab, loadHistory]);
 
   const filteredPending = useMemo(() => {
     const q = queueSearch.trim().toLowerCase();
@@ -230,51 +245,14 @@ export default function Eb() {
           }
         />
 
-        {tab === "queue" && selectedId && activeSubmission && (() => {
-          const assessment = getQueueAssessment(selectedId);
-          const notReady = !assessment.isSelected || assessment.scoredCount < assessment.total;
-          const title = activeSubmission.title ?? activeSubmission.series_title ?? `Series #${selectedId}`;
-          return (
-            <div className="flex items-center gap-3 border-b bg-white px-8 py-3 dark:bg-zinc-950">
-              <p className="text-sm">
-                <span className="text-muted-foreground">Đang chấm:</span>{" "}
-                <strong className="text-foreground">{title}</strong>
-                {assessment.scoredCount > 0 && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    ({assessment.scoredCount}/{assessment.total} đã chấm)
-                  </span>
-                )}
-              </p>
-              <div className="ml-auto flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                  onClick={() => handleReject(selectedId, title)}
-                  disabled={notReady}
-                  title={notReady ? "Cần chấm đủ điểm trước khi duyệt" : undefined}
-                >
-                  <XCircle className="size-4" />Từ chối
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => handleApprove(selectedId, title)}
-                  disabled={notReady}
-                  title={notReady ? "Cần chấm đủ điểm trước khi duyệt" : undefined}
-                >
-                  <CheckCircle2 className="size-4" />Chấp nhận
-                </Button>
-              </div>
-            </div>
-          );
-        })()}
-
         <main className="flex-1 overflow-y-auto p-8">
           {tab === "queue" && (
           <div className="space-y-6">
               <Card>
                 <CardHeader className="space-y-2">
-                  <CardTitle>Nhập điểm (tài khoản đại diện)</CardTitle>
+                  <CardTitle>
+                    Nhập điểm{user?.name ? ` — ${user.name}` : " (tài khoản đại diện)"}
+                  </CardTitle>
                   <CardDescription>Chọn series trong hàng chờ, chọn thành viên, nhập điểm rồi Lưu.</CardDescription>
                 </CardHeader>
             <CardContent className="space-y-6">
@@ -326,11 +304,19 @@ export default function Eb() {
                           <SelectValue placeholder="Chọn thành viên Hội đồng" />
                         </SelectTrigger>
                         <SelectContent>
-                          {members.map((member, idx) => (
-                            <SelectItem key={member.id ?? idx} value={member.id}>
-                              {member.name}{member.hasEvaluated ? " · đã chấm ✓" : " · chưa chấm"}
-                            </SelectItem>
-                          ))}
+                          {members.map((member, idx) => {
+                            const isActive = member.id === activeMemberId;
+                            return (
+                              <SelectItem key={member.id ?? idx} value={member.id}>
+                                {member.name}
+                                {member.hasEvaluated
+                                  ? " · đã chấm ✓"
+                                  : isActive
+                                    ? " · đang nhập"
+                                    : " · chưa chấm"}
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                     )}
@@ -443,54 +429,126 @@ export default function Eb() {
                     {activeMember?.hasEvaluated ? "Cập nhật điểm" : "Lưu điểm"}
                   </Button>
                 </div>
+                {(() => {
+                  if (!selectedId || !activeSubmission) return null
+                  const assessment = getQueueAssessment(selectedId)
+                  const title = activeSubmission.title ?? activeSubmission.series_title ?? `Series #${selectedId}`
+                  const notReady = !assessment.isSelected || assessment.scoredCount < assessment.total
+                  return (
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4">
+                      <p className="mr-auto text-sm text-muted-foreground">
+                        <span>Đang chấm:</span>{" "}
+                        <strong className="text-foreground">{title}</strong>
+                        {assessment.scoredCount > 0 && (
+                          <span className="ml-2 text-xs">
+                            ({assessment.scoredCount}/{assessment.total} đã chấm)
+                          </span>
+                        )}
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        onClick={() => handleReject(selectedId, title)}
+                        disabled={notReady}
+                        title={notReady ? "Cần chấm đủ điểm trước khi duyệt" : undefined}
+                      >
+                        <XCircle className="size-4" />Từ chối
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleApprove(selectedId, title)}
+                        disabled={notReady}
+                        title={notReady ? "Cần chấm đủ điểm trước khi duyệt" : undefined}
+                      >
+                        <CheckCircle2 className="size-4" />Chấp nhận
+                      </Button>
+                    </div>
+                  )
+                })()}
               </div>
             </CardContent>
           </Card>
 
-          <Card className="overflow-hidden">
-            <CardHeader>
-              <CardTitle>Ảnh series từ Tantou</CardTitle>
-              <CardDescription>Hình preview của series đang được chấm.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/*
-                FIX 1: trước đây dùng className="aspect-[3/4] w-full object-cover" —
-                ép cứng khung theo tỉ lệ 3:4 trong khi ảnh gốc (trang manga dọc, độ
-                phân giải/tỉ lệ khác hẳn) khiến object-cover phải crop + zoom rất
-                mạnh để lấp đầy khung, chỉ hiện được một phần nhỏ ở góc trên ảnh
-                ("ảnh to quá" — thực chất là bị crop/zoom, không phải hiển thị lỗi
-                kích thước). Sửa: bỏ aspect-ratio ép cứng, dùng object-contain +
-                max-height để hiện TRỌN VẸN ảnh, tự co theo tỉ lệ gốc, không crop.
-
-                FIX 2: sau khi hết crop thì khung ngoài (viền + nền bg-muted/30) vẫn
-                rộng bằng cả card (w-full), trong khi ảnh dọc chỉ chiếm phần giữa
-                → dư khoảng trắng 2 bên, nhìn không "vừa vặn". Sửa: bỏ w-full trên
-                cả 2 phần tử, dùng w-fit + mx-auto để khung TỰ CO KHÍT theo đúng
-                kích thước ảnh sau khi scale, viền ôm sát ảnh thay vì ôm sát card.
-              */}
-              <div className="mx-auto flex max-h-[560px] w-fit items-center justify-center overflow-hidden rounded-2xl border bg-muted/30">
-                <img
-                  src={activeSeriesImage}
-                  alt={activeTitle ? `Ảnh series ${activeTitle}` : "Ảnh series đang chấm"}
-                  className="max-h-[560px] w-auto object-contain"
-                />
-              </div>
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">Tantou gửi sang EB</Badge>
-                  {activeSubmission?.agerating && <Badge variant="outline">{activeSubmission.agerating}</Badge>}
-                  {activeSubmission?.publishformat && <Badge variant="outline">{activeSubmission.publishformat}</Badge>}
-                </div>
-                <p className="text-sm font-medium text-foreground">{activeTitle || "Chưa có series trong hàng chờ"}</p>
-                <p className="text-sm text-muted-foreground">
-                  {activeSubmission?.synopsis
-                    ? <span className="line-clamp-3">{activeSubmission.synopsis}</span>
-                    : "Ảnh lấy từ submission Tantou hoặc ảnh thay thế nếu chưa có."}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
           </div>
+          )}
+
+          {tab === "ranking" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="size-5 text-amber-500" />
+                    <CardTitle>Bảng xếp hạng series</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Xếp hạng các series đã được Hội đồng chấp nhận (đủ 5/5 lượt chấm, status = Publishing) theo điểm trung bình Hội đồng giảm dần.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingRanking ? (
+                    <div className="flex items-center justify-center gap-2 px-3 py-10 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />Đang tải bảng xếp hạng…
+                    </div>
+                  ) : ranking.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-10 text-center text-sm text-muted-foreground dark:border-zinc-800">
+                      Chưa có series được chấp nhận — chấm đủ 5/5 điểm rồi nhấn Chấp nhận để đưa series vào bảng xếp hạng.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border dark:border-zinc-800">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 text-center w-16">Hạng</th>
+                            <th className="px-3 py-2 text-left">Series</th>
+                            <th className="px-3 py-2 text-center w-40">Điểm trung bình HĐ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ranking.map((row, idx) => {
+                            const rankIcon =
+                              idx === 0 ? "🥇" :
+                              idx === 1 ? "🥈" :
+                              idx === 2 ? "🥉" :
+                              <span className="text-xs text-muted-foreground">#{idx + 1}</span>;
+                            return (
+                              <tr key={row.seriesId} className="border-t dark:border-zinc-800">
+                                <td className="px-3 py-3 text-center text-base">{rankIcon}</td>
+                                <td className="px-3 py-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => { setSelectedId(row.seriesId); setTab("queue"); }}
+                                    className="text-left font-medium text-foreground hover:text-primary hover:underline"
+                                    title="Mở series này trong tab Chấm điểm"
+                                  >
+                                    {row.title}
+                                  </button>
+                                  {row.author && (
+                                    <p className="mt-0.5 text-xs text-muted-foreground">Tác giả: {row.author}</p>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className="text-base font-bold text-foreground tabular-nums">
+                                    {row.councilAverage.toFixed(2)}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {!loadingRanking && ranking.length > 0 && (
+                    <div className="mt-3 flex items-center justify-end gap-3">
+                      <Button size="sm" variant="outline" onClick={loadRanking}>
+                        <Loader2 className="size-4" />Tải lại
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {tab === "rubric" && (
@@ -540,6 +598,95 @@ export default function Eb() {
                   )}
                 </CardContent>
               </Card>
+            </div>
+          )}
+
+          {tab === "history" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="size-4 text-primary" />
+                    Lịch sử duyệt
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {loadingHistory ? (
+                      <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" />
+                        Đang tải lịch sử...
+                      </div>
+                    ) : history.length === 0 ? (
+                      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+                        <History className="size-6 opacity-60" />
+                        <p>Chưa có quyết định nào trong DB.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-hidden rounded-lg border border-border/50">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-medium">Thời gian</th>
+                              <th className="px-3 py-2 text-left font-medium">Quyết định</th>
+                              <th className="px-3 py-2 text-left font-medium">Series</th>
+                              <th className="px-3 py-2 text-right font-medium">DTB HĐ</th>
+                              <th className="px-3 py-2 text-left font-medium">Định dạng</th>
+                              <th className="px-3 py-2 text-left font-medium">Người quyết</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/50">
+                            {history.map(item => {
+                              const isApprove = item.action === "approve";
+                              const time = new Date(item.at);
+                              const timeLabel = time.toLocaleString("vi-VN", {
+                                hour: "2-digit", minute: "2-digit",
+                                day: "2-digit", month: "2-digit", year: "numeric",
+                              });
+                              return (
+                                <tr key={item.id} className="bg-background">
+                                  <td className="px-3 py-2 text-muted-foreground">{timeLabel}</td>
+                                  <td className="px-3 py-2">
+                                    {isApprove ? (
+                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                                        <CheckCircle2 className="size-3" /> Chấp nhận
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                                        <XCircle className="size-3" /> Từ chối
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 font-medium text-foreground">
+                                    {item.seriesTitle || `Series #${item.seriesId}`}
+                                  </td>
+                                  <td className="px-3 py-2 text-right tabular-nums">
+                                    {Number.isFinite(item.score) ? item.score.toFixed(2) : "—"}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {item.action === "approve" ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openChangeFormatDialog(item)}
+                                        title="Đổi định dạng phát hành"
+                                        className="group inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-xs font-medium text-foreground transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 dark:hover:bg-amber-900/30 dark:hover:text-amber-200"
+                                      >
+                                        <span>{item.format || "Chưa đặt"}</span>
+                                        <Pencil className="size-3 opacity-60 transition group-hover:opacity-100" />
+                                      </button>
+                                    ) : (
+                                      <span className="text-muted-foreground">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-muted-foreground">{item.by}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
             </div>
           )}
         </main>
@@ -606,6 +753,63 @@ export default function Eb() {
           </div>
         </div>
       )}
+
+      {/* Đổi định dạng phát hành (gọi từ tab Lịch sử) */}
+      <ChangeFormatDialog dialog={editFormatDialog} />
+    </div>
+  );
+}
+
+// ── Dialog đổi định dạng phát hành (mở từ tab Lịch sử) ─────────────────────
+const FORMAT_OPTIONS = [
+  { value: "Weekly",  label: "📆 Theo tuần (Weekly)",   hint: "1 chapter / tuần" },
+  { value: "Monthly", label: "📅 Theo tháng (Monthly)", hint: "1 chapter / tháng" },
+];
+
+function ChangeFormatDialog({ dialog }) {
+  const [picked, setPicked] = useState(dialog?.currentFormat || "Weekly");
+  useEffect(() => {
+    if (dialog) setPicked(dialog.currentFormat || "Weekly");
+  }, [dialog]);
+
+  if (!dialog) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border bg-background p-6 shadow-xl space-y-4 mx-4">
+        <h3 className="text-base font-semibold">Đổi định dạng phát hành</h3>
+        <p className="text-sm text-muted-foreground">
+          Cập nhật định dạng cho <strong className="text-foreground">{dialog.title}</strong>
+          {dialog.currentFormat && (
+            <> (hiện đang là <strong className="text-foreground">{dialog.currentFormat}</strong>)</>
+          )}.
+        </p>
+        <div className="space-y-2">
+          {FORMAT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                picked === opt.value
+                  ? "border-primary bg-primary/10"
+                  : "border-border hover:bg-muted"
+              }`}
+              onClick={() => setPicked(opt.value)}
+            >
+              <span className="font-medium">{opt.label}</span>
+              <p className="text-xs text-muted-foreground mt-0.5">{opt.hint}</p>
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={dialog.onCancel}>Huỷ</Button>
+          <Button
+            onClick={() => dialog.onSelect(picked)}
+            disabled={!picked || picked === dialog.currentFormat}
+          >
+            Lưu thay đổi
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

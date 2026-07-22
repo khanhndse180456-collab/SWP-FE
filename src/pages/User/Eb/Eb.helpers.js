@@ -56,14 +56,16 @@ export function getClassification(average) {
 // ─── Evaluation mapping / aggregation ───────────────────────────────────────
 export function mapEvalDetailToScores(detail) {
   if (!detail) return buildInitialScores();
-  // evalDetail đã được normalize sang camelCase khi lưu vào state
+  // BE trả về snake_case: story_score / art_score / character_score / commercial_score / pacing_score.
+  // Fallback camelCase cho dữ liệu local (form state) đã normalize.
+  const v = (snake, camel) => detail[snake] ?? detail[camel] ?? 0;
   return {
-    plotDialogue: String(detail.storyScore ?? 0),
-    artDesign: String(detail.artScore ?? 0),
-    panelingCamera: String(detail.characterScore ?? 0),
-    coloring: String(detail.commercialScore ?? 0),
-    toneShading: String(detail.commercialScore ?? 0),
-    pacingHook: String(detail.pacingScore ?? 0),
+    plotDialogue: String(v("story_score", "storyScore")),
+    artDesign: String(v("art_score", "artScore")),
+    panelingCamera: String(v("character_score", "characterScore")),
+    coloring: String(v("commercial_score", "commercialScore")),
+    toneShading: String(v("commercial_score", "commercialScore")),
+    pacingHook: String(v("pacing_score", "pacingScore")),
   };
 }
 
@@ -96,4 +98,29 @@ export function buildCouncilAggregateFromMembers(members, scoreFields) {
     : 0;
 
   return { memberRows, criterionAverages, councilAverage, scoredCount };
+}
+
+// ─── Tính DTB Hội đồng cho 1 series — dùng chung cho ranking & history ──────
+//
+// Input: danh sách evaluations của series (`/BoardEvaluation` phẳng), và `scoreFields`.
+// Trả về { councilAverage, scoredCount }.
+//
+// Vì BE không lưu field `averageScore` sẵn, ta tự tính trung bình 5 tiêu chí
+// (plotDialogue/artDesign/...) cho từng member, rồi trung bình cộng các member
+// — giống y hệt `loadRanking` & `buildCouncilAggregateFromMembers`.
+export function computeCouncilAverageForSeries(seriesEvals, scoreFields) {
+  if (!Array.isArray(seriesEvals) || !seriesEvals.length) {
+    return { councilAverage: null, scoredCount: 0 };
+  }
+  const scoredRows = seriesEvals.map((e) => {
+    const scores = mapEvalDetailToScores(e);
+    const vals = scoreFields.map((f) => clampScore(scores[f.key]));
+    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    return { scored: true, average: avg };
+  });
+  const scoredCount = scoredRows.length;
+  if (!scoredCount) return { councilAverage: null, scoredCount: 0 };
+  const sum = scoredRows.reduce((a, r) => a + r.average, 0);
+  const councilAverage = parseFloat((sum / scoredCount).toFixed(2));
+  return { councilAverage, scoredCount };
 }

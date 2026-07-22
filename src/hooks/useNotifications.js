@@ -1,27 +1,88 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
 import { notificationsService } from '@/api/notificationsService.js'
-import { getApiErrorMessage } from '@/api/api.js'
 
 const POLL_INTERVAL_MS = 45_000
 const MAX_ITEMS = 30
 
+// ============================================================
+// Module-level overlay: lưu các ID đã được "xem" trong session.
+// Tồn tại xuyên suốt SPA (remount, navigation, header re-render)
+// và persist cả khi F5 nhờ sessionStorage.
+// Key theo userId (nếu có) để tránh trộn giữa các account.
+// ============================================================
+const OVERLAY_KEY_PREFIX = 'swp.notifications.readIds.'
+
+function loadOverlayFromStorage(userId) {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = window.sessionStorage.getItem(OVERLAY_KEY_PREFIX + (userId ?? 'anon'))
+    if (!raw) return new Set()
+    const arr = JSON.parse(raw)
+    return new Set(Array.isArray(arr) ? arr : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveOverlayToStorage(userId, set) {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(
+      OVERLAY_KEY_PREFIX + (userId ?? 'anon'),
+      JSON.stringify(Array.from(set)),
+    )
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function pickFirst(...candidates) {
+  for (const c of candidates) {
+    if (c !== undefined && c !== null && c !== '') return c
+  }
+  return undefined
+}
+
 function normalize(raw) {
   if (!raw) return null
+  const id = pickFirst(
+    raw.id,
+    raw.Id,
+    raw.notificationId,
+    raw.NotificationId,
+    raw.notification_id,
+    raw.notificationID,
+  )
+  if (id == null) return null
   return {
-    id: String(raw.id ?? raw.notificationId ?? ''),
-    title: raw.title ?? 'Thong bao',
-    message: raw.message ?? raw.body ?? '',
-    isRead: Boolean(raw.isRead ?? raw.read),
-    createdAt: raw.createdAt ?? null,
-    seriesId: raw.seriesId ?? null,
-    referenceType: raw.referenceType ?? null,
-    referenceId: raw.referenceId ?? null,
+    id: String(id),
+    title: pickFirst(raw.title, raw.Title, 'Thông báo') || 'Thông báo',
+    message: pickFirst(raw.message, raw.Message, raw.body, raw.Body, '') || '',
+    isRead: Boolean(
+      pickFirst(
+        raw.isRead,
+        raw.IsRead,
+        raw.read,
+        raw.Read,
+        raw.is_read,
+        raw.isread,
+      ),
+    ),
+    createdAt: pickFirst(raw.createdAt, raw.CreatedAt, raw.created_at, raw.createdat),
+    userId: pickFirst(raw.userId, raw.UserId, raw.user_id, raw.userid),
+    seriesId: pickFirst(raw.seriesId, raw.SeriesId, raw.series_id, raw.seriesid),
+    referenceType: pickFirst(raw.referenceType, raw.ReferenceType, raw.reference_type),
+    referenceId: pickFirst(raw.referenceId, raw.ReferenceId, raw.reference_id),
     raw,
   }
 }
 
-export function useNotifications({ pollInterval = POLL_INTERVAL_MS, enabled = true, onNew } = {}) {
+export function useNotifications({
+  pollInterval = POLL_INTERVAL_MS,
+  enabled = true,
+  onNew,
+  userId = null,
+} = {}) {
   const [items, setItems] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -30,24 +91,53 @@ export function useNotifications({ pollInterval = POLL_INTERVAL_MS, enabled = tr
   const seenIdsRef = useRef(new Set())
   const firstLoadRef = useRef(true)
   const onNewRef = useRef(onNew)
+  const userIdRef = useRef(userId)
 
   useEffect(() => {
     onNewRef.current = onNew
   }, [onNew])
 
+  useEffect(() => {
+    userIdRef.current = userId
+  }, [userId])
+
+  // Local overlay: các ID đã được người dùng "xem" trong session này,
+  // độc lập với phản hồi server (BE có thể không persist isRead).
+  // Lưu ở sessionStorage → tồn tại xuyên remount và cả khi F5 nhẹ (cùng tab).
+  const readIdsRef = useRef(null)
+  if (readIdsRef.current == null) {
+    readIdsRef.current = loadOverlayFromStorage(userIdRef.current)
+  }
+
+  const persistOverlay = () => saveOverlayToStorage(userIdRef.current, readIdsRef.current)
+
   const refresh = useCallback(async () => {
     if (!enabled) return
     setLoading(true)
     try {
-      const res = await notificationsService.list()
+      const params = userIdRef.current ? { userId: Number(userIdRef.current) } : {}
+      const res = await notificationsService.list(params)
       const list = (Array.isArray(res) ? res : []).map(normalize).filter(n => n.id)
 
       const seen = seenIdsRef.current
       const fresh = list.filter(n => !seen.has(n.id))
       for (const n of list) seen.add(n.id)
 
-      setItems(list.slice(0, MAX_ITEMS))
-      setUnreadCount(list.filter(n => !n.isRead).length)
+      // Merge local read state vào list từ server
+      const merged = list.map(n => (
+        readIdsRef.current.has(n.id) ? { ...n, isRead: true } : n
+      ))
+
+      setItems(merged.slice(0, MAX_ITEMS))
+      setUnreadCount(merged.filter(n => !n.isRead).length)
+
+      // eslint-disable-next-line no-console
+      console.log('[useNotifications] refresh → items:', merged.length, 'unread:', merged.filter(n => !n.isRead).length, 'firstIds:', merged.slice(0, 3).map(n => ({ id: n.id, userId: n.userId, isRead: n.isRead })))
+
+      if (merged.length === 0 && Array.isArray(res)) {
+        // eslint-disable-next-line no-console
+        console.warn('[useNotifications] raw sample →', res[0])
+      }
 
       if (fresh.length && !firstLoadRef.current) {
         const handler = onNewRef.current
@@ -74,32 +164,43 @@ export function useNotifications({ pollInterval = POLL_INTERVAL_MS, enabled = tr
   }, [enabled, pollInterval, refresh])
 
   const markRead = useCallback(async (id) => {
-    setItems(prev => prev.map(n => (n.id === id ? { ...n, isRead: true } : n)))
+    const sid = String(id)
+    // Ghi nhận local: id này đã được xem trong session
+    const overlay = readIdsRef.current
+    if (!overlay.has(sid)) {
+      overlay.add(sid)
+      persistOverlay()
+    }
+    setItems(prev => prev.map(n => (n.id === sid ? { ...n, isRead: true } : n)))
     setUnreadCount(prev => Math.max(0, prev - 1))
     try {
-      await notificationsService.markRead(id)
-      await refresh()
+      await notificationsService.markRead(sid)
+      // Không gọi refresh() — overlay giữ đúng trạng thái đã xem.
     } catch (err) {
-      setItems(prev => prev.map(n => (n.id === id ? { ...n, isRead: false } : n)))
-      setUnreadCount(prev => prev + 1)
-      toast.error(getApiErrorMessage(err, 'Khong danh dau duoc da doc.'))
+      // Không rollback UI: user đã "xem", giữ đã đọc.
+      console.warn('[notifications] markRead failed:', err?.message ?? err)
     }
-  }, [refresh])
+  }, [])
 
   const markAllRead = useCallback(async () => {
-    const prevItems = items
-    const prevCount = unreadCount
+    // Ghi nhận tất cả ID hiện tại vào overlay + persist
+    const overlay = readIdsRef.current
+    let changed = false
+    for (const n of items) {
+      if (!overlay.has(n.id)) {
+        overlay.add(n.id)
+        changed = true
+      }
+    }
+    if (changed) persistOverlay()
     setItems(prev => prev.map(n => ({ ...n, isRead: true })))
     setUnreadCount(0)
     try {
       await notificationsService.markAllRead()
-      await refresh()
     } catch (err) {
-      setItems(prevItems)
-      setUnreadCount(prevCount)
-      toast.error(getApiErrorMessage(err, 'Khong danh dau duoc tat ca.'))
+      console.warn('[notifications] markAllRead failed:', err?.message ?? err)
     }
-  }, [items, unreadCount, refresh])
+  }, [items])
 
   return { items, unreadCount, loading, refresh, markRead, markAllRead }
 }

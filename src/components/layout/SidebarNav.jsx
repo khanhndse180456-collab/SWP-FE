@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * Props:
  *  - logoIcon: LucideIcon   icon hiển thị trong logo box
  *  - appName: string         tên app (default "MangaPublish")
- *  - items: Array<{ id, label, icon: LucideIcon }>
+ *  - items: Array<{ id, label, icon: LucideIcon, badge?: number | string }>
  *  - activeId: string
  *  - onSelect: (id) => void
  *  - onLogout: () => void
@@ -62,8 +62,20 @@ export default function SidebarNav({
                   : "text-zinc-400 hover:bg-zinc-900 hover:text-white",
               )}
             >
-              {Icon ? <Icon className="size-4" /> : null}
-              {item.label}
+              {Icon ? <Icon className="size-4 shrink-0" /> : null}
+              <span className="flex-1 truncate">{item.label}</span>
+              {item.badge != null && Number(item.badge) > 0 && (
+                <span
+                  className={cn(
+                    'ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold',
+                    active
+                      ? 'bg-white text-primary'
+                      : 'bg-primary text-primary-foreground',
+                  )}
+                >
+                  {Number(item.badge) > 99 ? '99+' : item.badge}
+                </span>
+              )}
             </button>
           );
         })}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -53,7 +53,9 @@ function timeAgo(iso) {
   return `${d} ngày trước`
 }
 
-function TopBarBell() {
+const TICK_MS = 500
+
+function TopBarBell({ userId }) {
   const { items, unreadCount, loading, refresh, markAllRead, markRead } = useNotifications({
     enabled: true,
     onNew: (n) => {
@@ -62,10 +64,107 @@ function TopBarBell() {
       }
     },
   })
-  const list = useMemo(() => items.slice(0, 8), [items])
+  const [open, setOpen] = useState(false)
+
+  // Refs queue giảm dần (tách khỏi useEffect để không reset khi items đổi)
+  const queueRef = useRef([])
+  const viewedRef = useRef(new Set())
+  const timersRef = useRef([])
+  const markReadRef = useRef(markRead)
+
+  useEffect(() => { markReadRef.current = markRead }, [markRead])
+
+  // Lọc theo userId ở client nếu BE trả về danh sách toàn hệ thống
+  const scopedItems = useMemo(() => {
+    if (!userId) return items
+    const uid = Number(userId)
+    return items.filter((n) => {
+      const nid = n.userId ?? n.user_id ?? n.raw?.userId ?? n.raw?.user_id
+      return !nid || Number(nid) === uid
+    })
+  }, [items, userId])
+  const scopedList = useMemo(() => scopedItems.slice(0, 8), [scopedItems])
+  // Badge đếm unread thực sự trong scope user hiện tại
+  const scopedBadge = useMemo(
+    () => scopedItems.filter(n => !n.isRead).length,
+    [scopedItems],
+  )
+
+  // Mở dropdown → drain queue (mỗi TICK_MS markRead 1 cái chưa đọc)
+  useEffect(() => {
+    for (const t of timersRef.current) window.clearTimeout(t)
+    timersRef.current = []
+
+    if (!open) {
+      queueRef.current = []
+      return undefined
+    }
+
+    const buildFromVisible = () => {
+      queueRef.current = scopedList
+        .filter(n => !n.isRead && !viewedRef.current.has(n.id))
+        .map(n => n.id)
+    }
+    buildFromVisible()
+
+    const drain = () => {
+      if (queueRef.current.length === 0) return
+      const id = queueRef.current.shift()
+      if (!id) return
+      viewedRef.current.add(id)
+      const p = markReadRef.current(id)
+      if (p && typeof p.catch === 'function') p.catch(() => {})
+      const t = window.setTimeout(drain, TICK_MS)
+      timersRef.current.push(t)
+    }
+
+    const start = window.setTimeout(drain, 600)
+    timersRef.current.push(start)
+
+    return () => {
+      for (const t of timersRef.current) window.clearTimeout(t)
+      timersRef.current = []
+    }
+  }, [open, scopedList, markRead])
+
+  // Items đổi (refresh) → bổ sung unread mới (chưa viewed) vào queue phía sau
+  useEffect(() => {
+    if (!open) return
+    const existing = new Set(queueRef.current)
+    let added = false
+    for (const n of scopedList) {
+      if (!n.isRead && !viewedRef.current.has(n.id) && !existing.has(n.id)) {
+        queueRef.current.push(n.id)
+        added = true
+      }
+    }
+    if (added && timersRef.current.length === 0) {
+      const drain = () => {
+        if (queueRef.current.length === 0) return
+        const id = queueRef.current.shift()
+        if (!id) return
+        viewedRef.current.add(id)
+        const p = markReadRef.current(id)
+        if (p && typeof p.catch === 'function') p.catch(() => {})
+        const t = window.setTimeout(drain, TICK_MS)
+        timersRef.current.push(t)
+      }
+      const t = window.setTimeout(drain, TICK_MS)
+      timersRef.current.push(t)
+    }
+  }, [items, open, scopedList])
+
+  function handleItemClick(n) {
+    viewedRef.current.add(n.id)
+    if (!n.isRead) {
+      const p = markReadRef.current(n.id)
+      if (p && typeof p.catch === 'function') p.catch(() => {})
+    }
+    queueRef.current = queueRef.current.filter(id => id !== n.id)
+  }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -73,12 +172,12 @@ function TopBarBell() {
           className="relative flex size-10 cursor-pointer items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-white"
         >
           <Bell className="size-4" />
-          {unreadCount > 0 ? (
+          {scopedBadge > 0 ? (
             <Badge
               variant="destructive"
               className="absolute -right-1.5 -top-1.5 h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
             >
-              {unreadCount > 9 ? '9+' : unreadCount}
+              {scopedBadge > 9 ? '9+' : scopedBadge}
             </Badge>
           ) : null}
         </button>
@@ -87,11 +186,11 @@ function TopBarBell() {
       <DropdownMenuContent
         align="end"
         sideOffset={8}
-        className="w-80 p-0"
+        className="flex max-h-[min(80vh,520px)] w-80 flex-col overflow-hidden p-0"
       >
-        <div className="flex items-center justify-between border-b px-3 py-2.5">
+        <div className="sticky top-0 z-10 -mx-1 flex shrink-0 items-center justify-between border-b bg-popover px-3 py-2.5 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.08)]">
           <DropdownMenuLabel className="p-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Thông báo {unreadCount > 0 ? `· ${unreadCount} mới` : ''}
+            Thông báo {scopedBadge > 0 ? `· ${scopedBadge} mới` : ''}
           </DropdownMenuLabel>
           <div className="flex items-center gap-1">
             <button
@@ -102,10 +201,14 @@ function TopBarBell() {
             >
               <RefreshCcw className={cn('size-3.5', loading && 'animate-spin')} />
             </button>
-            {unreadCount > 0 ? (
+            {scopedBadge > 0 ? (
               <button
                 type="button"
-                onClick={() => markAllRead()}
+                onClick={() => {
+                  for (const n of scopedList) viewedRef.current.add(n.id)
+                  queueRef.current = []
+                  void markAllRead()
+                }}
                 className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                 title="Đánh dấu đã đọc tất cả"
               >
@@ -115,21 +218,21 @@ function TopBarBell() {
           </div>
         </div>
 
-        {list.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center text-sm text-muted-foreground">
+        {scopedList.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm text-muted-foreground">
             <Check className="size-6" />
             <p>Bạn đã cập nhật tất cả thông báo.</p>
           </div>
         ) : (
-          <ScrollArea className="max-h-80">
+          <ScrollArea className="flex-1">
             <ul className="divide-y">
-              {list.map((n) => {
+              {scopedList.map((n) => {
                 const isRead = !!n.isRead
                 return (
                   <li key={n.id}>
                     <button
                       type="button"
-                      onClick={() => { if (!isRead) markRead(n.id) }}
+                      onClick={() => handleItemClick(n)}
                       className={cn(
                         'flex w-full flex-col gap-0.5 px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent',
                         !isRead && 'bg-accent/40',
@@ -159,16 +262,17 @@ function TopBarBell() {
           </ScrollArea>
         )}
 
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link
-            to="/notifications"
-            className="flex w-full cursor-pointer items-center justify-center gap-1.5 py-2 text-xs font-medium"
-          >
-            Xem tất cả
-            <ExternalLink className="size-3" />
-          </Link>
-        </DropdownMenuItem>
+        <div className="sticky bottom-0 z-10 -mx-1 border-t bg-popover px-1 pt-1 shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.08)]">
+          <DropdownMenuItem asChild>
+            <Link
+              to="/notifications"
+              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium"
+            >
+              Xem tất cả
+              <ExternalLink className="size-3" />
+            </Link>
+          </DropdownMenuItem>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -260,7 +364,7 @@ export default function WorkspaceTopBar({ titleSlot, user, onLogout }) {
       <div className="flex min-w-0 items-center gap-3">{titleSlot}</div>
       {user ? (
         <div className="flex shrink-0 items-center gap-2">
-          <TopBarBell />
+          <TopBarBell userId={user.id ?? user.userId ?? user.userid ?? null} />
           <TopBarUserMenu user={user} onLogout={onLogout} />
         </div>
       ) : null}

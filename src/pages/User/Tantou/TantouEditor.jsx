@@ -89,6 +89,10 @@ export default function TantouEditor() {
   const [studioSearch, setStudioSearch]             = useState('')
   const [studioStatusFilter, setStudioStatusFilter] = useState('all')
 
+  // MỚI: state lọc cho tab "Lịch xuất bản"
+  const [scheduleSearch, setScheduleSearch]         = useState('')
+  const [scheduleCadenceFilter, setScheduleCadenceFilter] = useState('all')
+
   const filteredStudioQueue = useMemo(() => {
     const q = studioSearch.trim().toLowerCase()
     return studioQueue.filter(ch => {
@@ -99,6 +103,17 @@ export default function TantouEditor() {
       return matchStatus && matchSearch
     })
   }, [studioQueue, studioSearch, studioStatusFilter])
+
+  // MỚI: lọc lịch xuất bản theo cadence (weekly/monthly) + tên truyện
+  const filteredScheduleSeries = useMemo(() => {
+    const q = scheduleSearch.trim().toLowerCase()
+    return scheduleSeries.filter(row => {
+      const matchCadence = scheduleCadenceFilter === 'all' || row.cadence === scheduleCadenceFilter
+      const title = (row.title ?? '').toLowerCase()
+      const matchSearch = !q || title.includes(q)
+      return matchCadence && matchSearch
+    })
+  }, [scheduleSeries, scheduleSearch, scheduleCadenceFilter])
 
   const urgentChapters = useMemo(() => {
     return studioQueue
@@ -459,6 +474,47 @@ export default function TantouEditor() {
                 Series đã được {LABEL_EDITOR_BOARD} chấp nhận. Mục này chỉ để xem, không chỉnh sửa được ở đây.
               </p>
             </div>
+
+            {/* MỚI: thanh lọc cadence + tên truyện (giống pattern tab studio) */}
+            {!loading && scheduleSeries.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Tìm tên truyện..."
+                    value={scheduleSearch}
+                    onChange={e => setScheduleSearch(e.target.value)}
+                    className="h-8 pl-8 pr-8 text-sm"
+                  />
+                  {scheduleSearch && (
+                    <button
+                      onClick={() => setScheduleSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  {[
+                    { value: 'all',     label: 'Tất cả' },
+                    { value: 'weekly',  label: 'Theo tuần' },
+                    { value: 'monthly', label: 'Theo tháng' },
+                  ].map(opt => (
+                    <Button
+                      key={opt.value}
+                      variant={scheduleCadenceFilter === opt.value ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 px-2.5 text-xs"
+                      onClick={() => setScheduleCadenceFilter(opt.value)}
+                    >
+                      {opt.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {loading ? (
               <div className="flex items-center gap-2 py-8 text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Đang tải...
@@ -469,22 +525,59 @@ export default function TantouEditor() {
                   Chưa có series qua {LABEL_EDITOR_BOARD}.
                 </CardContent>
               </Card>
+            ) : filteredScheduleSeries.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center text-muted-foreground">
+                  Không tìm thấy series khớp bộ lọc.
+                </CardContent>
+              </Card>
             ) : (
-              scheduleSeries.map(row => (
-                <Card key={row.seriesid}>
-                  <CardHeader>
-                    <CardTitle>{row.title}</CardTitle>
-                    <CardDescription>{row.agerating}</CardDescription>
-                  </CardHeader>
-                  <CardFooter>
-                    <Badge variant={row.cadence ? 'default' : 'outline'}>
-                      {row.cadence
-                        ? `Đang phát hành: ${row.cadence === 'weekly' ? 'Theo tuần' : 'Theo tháng'}`
-                        : 'Chưa đặt lịch phát hành'}
-                    </Badge>
-                  </CardFooter>
+              filteredScheduleSeries.map(row => (
+                <Card key={row.seriesid} className="overflow-hidden">
+                  <div className="flex flex-col sm:flex-row">
+                    <div className="shrink-0 p-4">
+                      <CoverThumb url={row.coverimageurl ?? row.Coverimageurl} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <CardHeader>
+                        <CardTitle className="truncate">{row.title}</CardTitle>
+                        <CardDescription className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {row.agerating && (
+                              <Badge variant="outline" className="text-[10px]">
+                                {row.agerating}
+                              </Badge>
+                            )}
+                            {row.publishformat && (
+                              <span className="text-xs text-muted-foreground">
+                                {row.publishformat}
+                              </span>
+                            )}
+                          </div>
+                          {row.synopsis && (
+                            <p className="line-clamp-2 text-xs text-muted-foreground">
+                              {row.synopsis}
+                            </p>
+                          )}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardFooter>
+                        <Badge variant={row.cadence ? 'default' : 'outline'}>
+                          {row.cadence
+                            ? `Đang phát hành: ${row.cadence === 'weekly' ? 'Theo tuần' : 'Theo tháng'}`
+                            : 'Chưa đặt lịch phát hành'}
+                        </Badge>
+                      </CardFooter>
+                    </div>
+                  </div>
                 </Card>
               ))
+            )}
+
+            {!loading && scheduleSeries.length > 0 && filteredScheduleSeries.length < scheduleSeries.length && (
+              <p className="text-center text-xs text-muted-foreground">
+                Hiện {filteredScheduleSeries.length} / {scheduleSeries.length} series
+              </p>
             )}
           </TabsContent>
         </Tabs>

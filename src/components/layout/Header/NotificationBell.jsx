@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Bell, Check, ExternalLink, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,15 +28,16 @@ function timeAgo(iso) {
   return `${d} ngày trước`
 }
 
+const TICK_MS = 500
+
 /**
- * Chuông thông báo dùng chung cho mọi role (trừ ADMIN nếu hideForAdmin=true).
- * Tự gọi useNotifications, hiển thị badge số chưa đọc + dropdown danh sách.
+ * Chuông thông báo dùng chung cho mọi role.
+ * Badge giảm TỪNG CÁI MỘT cho đến khi hết (theo yêu cầu UX).
  *
- * Props:
- *  - pollInterval: ms (mặc định 45s từ hook)
- *  - className: class thêm cho nút bell
- *  - onItemClick: callback khi bấm 1 thông báo (nếu không truyền sẽ navigate theo link)
- *  - maxItems: số thông báo hiện trong dropdown (mặc định 8)
+ *  - Click 1 item → markRead ngay → badge -1 tức thì.
+ *  - Mở dropdown → sau 600ms, mỗi TICK_MS giảm 1 cái hiển thị được xem.
+ *  - Local overlay (trong hook) + sessionStorage đảm bảo BE không persist
+ *    thì trạng thái "đã đọc" vẫn đúng cho tới khi đóng tab.
  */
 export default function NotificationBell({
   pollInterval,
@@ -50,22 +50,89 @@ export default function NotificationBell({
   })
   const [open, setOpen] = useState(false)
 
+  const queueRef = useRef([])        // Hàng đợi ID cần markRead
+  const viewedRef = useRef(new Set()) // Đã đẩy vào markRead (chống gọi 2 lần)
+  const timersRef = useRef([])
+  const markReadRef = useRef(markRead)
+
+  // Giữ ref của markRead mới nhất
+  useEffect(() => { markReadRef.current = markRead }, [markRead])
+
   const visible = useMemo(() => items.slice(0, maxItems), [items, maxItems])
 
-  // Khi mở dropdown lần đầu → đánh dấu tất cả là đã đọc sau 1s (UX mềm).
+  // Khi mở dropdown: xây queue + bắt đầu drain.
+  // Deps [open] (không [visible]) để giữa chừng refresh là không reset queue.
   useEffect(() => {
-    if (!open) return undefined
-    const id = window.setTimeout(() => {
-      const unread = items.filter((n) => !n.isRead)
-      for (const n of unread) markRead(n.id)
-    }, 1200)
-    return () => window.clearTimeout(id)
-  }, [open, items, markRead])
+    for (const t of timersRef.current) window.clearTimeout(t)
+    timersRef.current = []
+
+    if (!open) {
+      queueRef.current = []
+      return undefined
+    }
+
+    const buildFromVisible = () => {
+      queueRef.current = visible
+        .filter((n) => !n.isRead && !viewedRef.current.has(n.id))
+        .map((n) => n.id)
+    }
+    buildFromVisible()
+
+    const drain = () => {
+      if (queueRef.current.length === 0) return
+      const id = queueRef.current.shift()
+      if (!id) return
+      viewedRef.current.add(id)
+      const p = markReadRef.current(id)
+      if (p && typeof p.catch === 'function') p.catch(() => {})
+      const t = window.setTimeout(drain, TICK_MS)
+      timersRef.current.push(t)
+    }
+
+    const start = window.setTimeout(drain, 600)
+    timersRef.current.push(start)
+
+    return () => {
+      for (const t of timersRef.current) window.clearTimeout(t)
+      timersRef.current = []
+    }
+  }, [open, visible, markRead])
+
+  // Khi items thay đổi (refresh) → bổ sung unread mới (chưa viewed) vào queue phía sau
+  useEffect(() => {
+    if (!open) return
+    const existing = new Set(queueRef.current)
+    let added = false
+    for (const n of visible) {
+      if (!n.isRead && !viewedRef.current.has(n.id) && !existing.has(n.id)) {
+        queueRef.current.push(n.id)
+        added = true
+      }
+    }
+    if (added && timersRef.current.length === 0) {
+      const drain = () => {
+        if (queueRef.current.length === 0) return
+        const id = queueRef.current.shift()
+        if (!id) return
+        viewedRef.current.add(id)
+        const p = markReadRef.current(id)
+        if (p && typeof p.catch === 'function') p.catch(() => {})
+        const t = window.setTimeout(drain, TICK_MS)
+        timersRef.current.push(t)
+      }
+      const t = window.setTimeout(drain, TICK_MS)
+      timersRef.current.push(t)
+    }
+  }, [items, open, visible])
 
   function handleItemClick(n) {
-    if (typeof onItemClick === 'function') {
-      onItemClick(n)
+    viewedRef.current.add(n.id)
+    if (!n.isRead) {
+      const p = markReadRef.current(n.id)
+      if (p && typeof p.catch === 'function') p.catch(() => {})
     }
+    queueRef.current = queueRef.current.filter((id) => id !== n.id)
+    if (typeof onItemClick === 'function') onItemClick(n)
     setOpen(false)
   }
 
@@ -110,7 +177,10 @@ export default function NotificationBell({
                 type="button"
                 onClick={(e) => {
                   e.preventDefault()
+                  // Đánh dấu toàn bộ ID hiện tại đã xem để UI cập nhật ngay
+                  for (const n of visible) viewedRef.current.add(n.id)
                   void markAllRead()
+                  queueRef.current = []
                 }}
                 className="rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10"
                 title="Đánh dấu tất cả đã đọc"
@@ -156,7 +226,7 @@ export default function NotificationBell({
                   return (
                     <li key={n.id}>
                       <DropdownMenuItem asChild>
-                        <Link to={n.link} onClick={() => setOpen(false)} className="block">
+                        <Link to={n.link} onClick={() => handleItemClick(n)} className="block">
                           {content}
                         </Link>
                       </DropdownMenuItem>
