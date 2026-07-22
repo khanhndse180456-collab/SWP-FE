@@ -113,11 +113,11 @@ export const chaptersService = {
 
 // ── PAGES ─────────────────────────────────────────────────────────────────────
 export const pagesService = {
-  getAll: (chapterId, status) => {
-    console.log('[API] GET /Pages', { chapterId, status })
+  getAll: (chapterId, isSentToMangaka) => {
+    console.log('[API] GET /Pages', { chapterId, isSentToMangaka })
     const params = {}
     if (chapterId != null) params.chapterId = chapterId
-    if (status != null) params.status = status
+    if (isSentToMangaka != null) params.isSentToMangaka = isSentToMangaka
     return axios.get('/Pages', { params: Object.keys(params).length > 0 ? params : undefined })
   },
   getById: (id) => {
@@ -143,9 +143,9 @@ export const pagesService = {
     console.log('[API] POST /Pages/:id/composite', pageId)
     return axios.post(`/Pages/${pageId}/composite`, undefined, options)
   },
-  updateStatus: (id, status) => {
-    console.log('[API] PATCH /Pages/:id/status', id, status)
-    return axios.patch(`/Pages/${id}/status`, JSON.stringify(status), {
+  updateIsSentToMangaka: (id, isSentToMangaka) => {
+    console.log('[API] PATCH /Pages/:id/is-sent-to-mangaka', id, isSentToMangaka)
+    return axios.patch(`/Pages/${id}/is-sent-to-mangaka`, JSON.stringify(isSentToMangaka), {
       headers: { 'Content-Type': 'application/json' },
     })
   },

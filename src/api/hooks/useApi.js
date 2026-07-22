@@ -253,10 +253,10 @@ export function useUpdatePage() {
   })
 }
 
-export function useUpdatePageStatus() {
+export function useUpdatePageIsSentToMangaka() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, status }) => pagesService.updateStatus(id, status),
+    mutationFn: ({ id, isSentToMangaka }) => pagesService.updateIsSentToMangaka(id, isSentToMangaka),
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: ['pages'] })
       qc.invalidateQueries({ queryKey: ['pages', id] })

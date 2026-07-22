@@ -148,11 +148,15 @@ const STATUS_BADGE = {
   draft: { label: 'Nháp', className: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-500/15 dark:text-zinc-400' },
   assistant: { label: 'Chờ Assistant', className: 'bg-violet-100 text-violet-700 hover:bg-violet-100 dark:bg-violet-500/15 dark:text-violet-400' },
   review: { label: 'Chờ duyệt', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400' },
-  ready: { label: 'Đã gộp — chờ duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
-  Ready: { label: 'Đã gộp — chờ duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
+  ready: { label: 'Chờ duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
+  Ready: { label: 'Chờ duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
   tantou: { label: `Chờ ${LABEL_TANTOU_EDITOR}`, className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
   done: { label: 'Hoàn tất', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-400' },
   publishing: { label: 'Đang phát hành', className: 'bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/15 dark:text-blue-400' },
+  inproduction: { label: 'Đang làm', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400' },
+  published: { label: 'Hoàn tất', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-400' },
+  delayed: { label: 'Trễ hạn', className: 'bg-rose-100 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/15 dark:text-rose-400' },
+  cancelled: { label: 'Bị huỷ', className: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-500/15 dark:text-zinc-400' },
 }
 
 /** Convert a data URL (blob: or data:) back to a File object for upload. */
@@ -573,6 +577,7 @@ export default function Mangaka() {
         id: String(c.chapterid ?? c.id),
         chapterid: c.chapterid ?? c.id,
         series: seriesTitle,
+        seriesid: sId,
         num: c.chapternumber ?? c.Chapternumber ?? 1,
         title: c.title ?? `Chapter ${c.chapternumber}`,
         pages: c.pageCount ?? c.pagecount ?? c.PageCount ?? c.Pagecount ?? c.pages?.length ?? 0,

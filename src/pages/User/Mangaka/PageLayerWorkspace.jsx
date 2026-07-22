@@ -658,9 +658,10 @@ export default function PageLayerWorkspace() {
       if (allLayers.length > 0) {
         try { await pagesService.composite(serverPageId) } catch { /* ignore, có thể đã composite trước đó */ }
       }
-      // Bước 2: Assistant gửi bản tổng hợp cho Mangaka — KHÔNG đổi status chapter
-      // (Enum BE ChapterService không có 'SendingToMangaka'; chapter chỉ chuyển trạng thái
-      //  khi Mangaka bấm Duyệt/Yêu cầu sửa. Assistant chỉ làm PageIssue.)
+      // Bước 2: Assistant gửi bản tổng hợp cho Mangaka — Cập nhật trạng thái page thành true
+      if (!serverPage?.isSentToMangaka) {
+        await pagesService.updateIsSentToMangaka(serverPageId, true)
+      }
       toast.success('Đã gửi cho Mangaka duyệt.')
     } catch (err) {
       const msg = err?.response?.data?.message ?? err?.message ?? 'Lỗi khi gửi Mangaka.'

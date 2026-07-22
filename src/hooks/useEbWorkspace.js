@@ -529,7 +529,8 @@ const deleteNotification = useCallback(async (id) => {
         `Đã lưu điểm ${activeMember?.name ?? "thành viên"} · DTB cá nhân ${average.toFixed(1)}`
       );
 
-      // Bắn thông báo tới Tantou + các EB khác khi có thành viên vừa chấm điểm
+      // Bắn thông báo tới Tantou + các EB khác khi có thành viên vừa chấm điểm (Đã gỡ bỏ do API Notifications/send không tồn tại)
+      /*
       try {
         const submission = pending.find(p => p._resolvedId === String(selectedId));
         const tantouId = submission?.tantoueditorid ?? submission?.tantou_editor_id ?? submission?.tantouEditorId;
@@ -563,6 +564,7 @@ const deleteNotification = useCallback(async (id) => {
       } catch (notifyErr) {
         console.warn("[notify] handleSaveAssessment notify error", notifyErr);
       }
+      */
     } catch (err) {
       console.error('[handleSaveAssessment] Error:', err?.response?.data ?? err);
       // axiosClient interceptor đã toast lỗi
@@ -664,13 +666,15 @@ const deleteNotification = useCallback(async (id) => {
         });
       });
 
-      // Gửi song song, không block nếu một cái fail
+      // Gửi song song, không block nếu một cái fail (Đã gỡ bỏ do API Notifications/send không tồn tại)
+      /*
       await Promise.all(
         targets.map(t =>
           axiosClient.post("/Notifications/send", { ...t, seriesId: Number(seriesId) })
             .catch((err) => console.warn("[notify] failed →", t.userId, err?.message))
         )
       );
+      */
 
       toast.success(`Đã chấp nhận "${title}" — chuyển sang phát hành.`);
       // Reload history từ API (đã có FinalDecision = Approve trong DB).
@@ -766,12 +770,14 @@ const deleteNotification = useCallback(async (id) => {
           });
         });
 
+      /*
       await Promise.all(
         targets.map(t =>
           axiosClient.post("/Notifications/send", { ...t, seriesId: Number(seriesId) })
             .catch((err) => console.warn("[notify] failed →", t.userId, err?.message))
         )
       );
+      */
 
       toast.success(`Đã từ chối "${title}" — trả về Mangaka.`);
       // Series đã bị Cancelled — lịch sử Approve/Reject vẫn do BoardEvaluation quyết định,

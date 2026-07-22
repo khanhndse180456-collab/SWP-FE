@@ -20,17 +20,19 @@ import {
   ImageIcon,
   Loader2,
   Sparkles,
+  Send,
 } from 'lucide-react'
 import ReviewCompositeDialog from './ReviewCompositeDialog.jsx'
 import { pagesService } from '@/api/api.js'
-import { useUpdateChapterStatus, useUpdatePageStatus } from '@/api/hooks/useApi.js'
+import { useUpdateChapterStatus, useUpdatePageIsSentToMangaka } from '@/api/hooks/useApi.js'
 import { toast } from 'sonner'
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'Tất cả' },
-  { id: 'ready', label: 'Đã gộp — chờ duyệt' },
+  { id: 'ready', label: 'Chờ duyệt' },
   { id: 'inproduction', label: 'Đang làm' },
   { id: 'published', label: 'Hoàn tất' },
+  { id: 'delayed', label: 'Trễ hạn' },
   { id: 'cancelled', label: 'Bị huỷ' },
 ]
 
@@ -53,7 +55,7 @@ export default function ChapterView({
   const [statusFilter, setStatusFilter] = useState('all')
   const [reviewChapter, setReviewChapter] = useState(null)
   const updateStatus = useUpdateChapterStatus()
-  const updatePageStatus = useUpdatePageStatus()
+  const updatePageStatus = useUpdatePageIsSentToMangaka()
 
   const activeSeries = useMemo(() => {
     return seriesList.find(s => String(s.id) === selectedSeriesId)
@@ -114,8 +116,8 @@ export default function ChapterView({
   async function handleApprovePage(pageId) {
     if (!pageId) return
     try {
-      // 1. Cập nhật trạng thái trang sang Approved
-      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+      // 1. Cập nhật trạng thái trang sang false
+      await updatePageStatus.mutateAsync({ id: Number(pageId), isSentToMangaka: false })
       // 2. Đồng thời chuyển Chapter sang Published
       if (reviewChapter) {
         const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
@@ -124,30 +126,15 @@ export default function ChapterView({
       toast.success('Đã duyệt trang và hoàn tất chapter.')
       handleReviewClose()
     } catch (err) {
-      // Fallback: nếu trang đang ở InWork, tự động chuyển InWork -> Reviewing -> Approved
-      const msg = err?.response?.data?.message ?? err?.message ?? ''
-      if (msg.includes('InWork')) {
-        try {
-          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Reviewing' })
-          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
-          if (reviewChapter) {
-            const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
-            await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' })
-          }
-          toast.success('Đã duyệt trang và hoàn tất chapter.')
-          handleReviewClose()
-        } catch (fallbackErr) {
-          toast.error(fallbackErr?.response?.data?.message ?? 'Không thể chuyển trạng thái để duyệt.')
-        }
-      }
+      toast.error(err?.response?.data?.message ?? 'Không thể duyệt trang.')
     }
   }
 
   async function handleRequestRevisionPage(pageId, note) {
     if (!pageId) return
     try {
-      // 1. Cập nhật trạng thái trang sang InWork
-      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'InWork' })
+      // 1. Cập nhật trạng thái trang sang false
+      await updatePageStatus.mutateAsync({ id: Number(pageId), isSentToMangaka: false })
       // 2. Chuyển Chapter về InProduction để Assistant vẽ lại
       if (reviewChapter) {
         const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
@@ -271,6 +258,15 @@ export default function ChapterView({
                     onEdit={() => onOpenEditChapter?.(c)}
                     onDelete={() => onDeleteChapter?.(c.id)}
                     onReview={() => handleReviewOpen(c)}
+                    seriesList={seriesList}
+                    onSendToTantou={async () => {
+                      try {
+                        await updateStatus.mutateAsync({ id: Number(c.id ?? c.chapterId), status: 'Ready' })
+                        toast.success('Đã gửi chapter sang cho Tantou duyệt.')
+                      } catch (err) {
+                        toast.error('Gửi duyệt thất bại: ' + (err?.response?.data?.message ?? err.message))
+                      }
+                    }}
                   />
                 ))
               )}
@@ -293,7 +289,7 @@ export default function ChapterView({
   )
 }
 
-function ChapterRow({ chapter, badge, isReady, onView, onEdit, onDelete, onReview }) {
+function ChapterRow({ chapter, badge, isReady, onView, onEdit, onDelete, onReview, seriesList, onSendToTantou }) {
   const chapterId = chapter.id ?? chapter.chapterId
   const isServerId = chapterId != null && !String(chapterId).startsWith('u-') && !isNaN(Number(chapterId))
   const { data: pages = [], isLoading } = useQuery({
@@ -322,6 +318,12 @@ function ChapterRow({ chapter, badge, isReady, onView, onEdit, onDelete, onRevie
     ?? firstPage?.compositeImageUrl
     ?? firstPage?.composite_image_url
     ?? null
+
+  const seriesObj = React.useMemo(() => {
+    return seriesList?.find(s => s.title === chapter.series || String(s.id) === String(chapter.seriesid))
+  }, [seriesList, chapter.series, chapter.seriesid])
+  const isSeriesPublishing = String(seriesObj?.publicationStatus ?? '').toLowerCase() === 'publishing'
+  const isChapterInProduction = String(chapter.status).toLowerCase() === 'inproduction'
 
   return (
     <tr className="hover:bg-muted/30 transition-colors">
@@ -380,16 +382,16 @@ function ChapterRow({ chapter, badge, isReady, onView, onEdit, onDelete, onRevie
       </td>
       <td className="p-4">
         <div className="flex items-center justify-center gap-1.5">
-          {isReady && (
+          {isSeriesPublishing && isChapterInProduction && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 gap-1 px-2 text-sky-700 hover:bg-sky-500/10"
-              onClick={onReview}
-              title="Mở cửa sổ duyệt ảnh"
+              className="h-8 gap-1 px-2 text-amber-600 hover:bg-amber-500/10"
+              onClick={onSendToTantou}
+              title="Gửi duyệt sang Tantou"
             >
-              <Sparkles className="size-3.5" />
-              <span className="text-[11px] font-semibold">Duyệt</span>
+              <Send className="size-3.5" />
+              <span className="text-[11px] font-semibold">Gửi duyệt</span>
             </Button>
           )}
           <Button

@@ -179,9 +179,9 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
             await pagesService.composite(p.id, { silentError: true })
           } catch { /* đã có thì bỏ qua */ }
           try {
-            await pagesService.updateStatus(p.id, 'Reviewing')
+            await pagesService.updateIsSentToMangaka(p.id, true)
           } catch (e) {
-            console.warn('[LayerEditor] Failed to transition page status to Reviewing:', e)
+            console.warn('[LayerEditor] Failed to transition page status to true:', e)
           }
         }),
       )

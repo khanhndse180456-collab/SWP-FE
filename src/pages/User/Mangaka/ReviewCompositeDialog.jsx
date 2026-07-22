@@ -166,7 +166,7 @@ export default function ReviewCompositeDialog({
 
   const layers = useMemo(() => {
     const list = Array.isArray(layersRaw) ? layersRaw : []
-    return list
+    const mapped = list
       .map((raw) => {
         const id = String(
           raw?.layerid
@@ -222,7 +222,20 @@ export default function ReviewCompositeDialog({
       })
       .filter((l) => l.id)
       .sort((a, b) => a.z - b.z)
-  }, [layersRaw])
+
+    if (originalUrl) {
+      mapped.unshift({
+        id: 'original-image',
+        name: 'Ảnh gốc (Original)',
+        url: originalUrl,
+        z: 0,
+        opacity: 1,
+        isVisible: true,
+        isOriginal: true,
+      })
+    }
+    return mapped
+  }, [layersRaw, originalUrl])
 
   // Khi danh sách layer đổi, tôn trọng isvisible=false của BE làm trạng thái ẩn ban đầu.
   useEffect(() => {
@@ -495,7 +508,7 @@ export default function ReviewCompositeDialog({
                             {hidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
                           </button>
                           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                            #{l.z}
+                            {l.isOriginal ? 'Gốc' : `#${l.z}`}
                           </span>
                           {/* Thumbnail — bấm vào ảnh để focus layer (chỉ hiện layer này) */}
                           {l.url ? (
@@ -570,17 +583,19 @@ export default function ReviewCompositeDialog({
             </div>
 
             <div className="mt-auto flex flex-col gap-2">
-              <Button
-                onClick={handleApprove}
-                disabled={busy}
-                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
-              >
-                {busy ? (
-                  <><Loader2 className="mr-1 size-4 animate-spin" /> Đang xử lý…</>
-                ) : (
-                  <><Send className="mr-1 size-4" /> Duyệt — chuyển tiếp</>
-                )}
-              </Button>
+              {(safePage?.IsSentToMangaka === true || safePage?.isSentToMangaka === true) && (
+                <Button
+                  onClick={handleApprove}
+                  disabled={busy}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
+                >
+                  {busy ? (
+                    <><Loader2 className="mr-1 size-4 animate-spin" /> Đang xử lý…</>
+                  ) : (
+                    <><Send className="mr-1 size-4" /> Duyệt — chuyển tiếp</>
+                  )}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={handleRequestRevision}
@@ -598,6 +613,12 @@ export default function ReviewCompositeDialog({
           Hành động này sẽ cập nhật trạng thái chapter. Assistant sẽ nhận được thông báo tương ứng.
         </DialogFooter>
       </DialogContent>
+      {previewLayer && (
+        <LayerPreviewPortal
+          layer={previewLayer}
+          onClose={() => setPreviewLayer(null)}
+        />
+      )}
     </Dialog>
   )
 }
@@ -621,12 +642,13 @@ function LayerPreviewPortal({ layer, onClose }) {
  */
 function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pageNumber }) {
   const visibleLayers = layers.filter((l) => isLayerVisible?.(l) ?? true)
+  const showOriginal = isLayerVisible?.({ id: 'original-image' }) ?? true
 
   // Ưu tiên originalUrl làm ảnh nền để khi ẩn/hiện các layer overlay động sẽ có hiệu ứng chuẩn.
   // Nếu không có originalUrl, fallback về compositeUrl hoặc layer cao nhất.
-  let baseSrc = originalUrl || compositeUrl || null
+  let baseSrc = (showOriginal ? (originalUrl || compositeUrl) : null) || null
   if (!baseSrc && visibleLayers.length > 0) {
-    const top = [...visibleLayers].sort((a, b) => b.z - a.z)[0]
+    const top = [...visibleLayers].filter(l => l.id !== 'original-image').sort((a, b) => b.z - a.z)[0]
     baseSrc = top?.url || null
   }
 
@@ -643,7 +665,7 @@ function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pag
   }
 
   const overlays = visibleLayers.filter(
-    (l) => l.url && l.url !== baseSrc,
+    (l) => l.url && l.url !== baseSrc && l.id !== 'original-image',
   )
 
   return (
@@ -672,7 +694,7 @@ function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pag
             ))}
           </div>
         )}
-        {!compositeUrl && (
+        {!compositeUrl && showOriginal && (
           <div className="pointer-events-none absolute left-2 top-2 rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
             Chưa gộp — đang hiện layer cao nhất
           </div>

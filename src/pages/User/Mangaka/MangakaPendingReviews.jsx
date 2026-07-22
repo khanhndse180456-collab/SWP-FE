@@ -11,25 +11,25 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ImageIcon, Loader2, Sparkles } from 'lucide-react'
 import { pagesService, chaptersService } from '@/api/api.js'
-import { useUpdateChapterStatus, useUpdatePageStatus } from '@/api/hooks/useApi.js'
+import { useUpdateChapterStatus, useUpdatePageIsSentToMangaka } from '@/api/hooks/useApi.js'
 import { layersService } from '@/api/layersService.js'
 import ReviewCompositeDialog from './ReviewCompositeDialog.jsx'
 
 /**
- * Card "Trang chờ duyệt" hiển thị các page có status === 'Reviewing'
+ * Card "Trang chờ duyệt" hiển thị các page có isSentToMangaka === true
  * Click vào card mở dialog xem ảnh composite + Duyệt / Yêu cầu sửa.
  */
 export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
   const updateStatus = useUpdateChapterStatus()
-  const updatePageStatus = useUpdatePageStatus()
+  const updatePageStatus = useUpdatePageIsSentToMangaka()
   const [activePageId, setActivePageId] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  // Fetch các page có status = Reviewing trực tiếp từ BE
+  // Fetch các page có isSentToMangaka = true trực tiếp từ BE
   const { data: pendingPages, isLoading: listLoading } = useQuery({
     queryKey: ['pages', 'reviewing'],
     queryFn: async () => {
-      const res = await pagesService.getAll(undefined, 'Reviewing')
+      const res = await pagesService.getAll(undefined, true)
       const raw = res?.data
       return Array.isArray(raw) ? raw : (raw?.data ?? [])
     },
@@ -51,8 +51,8 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
     if (!pageId) return
     setBusy(true)
     try {
-      // 1. Duyệt trang
-      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+      // 1. Duyệt trang -> đổi biến isSentToMangaka thành false
+      await updatePageStatus.mutateAsync({ id: Number(pageId), isSentToMangaka: false })
 
       // 2. Chuyển Chapter sang Published (Hoàn tất) nếu đây là chương có page này
       if (openChapter) {
@@ -60,20 +60,7 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
         await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' }).catch(() => null)
       }
     } catch (err) {
-      // Fallback: nếu trang đang ở InWork, tự động chuyển InWork -> Reviewing -> Approved
-      const msg = err?.response?.data?.message ?? err?.message ?? ''
-      if (msg.includes('InWork')) {
-        try {
-          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Reviewing' })
-          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
-          if (openChapter) {
-            const chapterId = openChapter.id ?? openChapter.chapterId
-            await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' }).catch(() => null)
-          }
-        } catch (fallbackErr) {
-          // toast handled by UI/hook
-        }
-      }
+      // lỗi được hook xử lý
     } finally {
       setBusy(false)
       closeDialog()
@@ -84,8 +71,8 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
     if (!pageId) return
     setBusy(true)
     try {
-      // 1. Cập nhật trạng thái trang sang InWork
-      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'InWork' })
+      // 1. Yêu cầu sửa -> đổi biến isSentToMangaka thành false
+      await updatePageStatus.mutateAsync({ id: Number(pageId), isSentToMangaka: false })
 
       // 2. Chuyển Chapter về InProduction để Assistant sửa
       if (openChapter) {
