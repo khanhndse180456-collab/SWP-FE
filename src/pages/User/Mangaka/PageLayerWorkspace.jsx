@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -394,6 +395,7 @@ export default function PageLayerWorkspace() {
   const navigate = useNavigate()
   const { seriesSlug, chapterId, pageId } = useParams()
   const user = getSession()
+  const qc = useQueryClient()
 
   const serverPageId =
     typeof pageId === 'string' && (pageId.startsWith('u-') || pageId.startsWith('local-'))
@@ -419,6 +421,7 @@ export default function PageLayerWorkspace() {
   const [showNotes, setShowNotes] = useState(true)
   const [selectedNote, setSelectedNote] = useState(null)
   const [sendingToMangaka, setSendingToMangaka] = useState(false)
+  const [approving, setApproving] = useState(false)
 
   // Server-side page issues (notes from Mangaka)
   const { data: pageIssues = [] } = usePageIssues({ pageId: serverPageId ? Number(serverPageId) : null })
@@ -663,11 +666,31 @@ export default function PageLayerWorkspace() {
         await pagesService.updateIsSentToMangaka(serverPageId, true)
       }
       toast.success('Đã gửi cho Mangaka duyệt.')
+      qc.invalidateQueries({ queryKey: ['pages', serverPageId] })
     } catch (err) {
       const msg = err?.response?.data?.message ?? err?.message ?? 'Lỗi khi gửi Mangaka.'
       toast.error(msg)
     } finally {
       setSendingToMangaka(false)
+    }
+  }
+
+  async function handleApproveByMangaka() {
+    if (!serverPageId) return
+    setApproving(true)
+    try {
+      // 1. Gọi API composite để lưu ảnh vào database
+      await pagesService.composite(serverPageId)
+
+      // 2. Đổi biến isSentToMangaka thành false
+      await pagesService.updateIsSentToMangaka(serverPageId, false)
+
+      toast.success('Đã duyệt bản vẽ thành công và lưu ảnh hoàn chỉnh!')
+      qc.invalidateQueries({ queryKey: ['pages', serverPageId] })
+    } catch (err) {
+      toast.error('Duyệt bản vẽ thất bại: ' + (err?.response?.data?.message ?? err.message))
+    } finally {
+      setApproving(false)
     }
   }
 
@@ -777,34 +800,69 @@ export default function PageLayerWorkspace() {
               </div>
 
               <div className="border-t p-3 space-y-2">
-                <Button
-                  className="w-full"
-                  onClick={handleComposite}
-                  disabled={compositeLoading || allLayers.length === 0}
-                >
-                  {compositeLoading ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Wand2 className="size-4" />
-                  )}
-                  Tạo ảnh hoàn chỉnh
-                </Button>
-                <Button
-                  className="w-full"
-                  variant="default"
-                  onClick={handleSendToMangaka}
-                  disabled={sendingToMangaka || !serverPageId}
-                >
-                  {sendingToMangaka ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
-                  )}
-                  Gửi Mangaka duyệt
-                </Button>
+                {String(user?.role ?? '').toUpperCase() === 'MANGAKA' && (
+                  <>
+                    {(serverPage?.isSentToMangaka === true || serverPage?.IsSentToMangaka === true) ? (
+                      <Button
+                        className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
+                        onClick={handleApproveByMangaka}
+                        disabled={approving || !serverPageId}
+                      >
+                        {approving ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Send className="size-4" />
+                        )}
+                        Duyệt bản vẽ
+                      </Button>
+                    ) : (
+                      <Button
+                        className="w-full"
+                        onClick={handleComposite}
+                        disabled={compositeLoading || allLayers.length === 0}
+                      >
+                        {compositeLoading ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Wand2 className="size-4" />
+                        )}
+                        Tạo ảnh hoàn chỉnh
+                      </Button>
+                    )}
+                  </>
+                )}
+
+                {String(user?.role ?? '').toUpperCase() === 'ASSISTANT' && (
+                  <>
+                    {!(serverPage?.isSentToMangaka === true || serverPage?.IsSentToMangaka === true) ? (
+                      <Button
+                        className="w-full"
+                        variant="default"
+                        onClick={handleSendToMangaka}
+                        disabled={sendingToMangaka || !serverPageId}
+                      >
+                        {sendingToMangaka ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Send className="size-4" />
+                        )}
+                        Gửi Mangaka duyệt
+                      </Button>
+                    ) : (
+                      <Button
+                        className="w-full"
+                        variant="outline"
+                        disabled={true}
+                      >
+                        Đang chờ Mangaka duyệt...
+                      </Button>
+                    )}
+                  </>
+                )}
+
                 {!serverPageId && (
                   <p className="text-xs text-muted-foreground text-center">
-                    Trang cần được lưu server trước khi composite.
+                    Trang cần được lưu server trước khi thao tác.
                   </p>
                 )}
               </div>

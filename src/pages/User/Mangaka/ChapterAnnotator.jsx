@@ -36,6 +36,7 @@ import {
   useUpdateSeriesStatus,
   useAssignTantouEditor
 } from '@/api/hooks'
+import { pagesService } from '@/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -470,6 +471,7 @@ export default function ChapterAnnotator({
             name: `Page ${p.pagenumber ?? p.Pagenumber ?? i + 1}`,
             url: directUrl && String(directUrl).trim() !== '' ? directUrl : null,
             serverPageId: sid,
+            isSentToMangaka: p.isSentToMangaka ?? p.IsSentToMangaka ?? false,
           }
         })
       return dedupeById(mapped)
@@ -632,6 +634,33 @@ export default function ChapterAnnotator({
       void persistNoteById(stableKey)
     }, 1500)
   }, [persistNoteById])
+
+  const [approvingPage, setApprovingPage] = useState(false)
+  const handleApprovePage = async () => {
+    const page = pages[pageIndex]
+    const pId = page?.serverPageId
+    if (!pId) {
+      toast.error('Trang chưa có ID server.')
+      return
+    }
+    setApprovingPage(true)
+    try {
+      // 1. Gọi API composite để lưu ảnh vào database
+      await pagesService.composite(pId)
+
+      // 2. Đổi biến isSentToMangaka thành false
+      await pagesService.updateIsSentToMangaka(pId, false)
+
+      toast.success(`Đã duyệt Trang ${pageIndex + 1} thành công và lưu ảnh hoàn chỉnh!`)
+
+      // Invalidate query
+      queryClient.invalidateQueries({ queryKey: ['pages', effectiveServerChapterId] })
+    } catch (err) {
+      toast.error('Duyệt bản vẽ thất bại: ' + (err?.response?.data?.message ?? err.message))
+    } finally {
+      setApprovingPage(false)
+    }
+  }
 
   const uploadTargetChapter = useMemo(
     () => seriesChapters.find(c => c.id === activeChapterId) ?? null,
@@ -1555,6 +1584,16 @@ export default function ChapterAnnotator({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {pages[pageIndex]?.isSentToMangaka === true && (
+                <Button
+                  size="sm"
+                  onClick={handleApprovePage}
+                  disabled={approvingPage}
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500 mr-2"
+                >
+                  {approvingPage ? 'Đang duyệt...' : 'Duyệt bản vẽ'}
+                </Button>
+              )}
               {onSendToTantou && isSeriesPublishing ? (
                 <Button
                   size="sm"
@@ -1966,6 +2005,16 @@ export default function ChapterAnnotator({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {pages[pageIndex]?.isSentToMangaka === true && (
+                  <Button
+                    size="sm"
+                    onClick={handleApprovePage}
+                    disabled={approvingPage}
+                    className="bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
+                  >
+                    {approvingPage ? 'Đang duyệt...' : 'Duyệt bản vẽ'}
+                  </Button>
+                )}
                 <ToolButtons />
                 <Button size="sm" variant="outline" onClick={() => setIsFullscreen(true)}>
                   <Maximize2 className="size-3.5" />
@@ -2009,6 +2058,16 @@ export default function ChapterAnnotator({
               <span className="ml-2 text-sm text-zinc-400">· Trang {pageIndex + 1}/{pages.length}</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {pages[pageIndex]?.isSentToMangaka === true && (
+                <Button
+                  size="sm"
+                  onClick={handleApprovePage}
+                  disabled={approvingPage}
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500 mr-2"
+                >
+                  {approvingPage ? 'Đang duyệt...' : 'Duyệt bản vẽ'}
+                </Button>
+              )}
               <ToolButtons />
               <PageNav compact />
               <Button size="sm" variant="outline" className="border-white/20 bg-transparent text-white hover:bg-white/10" onClick={() => setIsFullscreen(false)}>
