@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import ReviewCompositeDialog from './ReviewCompositeDialog.jsx'
 import { pagesService } from '@/api/api.js'
-import { useUpdateChapterStatus } from '@/api/hooks/useApi.js'
+import { useUpdateChapterStatus, useUpdatePageStatus } from '@/api/hooks/useApi.js'
 import { toast } from 'sonner'
 
 const STATUS_FILTERS = [
@@ -53,6 +53,7 @@ export default function ChapterView({
   const [statusFilter, setStatusFilter] = useState('all')
   const [reviewChapter, setReviewChapter] = useState(null)
   const updateStatus = useUpdateChapterStatus()
+  const updatePageStatus = useUpdatePageStatus()
 
   const activeSeries = useMemo(() => {
     return seriesList.find(s => String(s.id) === selectedSeriesId)
@@ -103,6 +104,55 @@ export default function ChapterView({
     if (!chapterId) return
     try {
       await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' })
+      toast.success(note ? `Đã gửi yêu cầu sửa: ${note}` : 'Đã gửi yêu cầu sửa cho Assistant.')
+      handleReviewClose()
+    } catch {
+      /* toast handled by hook */
+    }
+  }
+
+  async function handleApprovePage(pageId) {
+    if (!pageId) return
+    try {
+      // 1. Cập nhật trạng thái trang sang Approved
+      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+      // 2. Đồng thời chuyển Chapter sang Published
+      if (reviewChapter) {
+        const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
+        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' })
+      }
+      toast.success('Đã duyệt trang và hoàn tất chapter.')
+      handleReviewClose()
+    } catch (err) {
+      // Fallback: nếu trang đang ở InWork, tự động chuyển InWork -> Reviewing -> Approved
+      const msg = err?.response?.data?.message ?? err?.message ?? ''
+      if (msg.includes('InWork')) {
+        try {
+          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Reviewing' })
+          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+          if (reviewChapter) {
+            const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
+            await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' })
+          }
+          toast.success('Đã duyệt trang và hoàn tất chapter.')
+          handleReviewClose()
+        } catch (fallbackErr) {
+          toast.error(fallbackErr?.response?.data?.message ?? 'Không thể chuyển trạng thái để duyệt.')
+        }
+      }
+    }
+  }
+
+  async function handleRequestRevisionPage(pageId, note) {
+    if (!pageId) return
+    try {
+      // 1. Cập nhật trạng thái trang sang InWork
+      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'InWork' })
+      // 2. Chuyển Chapter về InProduction để Assistant vẽ lại
+      if (reviewChapter) {
+        const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
+        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' })
+      }
       toast.success(note ? `Đã gửi yêu cầu sửa: ${note}` : 'Đã gửi yêu cầu sửa cho Assistant.')
       handleReviewClose()
     } catch {
@@ -234,11 +284,9 @@ export default function ChapterView({
           open={!!reviewChapter}
           chapter={reviewChapter}
           onClose={handleReviewClose}
-          onApprove={() => handleApprove(reviewChapter.id ?? reviewChapter.chapterId)}
-          onRequestRevision={(note) =>
-            handleRequestRevision(reviewChapter.id ?? reviewChapter.chapterId, note)
-          }
-          busy={updateStatus.isPending}
+          onApprove={handleApprovePage}
+          onRequestRevision={handleRequestRevisionPage}
+          busy={updatePageStatus.isPending}
         />
       )}
     </div>

@@ -327,22 +327,7 @@ export function useEbWorkspace() {
       // 2. Cập nhật status sang Publishing
       await axiosClient.patch(`/Series/${seriesId}/status`, { status: "Publishing" });
 
-      // Gửi thông báo chấp nhận cho Mangaka
-      const submission = pending.find(p => p._resolvedId === String(seriesId));
-      const mangakaId = submission?.mangakaid ?? submission?.manga_ka_id ?? submission?.mangaka_id;
-      if (mangakaId) {
-        const evalFeedback = councilAggregate.memberRows
-          .filter(r => r.scored)
-          .map(r => `${r.name}: ${r.average.toFixed(1)}`)
-          .join(", ");
-        await axiosClient.post("/Notifications/send", {
-          userId: Number(mangakaId),
-          title: "Tác phẩm được chấp nhận phát hành",
-          message: `Tác phẩm "${title}" đã được Hội đồng chấp nhận và chuyển sang phát hành. DTB Hội đồng: ${councilAggregate.councilAverage.toFixed(1)}/5. Điểm thành viên: ${evalFeedback || "N/A"}.`,
-          seriesId: Number(seriesId),
-        }).catch(() => {}); // không block nếu notification fail
-      }
-
+      // 3. Chấp nhận và hoàn tất
       toast.success(`Đã chấp nhận "${title}" — chuyển sang phát hành.`);
       setSelectedId(null);
       loadedRef.current = false;

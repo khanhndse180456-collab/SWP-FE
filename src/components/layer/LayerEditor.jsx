@@ -59,6 +59,8 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
     originalImage,
     resultImage,
     loading,
+    saving,
+    hasChanges,
     uploading,
     finalizing,
     addLayer,
@@ -69,7 +71,28 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
     reorderLayers,
     finalize,
     refresh,
+    saveChanges,
   } = layersApi
+
+  // Cảnh báo khi người dùng tắt trình duyệt / chuyển trang khác mà chưa lưu
+  useEffect(() => {
+    if (!hasChanges) return undefined
+    const handleBeforeUnload = (e) => {
+      e.preventDefault()
+      e.returnValue = 'Bạn có thay đổi chưa lưu. Bạn có chắc muốn rời đi?'
+      return e.returnValue
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasChanges])
+
+  const handlePageChange = (newIdx) => {
+    if (hasChanges) {
+      const ok = window.confirm('Bạn có thay đổi chưa lưu trên trang này. Chuyển trang khác sẽ mất những thay đổi này. Bạn có chắc muốn tiếp tục?')
+      if (!ok) return
+    }
+    setPageIdx(newIdx)
+  }
 
   // Notes cho page hiện tại — dùng pageId (preferred) thay vì chapterId
   useEffect(() => {
@@ -155,6 +178,11 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
             // để tránh che mất thông báo thành công của luồng gửi chính.
             await pagesService.composite(p.id, { silentError: true })
           } catch { /* đã có thì bỏ qua */ }
+          try {
+            await pagesService.updateStatus(p.id, 'Reviewing')
+          } catch (e) {
+            console.warn('[LayerEditor] Failed to transition page status to Reviewing:', e)
+          }
         }),
       )
       // Update chapter status
@@ -227,7 +255,7 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
                 variant="ghost"
                 className="size-7 rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
                 disabled={safeIdx <= 0}
-                onClick={() => setPageIdx((i) => Math.max(0, i - 1))}
+                onClick={() => handlePageChange(Math.max(0, safeIdx - 1))}
                 title="Trang trước"
               >
                 <ChevronLeft className="size-4" />
@@ -240,7 +268,7 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
                 variant="ghost"
                 className="size-7 rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
                 disabled={safeIdx >= pages.length - 1}
-                onClick={() => setPageIdx((i) => Math.min(pages.length - 1, i + 1))}
+                onClick={() => handlePageChange(Math.min(pages.length - 1, safeIdx + 1))}
                 title="Trang sau"
               >
                 <ChevronRight className="size-4" />
@@ -263,6 +291,26 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
           >
             {showOriginal ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
             Gốc
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className={cn(
+              'h-8 gap-1.5 px-3 text-xs font-medium transition-all duration-200',
+              hasChanges
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                : 'text-white/40 border-white/5 bg-white/5 cursor-not-allowed opacity-50'
+            )}
+            onClick={saveChanges}
+            disabled={saving || !hasChanges}
+            title="Lưu tất cả thay đổi của layer"
+          >
+            {saving ? (
+              <><Loader2 className="size-3.5 animate-spin" /> Đang lưu…</>
+            ) : (
+              <>Lưu thay đổi</>
+            )}
           </Button>
 
           {pageNotes.length > 0 && (
@@ -493,12 +541,7 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
               uploading={uploading}
               onAddLayer={handleAddLayer}
               onToggle={toggleVisibility}
-              onOpacity={(id, op) => {
-                setLocalOpacity(id, op)
-                // Debounce-save
-                clearTimeout(window.__opacityTimer)
-                window.__opacityTimer = setTimeout(() => updateLayer(id, { opacity: op }), 400)
-              }}
+              onOpacity={(id, op) => setLocalOpacity(id, op)}
               onRemove={deleteLayer}
               onRename={(id, name) => updateLayer(id, { name })}
               onReorder={reorderLayers}

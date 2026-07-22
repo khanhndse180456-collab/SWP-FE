@@ -253,6 +253,18 @@ export function useUpdatePage() {
   })
 }
 
+export function useUpdatePageStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, status }) => pagesService.updateStatus(id, status),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['pages'] })
+      qc.invalidateQueries({ queryKey: ['pages', id] })
+      qc.invalidateQueries({ queryKey: ['chapters'] })
+    },
+  })
+}
+
 export function useDeletePage() {
   const qc = useQueryClient()
   return useMutation({

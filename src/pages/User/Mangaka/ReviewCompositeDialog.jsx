@@ -44,12 +44,13 @@ import { layersService } from '@/api/layersService.js'
 export default function ReviewCompositeDialog({
   open,
   chapter,
+  initialPageId = null,
   onClose,
   onApprove,
   onRequestRevision,
   busy = false,
 }) {
-  const chapterId = chapter?.id ?? chapter?.chapterId ?? null
+  const chapterId = chapter?.id ?? chapter?.chapterId ?? chapter?.chapterid ?? chapter?.Chapterid ?? null
   const [pageIdx, setPageIdx] = useState(0)
   const [reviewNote, setReviewNote] = useState('')
   const [previewLayer, setPreviewLayer] = useState(null) // { id, name, url, z, opacity } | null
@@ -85,7 +86,7 @@ export default function ReviewCompositeDialog({
     ?? safePage?.pageId
     ?? safePage?.PageId
     ?? safePage?.Id
-    ?? safePageId
+    ?? safePage?.id
     ?? null
   // Log 1 lần keys của page đầu tiên để biết BE gọi field id là gì
   if (typeof window !== 'undefined' && window.console && pages.length > 0 && !window.__rcKeysLogged) {
@@ -110,7 +111,7 @@ export default function ReviewCompositeDialog({
   // Layer do Assistant upload lên cho page này — Mangaka có thể bật/tắt để soi từng layer.
   // BE thật: GET /PageLayers?pageId=<id> (layersService.list đã unwrap về mảng).
   // Một số page DTO có thể kèm field "layers" (embedded) — lấy nguồn đầy đủ hơn.
-  const { data: layersRaw, isLoading: layersLoading } = useQuery({
+  const { data: layersDataObj, isLoading: layersLoading } = useQuery({
     queryKey: ['pageLayers', safePageId],
     enabled: !!safePageId && open,
     queryFn: async () => {
@@ -134,14 +135,24 @@ export default function ReviewCompositeDialog({
             if (sid && !seen.has(sid)) pool.push(s)
           }
         }
-        return pool
+        const originalUrl =
+          p?.originalImageUrl ??
+          p?.originalimageurl ??
+          p?.original_image_url ??
+          p?.pageimageurl ??
+          p?.Pageimageurl ??
+          null
+        return { layers: pool, originalUrl }
       } catch (e) {
         console.warn('[ReviewCompositeDialog] load layers failed:', e)
-        return []
+        return { layers: [], originalUrl: null }
       }
     },
     staleTime: 15_000,
   })
+
+  const layersRaw = layersDataObj?.layers ?? []
+  const originalUrl = layersDataObj?.originalUrl ?? null
 
   // localVisible cho phép tắt/mở từng layer trong dialog mà không gọi BE.
   const [localVisible, setLocalVisible] = useState({})
@@ -267,10 +278,22 @@ export default function ReviewCompositeDialog({
     )
   }
 
-  // Reset về page đầu khi đổi chapter
+  // Reset về page đầu khi đổi chapter hoặc nhảy tới trang được chọn
   useEffect(() => {
-    if (open) setPageIdx(0)
-  }, [open, chapterId])
+    if (open) {
+      if (initialPageId && pages.length > 0) {
+        const idx = pages.findIndex(p => {
+          const pid = p.id ?? p.pageid ?? p.pageId ?? p.Pageid
+          return String(pid) === String(initialPageId)
+        })
+        if (idx !== -1) {
+          setPageIdx(idx)
+          return
+        }
+      }
+      setPageIdx(0)
+    }
+  }, [open, chapterId, initialPageId, pages])
 
   // Đếm số note của page hiện tại để hiện badge
   const { data: issueCount } = useQuery({
@@ -287,7 +310,8 @@ export default function ReviewCompositeDialog({
 
   function handleApprove() {
     if (busy) return
-    onApprove?.()
+    if (!safePageId) return
+    onApprove?.(safePageId)
   }
 
   async function handleRequestRevision() {
@@ -316,7 +340,7 @@ export default function ReviewCompositeDialog({
       // Nếu service không hỗ trợ create theo shape này, vẫn tiếp tục flow duyệt.
       console.warn('[ReviewCompositeDialog] failed to write note:', err)
     }
-    onRequestRevision?.(note)
+    onRequestRevision?.(safePageId, note)
   }
 
   return (
@@ -328,7 +352,7 @@ export default function ReviewCompositeDialog({
               <DialogTitle className="flex items-center gap-2 text-base">
                 <ImageIcon className="size-4 text-primary" />
                 {chapter?.series ?? chapter?.seriesTitle ?? 'Chapter'}
-                <span className="text-muted-foreground">· Ch.{chapter?.num ?? chapter?.chapterNum}</span>
+                <span className="text-muted-foreground">· Ch.{chapter?.num ?? chapter?.chapterNum ?? chapter?.chapternumber ?? chapter?.chapterNumber ?? '—'}</span>
               </DialogTitle>
               <DialogDescription>
                 {chapter?.title || 'Xem lại ảnh đã gộp trước khi duyệt.'}
@@ -349,7 +373,7 @@ export default function ReviewCompositeDialog({
                   Đang tải trang…
                 </div>
               ) : (
-                <CompositeStack compositeUrl={compositeUrl} layers={layers} isLayerVisible={isLayerVisible} pageNumber={safeIdx + 1} />
+                <CompositeStack compositeUrl={compositeUrl} originalUrl={originalUrl} layers={layers} isLayerVisible={isLayerVisible} pageNumber={safeIdx + 1} />
               )}
             </div>
 
@@ -595,17 +619,13 @@ function LayerPreviewPortal({ layer, onClose }) {
  * - Không có → dùng layer đầu tiên đang bật làm nền để xem layer trống.
  * - localVisible: { [layerId]: false } = ẩn, mặc định hiện.
  */
-function CompositeStack({ compositeUrl, layers, isLayerVisible, pageNumber }) {
+function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pageNumber }) {
   const visibleLayers = layers.filter((l) => isLayerVisible?.(l) ?? true)
 
-  // Ưu tiên thứ tự:
-  //  1) compositeUrl (BE trả về ảnh đã gộp).
-  //  2) layer cao nhất đang bật — đây là fallback khi Assistant chưa composite
-  //     nhưng layer đã upload thành công.
-  let baseUrl = compositeUrl || null
-  let baseSrc = baseUrl
+  // Ưu tiên originalUrl làm ảnh nền để khi ẩn/hiện các layer overlay động sẽ có hiệu ứng chuẩn.
+  // Nếu không có originalUrl, fallback về compositeUrl hoặc layer cao nhất.
+  let baseSrc = originalUrl || compositeUrl || null
   if (!baseSrc && visibleLayers.length > 0) {
-    // Lấy layer z cao nhất đang bật làm nền.
     const top = [...visibleLayers].sort((a, b) => b.z - a.z)[0]
     baseSrc = top?.url || null
   }
@@ -622,18 +642,17 @@ function CompositeStack({ compositeUrl, layers, isLayerVisible, pageNumber }) {
     )
   }
 
-  // Overlay: chỉ chồng các layer là nền (không chồng lên chính nó).
   const overlays = visibleLayers.filter(
     (l) => l.url && l.url !== baseSrc,
   )
 
   return (
-    <div className="flex h-full min-h-[60vh] w-full items-center justify-center overflow-hidden rounded bg-zinc-900 p-3 shadow-xl">
-      <div className="relative flex h-full min-h-[55vh] w-full items-center justify-center">
+    <div className="relative flex max-w-full items-center justify-center p-1">
+      <div className="relative flex items-center justify-center">
         <img
           src={baseSrc}
           alt={`Trang ${pageNumber}`}
-          className="max-h-[80vh] max-w-full rounded bg-white object-contain"
+          className="max-h-[75vh] w-auto max-w-full rounded bg-white object-contain shadow-2xl"
           draggable={false}
         />
         {overlays.length > 0 && (
@@ -644,10 +663,9 @@ function CompositeStack({ compositeUrl, layers, isLayerVisible, pageNumber }) {
                 src={l.url}
                 alt={l.name}
                 style={{ opacity: l.opacity }}
-                className="max-h-[80vh] max-w-full object-contain"
+                className="max-h-[75vh] w-auto max-w-full object-contain"
                 draggable={false}
                 onError={(e) => {
-                  // Gỡ overlay bị lỗi URL để khỏi che ảnh nền.
                   e.currentTarget.style.display = 'none'
                 }}
               />
@@ -660,6 +678,16 @@ function CompositeStack({ compositeUrl, layers, isLayerVisible, pageNumber }) {
           </div>
         )}
       </div>
+
+      <a
+        href={baseSrc}
+        target="_blank"
+        rel="noreferrer"
+        className="absolute right-2 top-2 rounded-lg bg-black/60 p-1.5 text-white/80 hover:bg-black/80 hover:text-white transition-colors"
+        title="Xem ảnh đầy đủ trong tab mới"
+      >
+        <Maximize2 className="size-4" />
+      </a>
     </div>
   )
 }

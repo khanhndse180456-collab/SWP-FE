@@ -152,6 +152,7 @@ const STATUS_BADGE = {
   Ready: { label: 'Đã gộp — chờ duyệt', className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
   tantou: { label: `Chờ ${LABEL_TANTOU_EDITOR}`, className: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
   done: { label: 'Hoàn tất', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-400' },
+  publishing: { label: 'Đang phát hành', className: 'bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/15 dark:text-blue-400' },
 }
 
 /** Convert a data URL (blob: or data:) back to a File object for upload. */
@@ -385,6 +386,10 @@ export default function Mangaka() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
   const [rejectChapterId, setRejectChapterId] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [seriesToDelete, setSeriesToDelete] = useState(null)
+  const [deleteChapterConfirmOpen, setDeleteChapterConfirmOpen] = useState(false)
+  const [chapterToDelete, setChapterToDelete] = useState(null)
 
   const [tab, setTab] = useState('dashboard')
   // annotateSeries must read from location.state first (navigation carries the correct series),
@@ -1464,18 +1469,48 @@ export default function Mangaka() {
   }
 
   function deleteSeriesById(seriesId) {
-    const target = seriesList.find(x => x.id === seriesId)
-    if (!target) return
-    const title = target.title
-    const ok = window.confirm(
-      `Xóa series "${title}"?\n\nCác chapter của series này sẽ bị gỡ. Thao tác không hoàn tác.`,
-    )
-    if (!ok) return
+    const target = seriesList.find(x => String(x.id) === String(seriesId))
+    if (!target) {
+      console.warn('[Mangaka] Cannot find series to delete with ID:', seriesId, 'in list:', seriesList)
+      return
+    }
+    setSeriesToDelete(target)
+    setDeleteConfirmOpen(true)
+  }
+
+  function handleConfirmDelete() {
+    if (!seriesToDelete) return
+    const seriesId = seriesToDelete.id
+    const title = seriesToDelete.title
 
     // Delete from API
     deleteSeries.mutate(seriesId, {
-      onSuccess: () => toast.success('Đã xóa series trên server!'),
-      onError: () => toast.error('Không xóa được series trên server.'),
+      onSuccess: () => {
+        toast.success('Đã xóa series thành công!', {
+          style: {
+            background: '#f0fdf4',
+            color: '#15803d',
+            border: '1px solid #bbf7d0',
+            borderRadius: '12px',
+            fontWeight: '500',
+          }
+        })
+        setDeleteConfirmOpen(false)
+        setSeriesToDelete(null)
+      },
+      onError: () => {
+        toast.error('Không xóa được series trên server.', {
+          style: {
+            background: '#fef2f2',
+            color: '#b91c1c',
+            border: '1px solid #fecaca',
+            borderRadius: '12px',
+            fontWeight: '500',
+          }
+        })
+        setDeleteConfirmOpen(false)
+        setSeriesToDelete(null)
+      },
     })
 
     removeEbDebutApproval(title)
@@ -1513,6 +1548,50 @@ export default function Mangaka() {
       return next
     })
     setAnnotateSeries((cur) => (cur !== title ? cur : remainingSeries[0]?.title ?? ''))
+  }
+
+  function deleteChapterById(chapterId) {
+    const target = chapterRows.find(x => String(x.id) === String(chapterId))
+    if (!target) {
+      console.warn('[Mangaka] Cannot find chapter to delete with ID:', chapterId)
+      return
+    }
+    setChapterToDelete(target)
+    setDeleteChapterConfirmOpen(true)
+  }
+
+  function handleConfirmDeleteChapter() {
+    if (!chapterToDelete) return
+    const chapterId = chapterToDelete.chapterid ?? chapterToDelete.id
+
+    deleteChapter.mutate(chapterId, {
+      onSuccess: () => {
+        toast.success('Đã xóa chapter thành công!', {
+          style: {
+            background: '#f0fdf4',
+            color: '#15803d',
+            border: '1px solid #bbf7d0',
+            borderRadius: '12px',
+            fontWeight: '500',
+          }
+        })
+        setDeleteChapterConfirmOpen(false)
+        setChapterToDelete(null)
+      },
+      onError: () => {
+        toast.error('Không xóa được chapter trên server.', {
+          style: {
+            background: '#fef2f2',
+            color: '#b91c1c',
+            border: '1px solid #fecaca',
+            borderRadius: '12px',
+            fontWeight: '500',
+          }
+        })
+        setDeleteChapterConfirmOpen(false)
+        setChapterToDelete(null)
+      }
+    })
   }
 
   // FIX VÒNG LẶP VÔ HẠN ("Maximum update depth exceeded"):
@@ -1652,7 +1731,7 @@ export default function Mangaka() {
                   openEditSeriesModal(matchedSeries)
                 }
               }}
-              onDeleteChapter={deleteSeriesById}
+              onDeleteChapter={deleteChapterById}
               onViewChapterDetail={(chapter) => {
                 setAnnotateSeries(chapter.series)
                 setAnnotatorActiveChapterId(chapter.id)
@@ -1788,6 +1867,54 @@ export default function Mangaka() {
               disabled={!selectedTantouForReview || assignTantouEditor.isPending || updateSeriesStatus.isPending}
             >
               {assignTantouEditor.isPending || updateSeriesStatus.isPending ? 'Đang gửi...' : 'Gửi duyệt'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-[420px] bg-card border">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2 font-bold text-lg">
+              Xác nhận xóa Series
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-sm text-muted-foreground leading-relaxed">
+              Bạn có chắc chắn muốn xóa series <strong className="text-foreground">"{seriesToDelete?.title}"</strong>?
+              <br /><br />
+              Tất cả các chapter thuộc series này sẽ bị gỡ bỏ. Hành động này <strong className="text-destructive">không thể hoàn tác</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2 sm:gap-0 flex justify-end">
+            <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)} className="hover:bg-muted font-medium text-xs">
+              Hủy
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete} className="bg-red-600 text-white font-semibold text-xs hover:bg-red-700">
+              Xóa ngay
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Delete Chapter Confirmation Dialog */}
+      <Dialog open={deleteChapterConfirmOpen} onOpenChange={setDeleteChapterConfirmOpen}>
+        <DialogContent className="sm:max-w-[420px] bg-card border">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2 font-bold text-lg">
+              Xác nhận xóa Chapter
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-sm text-muted-foreground leading-relaxed">
+              Bạn có chắc chắn muốn xóa chapter <strong className="text-foreground">"{chapterToDelete?.title}"</strong> thuộc series <strong className="text-foreground">"{chapterToDelete?.series}"</strong>?
+              <br /><br />
+              Hành động này sẽ gỡ hoàn toàn chapter khỏi hệ thống và <strong className="text-destructive">không thể hoàn tác</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 gap-2 sm:gap-0 flex justify-end">
+            <Button variant="ghost" onClick={() => setDeleteChapterConfirmOpen(false)} className="hover:bg-muted font-medium text-xs">
+              Hủy
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDeleteChapter} className="bg-red-600 text-white font-semibold text-xs hover:bg-red-700">
+              Xóa ngay
             </Button>
           </DialogFooter>
         </DialogContent>

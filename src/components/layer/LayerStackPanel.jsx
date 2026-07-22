@@ -145,9 +145,20 @@ function LayerRow({ layer, accent, draggable, onDragStart, onDragOver, onDrop, o
           onChange={(e) => onOpacity(layer.id, Number(e.target.value))}
           className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-white/10 accent-violet-500"
         />
-        <span className="w-8 text-right font-mono text-[10px] text-white/50">
-          {layer.opacity}%
-        </span>
+        <div className="flex items-center gap-0.5">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={layer.opacity}
+            onChange={(e) => {
+              const val = Math.min(100, Math.max(0, Number(e.target.value)))
+              onOpacity(layer.id, val)
+            }}
+            className="w-10 rounded border border-white/10 bg-black/40 px-1 py-0.5 text-center font-mono text-[10px] text-white/95 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-violet-500/50"
+          />
+          <span className="text-[10px] text-white/40">%</span>
+        </div>
       </div>
     </li>
   )

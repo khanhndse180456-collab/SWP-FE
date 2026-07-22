@@ -183,7 +183,7 @@ export default function ChapterAnnotator({
   const [localRosterTick, setLocalRosterTick] = useState(0)
   const [tantouDialogOpen, setTantouDialogOpen] = useState(false)
   const [selectedTantouId, setSelectedTantouId] = useState(null)
-  
+
   const [selectedTantouForSeries, setSelectedTantouForSeries] = useState('')
   const [isSubmittingSeriesReview, setIsSubmittingSeriesReview] = useState(false)
 
@@ -518,10 +518,10 @@ export default function ChapterAnnotator({
     const workCategory = field === 'taskType'
       ? (value === 'background' ? 'Background'
         : value === 'dialog' ? 'Dialog'
-        : value === 'ink' ? 'Inking'
-        : value === 'fx' ? 'Effects'
-        : value === 'shading' ? 'Shading'
-        : 'Content')
+          : value === 'ink' ? 'Inking'
+            : value === 'fx' ? 'Effects'
+              : value === 'shading' ? 'Shading'
+                : 'Content')
       : (originalIssue.workCategory ?? originalIssue.Workcategory ?? 'Background')
 
     const description = field === 'text' ? value : (originalIssue.description ?? originalIssue.Description ?? '')
@@ -757,9 +757,9 @@ export default function ChapterAnnotator({
       // Nếu vẫn không có → chapter còn là local nháp → tự đẩy lên server trước.
       let serverChapterId =
         target.serverChapterId
-          ?? (Number.isFinite(Number(target.id)) ? Number(target.id) : null)
-          ?? effectiveServerChapterId
-          ?? null
+        ?? (Number.isFinite(Number(target.id)) ? Number(target.id) : null)
+        ?? effectiveServerChapterId
+        ?? null
 
       if (!Number.isFinite(Number(serverChapterId)) || Number(serverChapterId) <= 0) {
         const num = parseInt(String(target.num), 10) || 1
@@ -901,15 +901,15 @@ export default function ChapterAnnotator({
 
   const deleteChapter = useCallback((chapterId) => {
     if (!chapterId) return
-    
+
     // Tìm trong seriesChapters (gồm cả local + API chapters)
     const target = seriesChapters.find(c => c.id === chapterId)
     if (!target) {
-      console.log('[DEBUG] deleteChapter - NOT FOUND in seriesChapters, id:', chapterId, 'available ids:', seriesChapters.map(c => ({id: c.id, num: c.num, isApi: c.isApi})))
+      console.log('[DEBUG] deleteChapter - NOT FOUND in seriesChapters, id:', chapterId, 'available ids:', seriesChapters.map(c => ({ id: c.id, num: c.num, isApi: c.isApi })))
       return
     }
     const label = `Ch. ${target.num}${target.pages?.length ? ` (${target.pages.length} trang)` : ''}`
-    
+
     const isServerChapter = !!(target.isApi || target.serverChapterId)
 
     // Xóa khỏi local state (optimistic)
@@ -1298,8 +1298,8 @@ export default function ChapterAnnotator({
       <li
         className={cn(
           'rounded-lg border p-3 transition-all',
-          note.isServer 
-            ? (selectedNoteId === stableKey ? 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/10' : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/5') 
+          note.isServer
+            ? (selectedNoteId === stableKey ? 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-950/10' : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/5')
             : (selectedNoteId === stableKey ? 'border-primary bg-primary/5' : 'bg-background'),
         )}
       >
@@ -1418,7 +1418,7 @@ export default function ChapterAnnotator({
                         const serverId = String(issue.issueid ?? issue.Issueid ?? issue.id)
                         const rawCategory = issue.workCategory ?? issue.Workcategory ?? 'Background'
                         const taskType = rawCategory.toLowerCase()
-                        
+
                         const mappedNote = {
                           id: serverId,
                           clientKey: serverId,

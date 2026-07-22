@@ -83,9 +83,11 @@ function extractLayerPayload(res) {
 
 export function usePageLayers(pageId, { uploaderId } = {}) {
   const [layers, setLayers] = useState([]);
+  const [dbLayers, setDbLayers] = useState([]);
   const [originalImage, setOriginalImage] = useState(null);
   const [resultImage, setResultImage] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState(null);
@@ -130,7 +132,9 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       setResultImage(resultUrl);
 
       const rawLayers = Array.isArray(layersRes) ? layersRes : [];
-      setLayers(rawLayers.map(apiLayerToUi));
+      const uiLayers = rawLayers.map(apiLayerToUi);
+      setLayers(uiLayers);
+      setDbLayers(JSON.parse(JSON.stringify(uiLayers)));
     } catch (err) {
       setError(err?.message ?? "Lỗi không xác định");
     } finally {
@@ -178,6 +182,11 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
           next.sort((a, b) => a.index - b.index);
           return next;
         });
+        setDbLayers((cur) => {
+          const next = [...cur.filter((l) => l.id !== ui.id), ui];
+          next.sort((a, b) => a.index - b.index);
+          return next;
+        });
         toast.success(`Đã thêm layer #${ui.index}.`);
         return ui;
       } catch (err) {
@@ -192,7 +201,6 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
 
   const updateLayer = useCallback(
     async (layerId, patch) => {
-      if (!pageId) return;
       setLayers((cur) =>
         cur.map((l) => (l.id === layerId ? { ...l, ...patch } : l)),
       );
@@ -225,7 +233,7 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
         await refresh();
       }
     },
-    [pageId, refresh, layers],
+    [layers, refresh],
   );
 
   const toggleVisibility = useCallback(
@@ -277,6 +285,7 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       try {
         await layersService.softDeleteLayer(layerId);
         setLayers((cur) => cur.filter((l) => l.id !== layerId));
+        setDbLayers((cur) => cur.filter((l) => l.id !== layerId));
         toast.success("Đã xóa layer.");
       } catch (err) {
         toast.error(err?.response?.data?.message ?? "Không xóa được layer.");
@@ -344,6 +353,65 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
     }
   }, [pageId]);
 
+  const saveChanges = useCallback(async () => {
+    if (!pageId) return;
+    setSaving(true);
+    try {
+      const changedLayers = layers.filter((cur) => {
+        const db = dbLayers.find((l) => l.id === cur.id);
+        if (!db) return false;
+        return (
+          db.name !== cur.name ||
+          db.visible !== cur.visible ||
+          db.opacity !== cur.opacity ||
+          db.index !== cur.index
+        );
+      });
+
+      if (changedLayers.length > 0) {
+        await Promise.all(
+          changedLayers.map((l) =>
+            layersService.updateLayer(l.id, {
+              layerName: l.name,
+              zIndex: l.index,
+              opacity: l.opacity / 100,
+              isVisible: l.visible,
+            }),
+          ),
+        );
+      }
+      toast.success("Đã lưu tất cả thay đổi.", {
+        style: {
+          background: '#f0fdf4',
+          color: '#15803d',
+          border: '1px solid #bbf7d0',
+          borderRadius: '12px',
+          fontWeight: '500',
+        }
+      });
+      setDbLayers(JSON.parse(JSON.stringify(layers)));
+    } catch (err) {
+      toast.error(err?.response?.data?.message ?? "Không lưu được thay đổi.");
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  }, [pageId, layers, dbLayers, refresh]);
+
+  const hasChanges = useMemo(() => {
+    if (layers.length !== dbLayers.length) return true;
+    return layers.some((cur) => {
+      const db = dbLayers.find((l) => l.id === cur.id);
+      if (!db) return true;
+      return (
+        db.name !== cur.name ||
+        db.visible !== cur.visible ||
+        db.opacity !== cur.opacity ||
+        db.index !== cur.index
+      );
+    });
+  }, [layers, dbLayers]);
+
   const visibleLayers = useMemo(
     () => layers.filter((l) => l.visible),
     [layers],
@@ -355,9 +423,11 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
     originalImage,
     resultImage,
     loading,
+    saving,
     uploading,
     finalizing,
     error,
+    hasChanges,
     refresh,
     addLayer,
     updateLayer,
@@ -367,5 +437,6 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
     deleteLayer,
     reorderLayers,
     finalize,
+    saveChanges,
   };
 }

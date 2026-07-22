@@ -10,58 +10,109 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ImageIcon, Loader2, Sparkles } from 'lucide-react'
-import { pagesService } from '@/api/api.js'
-import { useUpdateChapterStatus } from '@/api/hooks/useApi.js'
+import { pagesService, chaptersService } from '@/api/api.js'
+import { useUpdateChapterStatus, useUpdatePageStatus } from '@/api/hooks/useApi.js'
 import { layersService } from '@/api/layersService.js'
 import ReviewCompositeDialog from './ReviewCompositeDialog.jsx'
 
 /**
- * Card "Chapter chờ duyệt" hiển thị các chapter có status === 'Ready'
- * (Assistant đã gộp layer & gửi qua). Click vào card mở dialog xem
- * ảnh composite + Duyệt / Yêu cầu sửa.
- *
- * Props:
- *  - chapterRows: Array các chapter từ Mangaka.jsx
- *  - onNavigateTab(tab): callback khi muốn chuyển sang tab khác
+ * Card "Trang chờ duyệt" hiển thị các page có status === 'Reviewing'
+ * Click vào card mở dialog xem ảnh composite + Duyệt / Yêu cầu sửa.
  */
 export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
-  const pending = (chapterRows ?? []).filter(c => String(c.status).toLowerCase() === 'ready')
   const updateStatus = useUpdateChapterStatus()
-  const [openChapterId, setOpenChapterId] = useState(null)
+  const updatePageStatus = useUpdatePageStatus()
+  const [activePageId, setActivePageId] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  const openChapter = pending.find(c => (c.id ?? c.chapterId) === openChapterId) ?? null
+  // Fetch các page có status = Reviewing trực tiếp từ BE
+  const { data: pendingPages, isLoading: listLoading } = useQuery({
+    queryKey: ['pages', 'reviewing'],
+    queryFn: async () => {
+      const res = await pagesService.getAll(undefined, 'Reviewing')
+      const raw = res?.data
+      return Array.isArray(raw) ? raw : (raw?.data ?? [])
+    },
+    staleTime: 5000,
+  })
+
+  const pending = pendingPages ?? []
+  const activePage = pending.find(p => String(p.id ?? p.pageid ?? p.pageId) === String(activePageId)) ?? null
+  const openChapter = activePage
+    ? (chapterRows ?? []).find(c => String(c.id ?? c.chapterId ?? c.chapterid) === String(activePage.chapterid ?? activePage.chapterId))
+    : null
 
   function closeDialog() {
-    setOpenChapterId(null)
+    setActivePageId(null)
     setBusy(false)
   }
 
-  async function handleApprove(chapterId) {
-    if (!chapterId) return
+  async function handleApprovePage(pageId) {
+    if (!pageId) return
     setBusy(true)
     try {
-      // Duyệt → chapter chuyển sang "tantou" để Tantou tiếp tục
-      // (khớp state machine backend: Ready → TantouReview hoặc giữ Ready
-      // cho tới khi Mangaka forward). Ở đây giữ nguyên Ready sau duyệt
-      // vì status forward là do TantouEditor bật, chỉ cần đóng dialog.
-      await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Ready' })
+      // 1. Duyệt trang
+      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+
+      // 2. Chuyển Chapter sang Published (Hoàn tất) nếu đây là chương có page này
+      if (openChapter) {
+        const chapterId = openChapter.id ?? openChapter.chapterId
+        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' }).catch(() => null)
+      }
+    } catch (err) {
+      // Fallback: nếu trang đang ở InWork, tự động chuyển InWork -> Reviewing -> Approved
+      const msg = err?.response?.data?.message ?? err?.message ?? ''
+      if (msg.includes('InWork')) {
+        try {
+          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Reviewing' })
+          await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'Approved' })
+          if (openChapter) {
+            const chapterId = openChapter.id ?? openChapter.chapterId
+            await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' }).catch(() => null)
+          }
+        } catch (fallbackErr) {
+          // toast handled by UI/hook
+        }
+      }
     } finally {
       setBusy(false)
       closeDialog()
     }
   }
 
-  async function handleRequestRevision(chapterId) {
-    if (!chapterId) return
+  async function handleRequestRevisionPage(pageId) {
+    if (!pageId) return
     setBusy(true)
     try {
-      // Yêu cầu sửa lại → quay Assistant "InProduction"
-      await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' })
+      // 1. Cập nhật trạng thái trang sang InWork
+      await updatePageStatus.mutateAsync({ id: Number(pageId), status: 'InWork' })
+
+      // 2. Chuyển Chapter về InProduction để Assistant sửa
+      if (openChapter) {
+        const chapterId = openChapter.id ?? openChapter.chapterId
+        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' }).catch(() => null)
+      }
     } finally {
       setBusy(false)
       closeDialog()
     }
+  }
+
+  if (listLoading) {
+    return (
+      <Card className="border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="size-4 text-primary animate-pulse" />
+            Trang chờ duyệt
+          </CardTitle>
+          <CardDescription>Đang tải danh sách trang chờ duyệt...</CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-center py-6">
+          <Loader2 className="size-6 animate-spin text-primary" />
+        </CardContent>
+      </Card>
+    )
   }
 
   if (!pending.length) {
@@ -70,13 +121,13 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Sparkles className="size-4 text-primary" />
-            Chapter chờ duyệt
+            Trang chờ duyệt
           </CardTitle>
           <CardDescription>Assistant đã gộp layer & gửi qua cho bạn.</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="rounded-md border border-dashed bg-muted/30 px-4 py-6 text-center text-xs text-muted-foreground">
-            Hiện không có chapter nào chờ duyệt.
+            Hiện không có trang nào chờ duyệt.
           </p>
         </CardContent>
       </Card>
@@ -90,13 +141,13 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Sparkles className="size-4 text-primary" />
-              Chapter chờ duyệt
+              Trang chờ duyệt
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">
                 {pending.length}
               </Badge>
             </CardTitle>
             <CardDescription>
-              Assistant đã gộp layer & gửi qua. Click để xem ảnh và duyệt.
+              Click vào trang để xem và thực hiện Duyệt hoặc Yêu cầu sửa.
             </CardDescription>
           </div>
           <Button
@@ -110,17 +161,18 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
         </CardHeader>
         <CardContent>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {pending.slice(0, 6).map(ch => (
-              <PendingReviewItem
-                key={ch.id ?? ch.chapterId}
-                chapter={ch}
-                onOpen={() => setOpenChapterId(ch.id ?? ch.chapterId)}
+            {pending.slice(0, 6).map(page => (
+              <PendingPageReviewItem
+                key={page.id ?? page.pageid ?? page.pageId}
+                page={page}
+                chapterRows={chapterRows}
+                onOpen={() => setActivePageId(page.id ?? page.pageid ?? page.pageId)}
               />
             ))}
           </ul>
           {pending.length > 6 && (
             <p className="mt-3 text-xs text-muted-foreground text-center">
-              +{pending.length - 6} chapter khác. Xem ở tab Chapter.
+              +{pending.length - 6} trang khác.
             </p>
           )}
         </CardContent>
@@ -130,76 +182,29 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
         <ReviewCompositeDialog
           open={!!openChapter}
           chapter={openChapter}
+          initialPageId={activePageId}
           onClose={closeDialog}
-          onApprove={() => handleApprove(openChapter.id ?? openChapter.chapterId)}
-          onRequestRevision={() => handleRequestRevision(openChapter.id ?? openChapter.chapterId)}
-          busy={busy || updateStatus.isPending}
+          onApprove={handleApprovePage}
+          onRequestRevision={handleRequestRevisionPage}
+          busy={busy || updatePageStatus.isPending}
         />
       )}
     </>
   )
 }
 
-function PendingReviewItem({ chapter, onOpen }) {
-  const chapterId = chapter.id ?? chapter.chapterId
-
-  // Lấy page đầu tiên của chapter để hiện thumbnail composite
-  const { data: pages, isLoading } = useQuery({
-    queryKey: ['pages', chapterId],
-    enabled: !!chapterId,
-    queryFn: async () => {
-      const res = await pagesService.getAll(chapterId)
-      const raw = res?.data
-      return Array.isArray(raw) ? raw : (raw?.data ?? [])
-    },
-    staleTime: 30_000,
-  })
-
-  const firstPage = Array.isArray(pages) ? pages[0] : null
-  const firstPageId = firstPage?.id ?? firstPage?.pageid ?? null
+function PendingPageReviewItem({ page, chapterRows, onOpen }) {
   const compositeUrl =
-    firstPage?.pageimageurl
-    ?? firstPage?.pageImageUrl
-    ?? firstPage?.compositeimageurl
-    ?? firstPage?.compositeImageUrl
-    ?? firstPage?.composite_image_url
+    page?.pageimageurl
+    ?? page?.pageImageUrl
+    ?? page?.compositeimageurl
+    ?? page?.compositeImageUrl
+    ?? page?.composite_image_url
     ?? null
-  const pageCount = Array.isArray(pages) ? pages.length : 0
 
-  // Fallback thumbnail: nếu page chưa có ảnh gộp, lấy layer z cao nhất của page đầu tiên.
-  const { data: fallbackLayerUrl } = useQuery({
-    queryKey: ['firstPageTopLayer', firstPageId],
-    enabled: !!firstPageId && !compositeUrl && !isLoading,
-    queryFn: async () => {
-      const res = await layersService.list(firstPageId).catch(() => null)
-      const list = Array.isArray(res)
-        ? res
-        : (Array.isArray(res?.data) ? res.data : [])
-      if (!Array.isArray(list) || list.length === 0) return null
-      const sorted = [...list].sort((a, b) => {
-        const za = Number(a?.zindex ?? a?.z_index ?? a?.index ?? 0)
-        const zb = Number(b?.zindex ?? b?.z_index ?? b?.index ?? 0)
-        return zb - za
-      })
-      const top = sorted[0]
-      return (
-        top?.Imageurl
-        ?? top?.imageurl
-        ?? top?.image_url
-        ?? top?.Fileurl
-        ?? top?.fileurl
-        ?? top?.file_url
-        ?? top?.ImageUrl
-        ?? top?.FileUrl
-        ?? top?.imageUrl
-        ?? top?.url
-        ?? null
-      )
-    },
-    staleTime: 30_000,
-  })
-
-  const thumbUrl = compositeUrl || fallbackLayerUrl || null
+  const chapter = (chapterRows ?? []).find(
+    c => String(c.id ?? c.chapterId ?? c.chapterid) === String(page.chapterid ?? page.chapterId)
+  )
 
   return (
     <li>
@@ -209,46 +214,34 @@ function PendingReviewItem({ chapter, onOpen }) {
         className="group flex w-full flex-col gap-2 overflow-hidden rounded-lg border bg-card text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
       >
         <div className="relative aspect-[3/4] w-full overflow-hidden bg-muted">
-          {isLoading ? (
-            <div className="flex size-full items-center justify-center text-muted-foreground">
-              <Loader2 className="size-5 animate-spin" />
-            </div>
-          ) : thumbUrl ? (
+          {compositeUrl ? (
             <img
-              src={thumbUrl}
-              alt={chapter.title || chapter.seriesTitle}
+              src={compositeUrl}
+              alt={`Page ${page.pagenumber}`}
               className="size-full object-cover transition-transform group-hover:scale-105"
             />
           ) : (
-            <div className="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground">
+            <div className="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground bg-zinc-900">
               <ImageIcon className="size-6" />
-              <span className="text-[10px]">chưa có layer</span>
+              <span className="text-[10px]">chưa có ảnh gộp</span>
             </div>
           )}
           <Badge
             variant="secondary"
             className="absolute right-1.5 top-1.5 h-5 bg-sky-500 px-1.5 text-[10px] font-bold text-white hover:bg-sky-500"
           >
-            READY
+            REVIEWING
           </Badge>
-          {!compositeUrl && fallbackLayerUrl && (
-            <Badge
-              variant="secondary"
-              className="absolute bottom-1.5 left-1.5 h-5 bg-amber-500 px-1.5 text-[10px] font-bold text-white hover:bg-amber-500"
-            >
-              chưa gộp
-            </Badge>
-          )}
         </div>
         <div className="space-y-0.5 px-3 pb-3">
           <p className="truncate text-xs font-semibold">
-            {chapter.series ?? chapter.seriesTitle ?? '—'}
+            {chapter?.series ?? chapter?.seriesTitle ?? '—'}
           </p>
           <p className="truncate text-[11px] text-muted-foreground">
-            Ch.{chapter.num ?? chapter.chapterNum} · {chapter.title || 'Không tiêu đề'}
+            Ch.{chapter?.num ?? chapter?.chapterNum ?? '—'} · {chapter?.title || 'Không tiêu đề'}
           </p>
           <p className="text-[10px] text-muted-foreground">
-            {pageCount > 0 ? `${pageCount} trang · ${compositeUrl ? 'đã gộp' : 'chưa gộp'}` : 'Đang tải trang…'}
+            Trang số {page.pagenumber}
           </p>
         </div>
       </button>
