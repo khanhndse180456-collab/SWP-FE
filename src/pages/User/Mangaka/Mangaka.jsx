@@ -568,26 +568,31 @@ export default function Mangaka() {
   }, [apiSeries, localSeriesList, apiChapters, localChapterRows])
 
   const mappedApiChapters = useMemo(() => {
-    return (apiChapters || []).map(c => {
-      const sId = c.seriesid ?? c.Seriesid
-      const seriesObj = seriesList.find(s => String(s.id ?? s.seriesid) === String(sId))
-      const seriesTitle = seriesObj ? seriesObj.title : 'Khác'
-      const status = c.status ?? c.Status ?? 'Draft'
-      return {
-        id: String(c.chapterid ?? c.id),
-        chapterid: c.chapterid ?? c.id,
-        series: seriesTitle,
-        seriesid: sId,
-        num: c.chapternumber ?? c.Chapternumber ?? 1,
-        title: c.title ?? `Chapter ${c.chapternumber}`,
-        pages: c.pageCount ?? c.pagecount ?? c.PageCount ?? c.Pagecount ?? c.pages?.length ?? 0,
-        createdAt: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
-        deadline: c.deadline,
-        status: status,
-        type: seriesObj?.formatLabel ?? 'Manga',
-        date: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
-      }
-    })
+    return (apiChapters || [])
+      .filter(c => {
+        const sId = c.seriesid ?? c.Seriesid
+        return seriesList.some(s => String(s.id ?? s.seriesid) === String(sId))
+      })
+      .map(c => {
+        const sId = c.seriesid ?? c.Seriesid
+        const seriesObj = seriesList.find(s => String(s.id ?? s.seriesid) === String(sId))
+        const seriesTitle = seriesObj ? seriesObj.title : 'Khác'
+        const status = c.status ?? c.Status ?? 'Draft'
+        return {
+          id: String(c.chapterid ?? c.id),
+          chapterid: c.chapterid ?? c.id,
+          series: seriesTitle,
+          seriesid: sId,
+          num: c.chapternumber ?? c.Chapternumber ?? 1,
+          title: c.title ?? `Chapter ${c.chapternumber}`,
+          pages: c.pageCount ?? c.pagecount ?? c.PageCount ?? c.Pagecount ?? c.pages?.length ?? 0,
+          createdAt: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
+          deadline: c.deadline,
+          status: status,
+          type: seriesObj?.formatLabel ?? 'Manga',
+          date: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
+        }
+      })
   }, [apiChapters, seriesList])
 
   // Deduplicate by (series, num) — prefer row with chapterid (server), fallback to first found
