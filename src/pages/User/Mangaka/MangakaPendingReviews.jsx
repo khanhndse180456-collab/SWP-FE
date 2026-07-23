@@ -53,12 +53,7 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
     try {
       // 1. Duyệt trang -> đổi biến isSentToMangaka thành false
       await updatePageStatus.mutateAsync({ id: Number(pageId), isSentToMangaka: false })
-
-      // 2. Chuyển Chapter sang Published (Hoàn tất) nếu đây là chương có page này
-      if (openChapter) {
-        const chapterId = openChapter.id ?? openChapter.chapterId
-        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' }).catch(() => null)
-      }
+      toast.success('Đã duyệt trang thành công.')
     } catch (err) {
       // lỗi được hook xử lý
     } finally {
@@ -73,12 +68,9 @@ export default function MangakaPendingReviews({ chapterRows, onNavigateTab }) {
     try {
       // 1. Yêu cầu sửa -> đổi biến isSentToMangaka thành false
       await updatePageStatus.mutateAsync({ id: Number(pageId), isSentToMangaka: false })
-
-      // 2. Chuyển Chapter về InProduction để Assistant sửa
-      if (openChapter) {
-        const chapterId = openChapter.id ?? openChapter.chapterId
-        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' }).catch(() => null)
-      }
+      toast.success('Đã gửi yêu cầu sửa cho Assistant.')
+    } catch (err) {
+      // lỗi được hook xử lý
     } finally {
       setBusy(false)
       closeDialog()

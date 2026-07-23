@@ -176,14 +176,6 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
       }
       toast.info('Đang gửi trang cho Mangaka…')
       await pagesService.updateIsSentToMangaka(activePageId, true)
-      
-      // Update chapter status
-      // LƯU Ý: backend chỉ chấp nhận các trạng thái Chapter: InProduction, Ready,
-      // Delayed, Cancelled, Published (xem _validTransitions trong ChapterService.cs).
-      // Từ InProduction, bước hợp lệ để báo "đã xong, chờ Mangaka duyệt" là "Ready".
-      if (chaptersService.updateStatus) {
-        await chaptersService.updateStatus(chapter.chapterId, 'Ready')
-      }
       toast.success('Đã gửi trang cho Mangaka.')
       onSubmitted?.()
     } catch (err) {

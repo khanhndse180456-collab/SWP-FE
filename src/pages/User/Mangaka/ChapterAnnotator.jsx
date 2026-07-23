@@ -666,7 +666,7 @@ export default function ChapterAnnotator({
       toast.success(`Đã duyệt Trang ${pageIndex + 1} thành công và lưu ảnh hoàn chỉnh!`)
 
       // Invalidate query
-      queryClient.invalidateQueries({ queryKey: ['pages', effectiveServerChapterId] })
+      queryClient.invalidateQueries({ queryKey: ['pages'] })
     } catch (err) {
       toast.error('Duyệt bản vẽ thất bại: ' + (err?.response?.data?.message ?? err.message))
     } finally {
@@ -1596,7 +1596,7 @@ export default function ChapterAnnotator({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {pages[pageIndex]?.isSentToMangaka === true && (
+              {pages[pageIndex]?.isSentToMangaka && (
                 <Button
                   size="sm"
                   onClick={handleApprovePage}
@@ -2017,7 +2017,7 @@ export default function ChapterAnnotator({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {pages[pageIndex]?.isSentToMangaka === true && (
+                {pages[pageIndex]?.isSentToMangaka && (
                   <Button
                     size="sm"
                     onClick={handleApprovePage}
@@ -2070,7 +2070,7 @@ export default function ChapterAnnotator({
               <span className="ml-2 text-sm text-zinc-400">· Trang {pageIndex + 1}/{pages.length}</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {pages[pageIndex]?.isSentToMangaka === true && (
+              {pages[pageIndex]?.isSentToMangaka && (
                 <Button
                   size="sm"
                   onClick={handleApprovePage}

@@ -319,26 +319,23 @@ export default function ReviewCompositeDialog({
     staleTime: 15_000,
   })
 
-  const [finalizingPage, setFinalizingPage] = useState(false)
+  const [approving, setApproving] = useState(false)
 
-  async function handleFinalizePage() {
+  async function handleApprove() {
+    if (busy || approving) return
     if (!safePageId) return
-    setFinalizingPage(true)
+    setApproving(true)
     try {
+      // 1. Tự động gọi API composite gộp layer khi duyệt
       await pagesService.composite(safePageId)
-      toast.success("Đã gộp layer thành ảnh hoàn chỉnh.")
-      await refetchPages()
+      // 2. Chuyển tiếp trạng thái duyệt
+      await onApprove?.(safePageId)
+      toast.success("Đã gộp layer và duyệt trang thành công!")
     } catch (err) {
-      toast.error(err?.response?.data?.message ?? err?.message ?? 'Gộp layer thất bại.')
+      toast.error(err?.response?.data?.message ?? err?.message ?? 'Duyệt bản vẽ thất bại.')
     } finally {
-      setFinalizingPage(false)
+      setApproving(false)
     }
-  }
-
-  function handleApprove() {
-    if (busy) return
-    if (!safePageId) return
-    onApprove?.(safePageId)
   }
 
   async function handleRequestRevision() {
@@ -372,7 +369,7 @@ export default function ReviewCompositeDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => (!v ? onClose?.() : null)}>
-      <DialogContent className="flex max-h-[92vh] max-w-4xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex max-h-[92vh] sm:max-w-6xl w-full flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b bg-muted/30 px-5 py-3">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -392,7 +389,7 @@ export default function ReviewCompositeDialog({
         {/* Body: ảnh composite + sidebar note */}
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           {/* Canvas */}
-          <div className="flex min-h-0 flex-1 flex-col bg-zinc-950">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
               {pagesLoading ? (
                 <div className="flex items-center gap-2 text-white/60">
@@ -459,7 +456,7 @@ export default function ReviewCompositeDialog({
 
             {/* Layer do Assistant upload — Mangaka bật/tắt để soi từng layer.
                 Luôn hiển thị khối này để Mangaka biết BE có / không có layer nào.
-                Nếu rỗng → hiển thị "chưa có layer nào" thay vì ẩn để khỏi hiểu nhầm. */}
+                Nếu rỗng → hiển thị "chưa có layer nào" thay vị ẩn để khỏi hiểu nhầm. */}
             <div className="flex min-h-0 flex-col">
               <div className="mb-1.5 flex items-center justify-between">
                 <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -487,7 +484,7 @@ export default function ReviewCompositeDialog({
               <div className="max-h-56 min-h-[80px] overflow-y-auto rounded-md border bg-background/50">
                 {layersLoading ? (
                   <div className="flex items-center justify-center gap-2 py-4 text-[11px] text-muted-foreground">
-                     <Loader2 className="size-3 animate-spin" />
+                    <Loader2 className="size-3 animate-spin" />
                     Đang tải layer…
                   </div>
                 ) : layers.length === 0 ? (
@@ -597,37 +594,21 @@ export default function ReviewCompositeDialog({
             </div>
 
             <div className="mt-auto flex flex-col gap-2">
-              {(safePage?.issenttomangaka === true || safePage?.issenttomangaka === 1 || safePage?.issenttomangaka === '1' || safePage?.isSentToMangaka === true || safePage?.isSentToMangaka === 1 || safePage?.isSentToMangaka === '1' || safePage?.IsSentToMangaka === true || safePage?.IsSentToMangaka === 1 || safePage?.IsSentToMangaka === '1') && (
-                <>
-                  <Button
-                    onClick={handleFinalizePage}
-                    disabled={busy || finalizingPage}
-                    variant="outline"
-                    className="w-full border-violet-500/40 text-violet-300 hover:bg-violet-500/10 hover:text-white"
-                  >
-                    {finalizingPage ? (
-                      <><Loader2 className="mr-1 size-4 animate-spin" /> Đang gộp…</>
-                    ) : (
-                      <><LayersIcon className="mr-1 size-4" /> Gộp layer</>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={handleApprove}
-                    disabled={busy || finalizingPage}
-                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
-                  >
-                    {busy ? (
-                      <><Loader2 className="mr-1 size-4 animate-spin" /> Đang xử lý…</>
-                    ) : (
-                      <><Send className="mr-1 size-4" /> Duyệt — chuyển tiếp</>
-                    )}
-                  </Button>
-                </>
-              )}
+              <Button
+                onClick={handleApprove}
+                disabled={busy || approving}
+                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
+              >
+                {busy || approving ? (
+                  <><Loader2 className="mr-1 size-4 animate-spin" /> Đang duyệt…</>
+                ) : (
+                  <><Send className="mr-1 size-4" /> Duyệt — chuyển tiếp</>
+                )}
+              </Button>
               <Button
                 variant="outline"
                 onClick={handleRequestRevision}
-                disabled={busy || !reviewNote.trim()}
+                disabled={busy || approving || !reviewNote.trim()}
                 className="w-full border-amber-500/40 text-amber-700 hover:bg-amber-500/10"
               >
                 <MessageSquareWarning className="mr-1 size-4" />
@@ -672,8 +653,6 @@ function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pag
   const visibleLayers = layers.filter((l) => isLayerVisible?.(l) ?? true)
   const showOriginal = isLayerVisible?.({ id: 'original-image' }) ?? true
 
-  // Ưu tiên originalUrl làm ảnh nền để khi ẩn/hiện các layer overlay động sẽ có hiệu ứng chuẩn.
-  // Nếu không có originalUrl, fallback về compositeUrl hoặc layer cao nhất.
   let baseSrc = (showOriginal ? (originalUrl || compositeUrl) : null) || null
   if (!baseSrc && visibleLayers.length > 0) {
     const top = [...visibleLayers].filter(l => l.id !== 'original-image').sort((a, b) => b.z - a.z)[0]
@@ -696,48 +675,59 @@ function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pag
     (l) => l.url && l.url !== baseSrc && l.id !== 'original-image',
   )
 
-  return (
-    <div className="relative flex max-w-full items-center justify-center p-1">
-      <div className="relative flex items-center justify-center">
-        <img
-          src={baseSrc}
-          alt={`Trang ${pageNumber}`}
-          className="max-h-[75vh] w-auto max-w-full rounded bg-white object-contain shadow-2xl"
-          draggable={false}
-        />
-        {overlays.length > 0 && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            {overlays.map((l) => (
-              <img
-                key={l.id}
-                src={l.url}
-                alt={l.name}
-                style={{ opacity: l.opacity }}
-                className="max-h-[75vh] w-auto max-w-full object-contain"
-                draggable={false}
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-            ))}
-          </div>
-        )}
-        {!compositeUrl && showOriginal && (
-          <div className="pointer-events-none absolute left-2 top-2 rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
-            Chưa gộp — đang hiện layer cao nhất
-          </div>
-        )}
-      </div>
+  const hasOriginal = !!originalUrl
+  const hasComposite = !!compositeUrl
 
-      <a
-        href={baseSrc}
-        target="_blank"
-        rel="noreferrer"
-        className="absolute right-2 top-2 rounded-lg bg-black/60 p-1.5 text-white/80 hover:bg-black/80 hover:text-white transition-colors"
-        title="Xem ảnh đầy đủ trong tab mới"
-      >
-        <Maximize2 className="size-4" />
-      </a>
+  return (
+    <div className="flex w-full items-center justify-center gap-6 p-1">
+      {hasOriginal && (
+        <div className="flex flex-col items-center gap-2 max-w-[45%]">
+          <span className="text-xs font-semibold text-white/50">Ảnh gốc (Original)</span>
+          <div className="relative border border-white/10 rounded-lg overflow-hidden bg-white/5">
+            <img
+              src={originalUrl}
+              alt="Original"
+              className="max-h-[65vh] w-auto max-w-full object-contain"
+              draggable={false}
+            />
+          </div>
+        </div>
+      )}
+      <div className="flex flex-col items-center gap-2 max-w-[45%]">
+        <span className="text-xs font-semibold text-white/50">
+          {hasOriginal ? 'Ảnh mới (Composite)' : 'Xem trước bản vẽ'}
+        </span>
+        <div className="relative border border-white/10 rounded-lg overflow-hidden bg-white/5">
+          <img
+            src={compositeUrl || baseSrc}
+            alt={`Trang ${pageNumber}`}
+            className="max-h-[65vh] w-auto max-w-full object-contain"
+            draggable={false}
+          />
+          {overlays.length > 0 && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              {overlays.map((l) => (
+                <img
+                  key={l.id}
+                  src={l.url}
+                  alt={l.name}
+                  style={{ opacity: l.opacity }}
+                  className="max-h-[65vh] w-auto max-w-full object-contain"
+                  draggable={false}
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {!compositeUrl && showOriginal && (
+            <div className="pointer-events-none absolute left-2 top-2 rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
+              Chưa gộp — đang hiện layer cao nhất
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

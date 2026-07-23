@@ -118,12 +118,7 @@ export default function ChapterView({
     try {
       // 1. Cập nhật trạng thái trang sang false
       await updatePageStatus.mutateAsync({ id: Number(pageId), isSentToMangaka: false })
-      // 2. Đồng thời chuyển Chapter sang Published
-      if (reviewChapter) {
-        const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
-        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'Published' })
-      }
-      toast.success('Đã duyệt trang và hoàn tất chapter.')
+      toast.success('Đã duyệt trang thành công.')
       handleReviewClose()
     } catch (err) {
       toast.error(err?.response?.data?.message ?? 'Không thể duyệt trang.')
@@ -135,11 +130,6 @@ export default function ChapterView({
     try {
       // 1. Cập nhật trạng thái trang sang false
       await updatePageStatus.mutateAsync({ id: Number(pageId), isSentToMangaka: false })
-      // 2. Chuyển Chapter về InProduction để Assistant vẽ lại
-      if (reviewChapter) {
-        const chapterId = reviewChapter.id ?? reviewChapter.chapterId ?? reviewChapter.chapterid ?? reviewChapter.Chapterid
-        await updateStatus.mutateAsync({ id: Number(chapterId), status: 'InProduction' })
-      }
       toast.success(note ? `Đã gửi yêu cầu sửa: ${note}` : 'Đã gửi yêu cầu sửa cho Assistant.')
       handleReviewClose()
     } catch {
