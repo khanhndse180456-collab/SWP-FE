@@ -28,6 +28,8 @@ export default function PageView({
   onOpenAssistantsTab,
   onSendToAssistant,
   onSendToTantou,
+  onAcceptAssistantChapter,
+  onRejectAssistantChapter,
 }) {
   return (
     <div className="space-y-4">
@@ -59,6 +61,8 @@ export default function PageView({
         onUploadComplete={onUploadComplete}
         onSendToAssistant={onSendToAssistant}
         onSendToTantou={onSendToTantou}
+        onAcceptAssistantChapter={onAcceptAssistantChapter}
+        onRejectAssistantChapter={onRejectAssistantChapter}
       />
     </div>
   )

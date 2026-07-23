@@ -164,44 +164,34 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
       toast.error('Không tìm thấy chapterId — không thể gửi.')
       return
     }
+    if (!activePageId) {
+      toast.error('Chưa chọn trang để gửi.')
+      return
+    }
     setSubmittingAll(true)
     try {
-      // Auto-finalize tất cả page chưa có ảnh gộp
-      toast.info('Đang gộp ảnh & gửi cho Mangaka…')
-      await Promise.all(
-        pages.map(async (p) => {
-          if (!p?.id) return
-          try {
-            // silentError: true — vài trang chưa có layer sẽ fail 400
-            // "Không có layer hợp lệ để ghép ảnh", đây là hành vi dự kiến
-            // (không phải lỗi thật), nên không cho toast global hiện lên
-            // để tránh che mất thông báo thành công của luồng gửi chính.
-            await pagesService.composite(p.id, { silentError: true })
-          } catch { /* đã có thì bỏ qua */ }
-          try {
-            await pagesService.updateIsSentToMangaka(p.id, true)
-          } catch (e) {
-            console.warn('[LayerEditor] Failed to transition page status to true:', e)
-          }
-        }),
-      )
+      if (hasChanges) {
+        toast.info('Đang lưu thay đổi...')
+        await saveChanges()
+      }
+      toast.info('Đang gửi trang cho Mangaka…')
+      await pagesService.updateIsSentToMangaka(activePageId, true)
+      
       // Update chapter status
       // LƯU Ý: backend chỉ chấp nhận các trạng thái Chapter: InProduction, Ready,
       // Delayed, Cancelled, Published (xem _validTransitions trong ChapterService.cs).
-      // "MangakaReview" không tồn tại trong state machine này (đó là status của
-      // Submission, không phải Chapter) nên trước đây bị BE từ chối với lỗi 400.
       // Từ InProduction, bước hợp lệ để báo "đã xong, chờ Mangaka duyệt" là "Ready".
       if (chaptersService.updateStatus) {
         await chaptersService.updateStatus(chapter.chapterId, 'Ready')
       }
-      toast.success('Đã gửi chapter cho Mangaka.')
+      toast.success('Đã gửi trang cho Mangaka.')
       onSubmitted?.()
     } catch (err) {
-      toast.error(err?.response?.data?.message ?? err?.message ?? 'Gửi chapter thất bại.')
+      toast.error(err?.response?.data?.message ?? err?.message ?? 'Gửi trang thất bại.')
     } finally {
       setSubmittingAll(false)
     }
-  }, [chapter?.chapterId, pages, onSubmitted])
+  }, [chapter?.chapterId, activePageId, hasChanges, saveChanges, onSubmitted])
 
   const baseFileName = `${chapter?.seriesTitle ?? 'chapter'}-Ch${chapter?.chapterNum ?? ''}`
   const pageLabel = `Trang ${safeIdx + 1}`
@@ -293,25 +283,6 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
             Gốc
           </Button>
 
-          <Button
-            size="sm"
-            variant="outline"
-            className={cn(
-              'h-8 gap-1.5 px-3 text-xs font-medium transition-all duration-200',
-              hasChanges
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
-                : 'text-white/40 border-white/5 bg-white/5 cursor-not-allowed opacity-50'
-            )}
-            onClick={saveChanges}
-            disabled={saving || !hasChanges}
-            title="Lưu tất cả thay đổi của layer"
-          >
-            {saving ? (
-              <><Loader2 className="size-3.5 animate-spin" /> Đang lưu…</>
-            ) : (
-              <>Lưu thay đổi</>
-            )}
-          </Button>
 
           {pageNotes.length > 0 && (
             <Button
@@ -460,36 +431,33 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
               )}
             </div>
             <div className="flex items-center gap-2">
-              {layers.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className={cn(
-                    'h-8 gap-1.5 border px-3 text-xs font-medium',
-                    resultImage && resultImage !== originalImage
-                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
-                      : 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:border-violet-500/50',
-                  )}
-                  onClick={handleFinalize}
-                  disabled={finalizing}
-                >
-                  {finalizing ? (
-                    <><Loader2 className="size-3.5 animate-spin" /> Đang gộp…</>
-                  ) : resultImage && resultImage !== originalImage ? (
-                    <><LayersIcon className="size-3.5" /> Gộp lại</>
-                  ) : (
-                    <><LayersIcon className="size-3.5" /> Gộp layer</>
-                  )}
-                </Button>
-              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className={cn(
+                  'h-8 gap-1.5 border px-3 text-xs font-medium transition-all duration-200',
+                  hasChanges
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/50'
+                    : 'text-white/40 border-white/5 bg-white/5 cursor-not-allowed opacity-50'
+                )}
+                onClick={saveChanges}
+                disabled={saving || !hasChanges}
+                title="Lưu tất cả thay đổi của layer"
+              >
+                {saving ? (
+                  <><Loader2 className="size-3.5 animate-spin" /> Đang lưu…</>
+                ) : (
+                  <>Lưu thay đổi</>
+                )}
+              </Button>
               <Button
                 size="sm"
                 className="h-8 gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 px-4 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 hover:from-violet-500 hover:to-indigo-500"
-                disabled={submittingAll || finalizing || pages.length === 0}
+                disabled={submittingAll || saving || !activePageId}
                 onClick={handleSubmitChapter}
               >
                 {submittingAll ? (
-                  <><Loader2 className="size-3.5 animate-spin" /> Đang gửi {pages.length} trang…</>
+                  <><Loader2 className="size-3.5 animate-spin" /> Đang gửi trang…</>
                 ) : (
                   <><Send className="size-3.5" /> Gửi Mangaka</>
                 )}

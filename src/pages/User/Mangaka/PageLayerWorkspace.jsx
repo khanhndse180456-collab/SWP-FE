@@ -657,11 +657,7 @@ export default function PageLayerWorkspace() {
     }
     setSendingToMangaka(true)
     try {
-      // Bước 1: composite (nếu chưa)
-      if (allLayers.length > 0) {
-        try { await pagesService.composite(serverPageId) } catch { /* ignore, có thể đã composite trước đó */ }
-      }
-      // Bước 2: Assistant gửi bản tổng hợp cho Mangaka — Cập nhật trạng thái page thành true
+      // Assistant gửi bản tổng hợp cho Mangaka — Cập nhật trạng thái page thành true
       if (!serverPage?.isSentToMangaka) {
         await pagesService.updateIsSentToMangaka(serverPageId, true)
       }
@@ -802,7 +798,7 @@ export default function PageLayerWorkspace() {
               <div className="border-t p-3 space-y-2">
                 {String(user?.role ?? '').toUpperCase() === 'MANGAKA' && (
                   <>
-                    {(serverPage?.isSentToMangaka === true || serverPage?.IsSentToMangaka === true) ? (
+                    {(serverPage?.issenttomangaka === true || serverPage?.issenttomangaka === 1 || serverPage?.issenttomangaka === '1' || serverPage?.isSentToMangaka === true || serverPage?.isSentToMangaka === 1 || serverPage?.isSentToMangaka === '1' || serverPage?.IsSentToMangaka === true || serverPage?.IsSentToMangaka === 1 || serverPage?.IsSentToMangaka === '1') ? (
                       <Button
                         className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
                         onClick={handleApproveByMangaka}
@@ -834,7 +830,7 @@ export default function PageLayerWorkspace() {
 
                 {String(user?.role ?? '').toUpperCase() === 'ASSISTANT' && (
                   <>
-                    {!(serverPage?.isSentToMangaka === true || serverPage?.IsSentToMangaka === true) ? (
+                    {!(serverPage?.issenttomangaka === true || serverPage?.issenttomangaka === 1 || serverPage?.issenttomangaka === '1' || serverPage?.isSentToMangaka === true || serverPage?.isSentToMangaka === 1 || serverPage?.isSentToMangaka === '1' || serverPage?.IsSentToMangaka === true || serverPage?.IsSentToMangaka === 1 || serverPage?.IsSentToMangaka === '1') ? (
                       <Button
                         className="w-full"
                         variant="default"

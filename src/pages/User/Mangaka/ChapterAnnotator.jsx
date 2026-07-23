@@ -462,23 +462,35 @@ export default function ChapterAnnotator({
 
     if (Array.isArray(serverPages) && serverPages.length > 0) {
       const mapped = serverPages
-        .filter(p => p && (p.pageid ?? p.Pageid ?? p.pageimageurl ?? p.Pageimageurl))
+        .filter(p => p && (p.pageid ?? p.Pageid ?? p.pageId ?? p.PageId ?? p.id ?? p.pageimageurl ?? p.Pageimageurl ?? p.pageImageUrl ?? p.PageImageUrl ?? p.url))
         .map((p, i) => {
-          const directUrl = p.pageimageurl ?? p.Pageimageurl ?? null
-          const sid = p.pageid ?? p.Pageid ?? null
+          const directUrl = p.pageimageurl ?? p.Pageimageurl ?? p.pageImageUrl ?? p.PageImageUrl ?? p.url ?? null
+          const sid = p.pageid ?? p.Pageid ?? p.pageId ?? p.PageId ?? p.id ?? null
           return {
             id: String(sid ?? `srv-page-${i}`),
-            name: `Page ${p.pagenumber ?? p.Pagenumber ?? i + 1}`,
+            name: `Page ${p.pagenumber ?? p.Pagenumber ?? p.pageNumber ?? p.PageNumber ?? i + 1}`,
             url: directUrl && String(directUrl).trim() !== '' ? directUrl : null,
             serverPageId: sid,
-            isSentToMangaka: p.isSentToMangaka ?? p.IsSentToMangaka ?? false,
+            isSentToMangaka:
+              p.issenttomangaka === true ||
+              p.issenttomangaka === 1 ||
+              p.issenttomangaka === '1' ||
+              p.isSentToMangaka === true ||
+              p.isSentToMangaka === 1 ||
+              p.isSentToMangaka === '1' ||
+              p.IsSentToMangaka === true ||
+              p.IsSentToMangaka === 1 ||
+              p.IsSentToMangaka === '1',
           }
         })
-      return dedupeById(mapped)
+      const result = dedupeById(mapped)
+      console.log('[ChapterAnnotator] serverPages loaded & mapped:', result)
+      return result
     }
 
-    if (localPages.length > 0) return dedupeById(localPages)
-    return []
+    const resultLocal = dedupeById(localPages)
+    console.log('[ChapterAnnotator] fallback to localPages:', resultLocal)
+    return resultLocal
   }, [localPages, serverPages])
 
   // Nếu page hiện tại không có url trực tiếp nhưng có layer thì dùng URL layer.

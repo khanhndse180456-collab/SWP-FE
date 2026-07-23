@@ -53,10 +53,8 @@ export default function ReviewCompositeDialog({
   const chapterId = chapter?.id ?? chapter?.chapterId ?? chapter?.chapterid ?? chapter?.Chapterid ?? null
   const [pageIdx, setPageIdx] = useState(0)
   const [reviewNote, setReviewNote] = useState('')
-  const [previewLayer, setPreviewLayer] = useState(null) // { id, name, url, z, opacity } | null
-
-  // Load các page của chapter
-  const { data: pagesData, isLoading: pagesLoading } = useQuery({
+  const [previewLayer, setPreviewLayer] = useState(null) //  // Load các page của chapter
+  const { data: pagesData, isLoading: pagesLoading, refetch: refetchPages } = useQuery({
     queryKey: ['pages', chapterId],
     enabled: !!chapterId && open,
     queryFn: async () => {
@@ -321,6 +319,22 @@ export default function ReviewCompositeDialog({
     staleTime: 15_000,
   })
 
+  const [finalizingPage, setFinalizingPage] = useState(false)
+
+  async function handleFinalizePage() {
+    if (!safePageId) return
+    setFinalizingPage(true)
+    try {
+      await pagesService.composite(safePageId)
+      toast.success("Đã gộp layer thành ảnh hoàn chỉnh.")
+      await refetchPages()
+    } catch (err) {
+      toast.error(err?.response?.data?.message ?? err?.message ?? 'Gộp layer thất bại.')
+    } finally {
+      setFinalizingPage(false)
+    }
+  }
+
   function handleApprove() {
     if (busy) return
     if (!safePageId) return
@@ -473,7 +487,7 @@ export default function ReviewCompositeDialog({
               <div className="max-h-56 min-h-[80px] overflow-y-auto rounded-md border bg-background/50">
                 {layersLoading ? (
                   <div className="flex items-center justify-center gap-2 py-4 text-[11px] text-muted-foreground">
-                    <Loader2 className="size-3 animate-spin" />
+                     <Loader2 className="size-3 animate-spin" />
                     Đang tải layer…
                   </div>
                 ) : layers.length === 0 ? (
@@ -583,18 +597,32 @@ export default function ReviewCompositeDialog({
             </div>
 
             <div className="mt-auto flex flex-col gap-2">
-              {(safePage?.IsSentToMangaka === true || safePage?.isSentToMangaka === true) && (
-                <Button
-                  onClick={handleApprove}
-                  disabled={busy}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
-                >
-                  {busy ? (
-                    <><Loader2 className="mr-1 size-4 animate-spin" /> Đang xử lý…</>
-                  ) : (
-                    <><Send className="mr-1 size-4" /> Duyệt — chuyển tiếp</>
-                  )}
-                </Button>
+              {(safePage?.issenttomangaka === true || safePage?.issenttomangaka === 1 || safePage?.issenttomangaka === '1' || safePage?.isSentToMangaka === true || safePage?.isSentToMangaka === 1 || safePage?.isSentToMangaka === '1' || safePage?.IsSentToMangaka === true || safePage?.IsSentToMangaka === 1 || safePage?.IsSentToMangaka === '1') && (
+                <>
+                  <Button
+                    onClick={handleFinalizePage}
+                    disabled={busy || finalizingPage}
+                    variant="outline"
+                    className="w-full border-violet-500/40 text-violet-300 hover:bg-violet-500/10 hover:text-white"
+                  >
+                    {finalizingPage ? (
+                      <><Loader2 className="mr-1 size-4 animate-spin" /> Đang gộp…</>
+                    ) : (
+                      <><LayersIcon className="mr-1 size-4" /> Gộp layer</>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={handleApprove}
+                    disabled={busy || finalizingPage}
+                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 font-semibold text-white hover:from-emerald-500 hover:to-teal-500"
+                  >
+                    {busy ? (
+                      <><Loader2 className="mr-1 size-4 animate-spin" /> Đang xử lý…</>
+                    ) : (
+                      <><Send className="mr-1 size-4" /> Duyệt — chuyển tiếp</>
+                    )}
+                  </Button>
+                </>
               )}
               <Button
                 variant="outline"
