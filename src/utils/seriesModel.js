@@ -424,7 +424,22 @@ export function mapApiSeriesToLocal(raw, index = 0) {
     chapters: 0,
     marks: 0,
     status: (status === 'publishing') ? 'publishing' : (status === 'approved') ? 'done' : (status === 'pending' || status === 'editorreview' || status === 'editorreviewing' || status === 'submittedtoeditor') ? 'review' : 'draft',
-    updated: 'Cập nhật từ server',
+    updated: (() => {
+      const dateStr = raw.updatedat ?? raw.updated_at ?? raw.updatedAt ?? raw.createdat ?? raw.created_at ?? raw.createdAt;
+      if (!dateStr) return 'Chưa cập nhật';
+      try {
+        const d = new Date(dateStr);
+        if (Number.isNaN(d.getTime())) return 'Chưa cập nhật';
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        return `${day}/${month}/${year} ${hours}:${minutes}`;
+      } catch {
+        return 'Chưa cập nhật';
+      }
+    })(),
     progress: 0,
     metadataComplete: Boolean(String(raw.synopsis ?? '').trim()),
     createdat: raw.createdat ?? raw.created_at ?? raw.createdAt,

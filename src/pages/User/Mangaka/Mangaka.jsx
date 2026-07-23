@@ -586,11 +586,31 @@ export default function Mangaka() {
           num: c.chapternumber ?? c.Chapternumber ?? 1,
           title: c.title ?? `Chapter ${c.chapternumber}`,
           pages: c.pageCount ?? c.pagecount ?? c.PageCount ?? c.Pagecount ?? c.pages?.length ?? 0,
-          createdAt: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
+          createdAt: (() => {
+            if (!c.createdat) return ''
+            const d = new Date(c.createdat)
+            if (Number.isNaN(d.getTime())) return ''
+            const day = String(d.getDate()).padStart(2, '0')
+            const month = String(d.getMonth() + 1).padStart(2, '0')
+            const year = d.getFullYear()
+            const hours = String(d.getHours()).padStart(2, '0')
+            const minutes = String(d.getMinutes()).padStart(2, '0')
+            return `${day}/${month}/${year} ${hours}:${minutes}`
+          })(),
           deadline: c.deadline,
           status: status,
           type: seriesObj?.formatLabel ?? 'Manga',
-          date: c.createdat ? new Date(c.createdat).toLocaleDateString('vi-VN') : '',
+          date: (() => {
+            if (!c.createdat) return ''
+            const d = new Date(c.createdat)
+            if (Number.isNaN(d.getTime())) return ''
+            const day = String(d.getDate()).padStart(2, '0')
+            const month = String(d.getMonth() + 1).padStart(2, '0')
+            const year = d.getFullYear()
+            const hours = String(d.getHours()).padStart(2, '0')
+            const minutes = String(d.getMinutes()).padStart(2, '0')
+            return `${day}/${month}/${year} ${hours}:${minutes}`
+          })(),
         }
       })
   }, [apiChapters, seriesList])
