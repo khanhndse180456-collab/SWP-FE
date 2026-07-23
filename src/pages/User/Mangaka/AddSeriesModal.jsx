@@ -291,21 +291,21 @@ export default function AddSeriesModal({
           <div className="asm-hero__inner">
             <div className="asm-hero__pill">
               <span className="asm-hero__pill-dot" />
-              {isEdit ? 'Chinh sua series' : 'Series moi'}
+              {isEdit ? 'Chỉnh sửa series' : 'Series mới'}
             </div>
             <h2 className="asm-hero__title">
-              {isEdit ? `✦ ${initialSeries?.title || ''}` : 'Dang ky series moi'}
+              {isEdit ? `✦ ${initialSeries?.title || ''}` : 'Đăng ký series mới'}
             </h2>
             <p className="asm-hero__sub">
               {isEdit
-                ? 'Cap nhat thong tin de hoan thien ho so truyen.'
-                : 'Khai bao ho so de cac ben phoi hop tren cung mot nguon chuan.'}
+                ? 'Cập nhật thông tin để hoàn thiện hồ sơ truyện.'
+                : 'Khai báo hồ sơ để các bên phối hợp trên cùng một nguồn chuẩn.'}
             </p>
             {isEdit && !initialSeries?.metadataComplete ? (
               <Alert className="asm-warn">
                 <AlertCircle className="size-4" />
                 <AlertDescription>
-                  Ho so chua day du — nen dien tom tat va the loai.
+                  Hồ sơ chưa đầy đủ — nên điền tóm tắt và thể loại.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -344,7 +344,7 @@ export default function AddSeriesModal({
                 className="asm-input"
                 value={form.altTitle}
                 onChange={e => patch({ altTitle: e.target.value })}
-                placeholder="Tuy chon"
+                placeholder="Tùy chọn"
                 maxLength={120}
               />
             </div>
@@ -631,14 +631,14 @@ export default function AddSeriesModal({
             <p className="asm-footer__warn">Vui lòng kiểm tra các trường còn thiếu</p>
           ) : null}
           <Button type="button" variant="outline" onClick={handleClose} className="asm-btn-cancel">
-            Huy
+            Hủy
           </Button>
           <Button
             type="submit"
             form="series-form"
             className="asm-btn-submit"
           >
-            {isEdit ? 'Luu thay doi' : 'Tao series'}
+            {isEdit ? 'Lưu thay đổi' : 'Tạo series'}
           </Button>
         </div>
       </DialogContent>
