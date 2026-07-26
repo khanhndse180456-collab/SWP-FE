@@ -1,4 +1,4 @@
-import { COMMON_CRITERIA, SCORE_MAX, TYPE_CRITERIA, EB_STATUSES } from "@/constants/eb.js";
+import { COMMON_CRITERIA, SCORE_MAX, TYPE_CRITERIA, EB_STATUSES, SERIES_SCORE_THRESHOLD } from "@/constants/eb.js";
 
 // ─── Status helpers ─────────────────────────────────────────────────────────
 export function normalizeStatus(raw) {
@@ -7,6 +7,29 @@ export function normalizeStatus(raw) {
 
 export function isEbStatus(raw) {
   return EB_STATUSES.has(normalizeStatus(raw));
+}
+
+// Series có đang chờ EB chấm điểm (sau khi Tantou duyệt)
+export function isAwaitingEbScore(raw) {
+  const norm = normalizeStatus(raw);
+  return norm === "awaiting_eb_score" || norm === "awaitingebscore";
+}
+
+// Series đã có điểm EB (có thể duyệt chapter)
+export function hasEbScore(raw) {
+  const norm = normalizeStatus(raw);
+  return norm === "eb_scored" || norm === "ebscored" || norm === "publishing" || norm === "ebscored";
+}
+
+// Series đạt threshold (≥5 điểm)
+export function isSeriesPassing(councilAverage) {
+  if (councilAverage == null) return false;
+  return councilAverage >= SERIES_SCORE_THRESHOLD;
+}
+
+// Lấy series score từ series object (có thể lưu sẵn từ BE)
+export function getSeriesScore(series) {
+  return series?.ebScore ?? series?.eb_score ?? series?.ebAverageScore ?? null;
 }
 
 // ─── Score helpers ───────────────────────────────────────────────────────────
@@ -123,4 +146,27 @@ export function computeCouncilAverageForSeries(seriesEvals, scoreFields) {
   const sum = scoredRows.reduce((a, r) => a + r.average, 0);
   const councilAverage = parseFloat((sum / scoredCount).toFixed(2));
   return { councilAverage, scoredCount };
+}
+
+// ─── Chapter grouping helpers ─────────────────────────────────────────────────
+export function groupChaptersBySeries(chapters, seriesList) {
+  if (!Array.isArray(chapters) || !Array.isArray(seriesList)) return {};
+  const seriesMap = new Map(seriesList.map(s => [String(s.id ?? s.series_id), s]));
+  const grouped = {};
+  for (const ch of chapters) {
+    const sid = String(ch.seriesid ?? ch.series_id ?? ch.SeriesId ?? "");
+    if (!sid) continue;
+    if (!grouped[sid]) {
+      grouped[sid] = {
+        series: seriesMap.get(sid) || { id: sid, title: "Unknown Series" },
+        chapters: [],
+      };
+    }
+    grouped[sid].chapters.push(ch);
+  }
+  // Sort chapters within each group by chapter number
+  for (const sid of Object.keys(grouped)) {
+    grouped[sid].chapters.sort((a, b) => (a.chapternumber ?? 0) - (b.chapternumber ?? 0));
+  }
+  return grouped;
 }

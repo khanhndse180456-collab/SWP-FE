@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon, Trophy, History, Pencil } from "lucide-react";
+import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon, Trophy, History, Pencil, Upload, ChevronLeft, ChevronRight } from "lucide-react";
 import SidebarNav from "@/components/layout/SidebarNav.jsx";
 import WorkspaceTopBar from "@/components/layout/WorkspaceTopBar.jsx";
 import { Button } from "@/components/ui/button";
@@ -21,20 +21,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from 'sonner'
 import { Input } from "@/components/ui/input";
 import { getSession, logout } from "@/lib/auth.js";
 import { placeholderPageDataUrl } from "@/utils/assistantWorkspaceStorage.js";
 import { LABEL_EDITOR_BOARD } from "@/constants/roleTerminology.js";
 import { SCORE_MAX } from "@/constants/eb.js";
 import { useEbWorkspace } from "@/hooks/useEbWorkspace.js";
-import { getClassification } from "@/pages/User/Eb/Eb.helpers.js";
+import { getClassification, isSeriesPassing } from "@/pages/User/Eb/Eb.helpers.js";
 import { CouncilScoresTable } from "@/components/User/Eb/CouncilScoresTable.jsx";
 import { ScoreFieldCard } from "@/components/User/Eb/ScoreFieldCard.jsx";
 import { ThresholdTable } from "@/components/User/Eb/ThresholdTable.jsx";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog.jsx";
+import { useSeriesById, usePages } from "@/api/hooks/useApi.js";
 import "./Eb.css";
 
 const SIDEBAR_ITEMS = [
   { id: 'queue',    label: 'Chấm điểm',    icon: Gavel },
+  { id: 'chapters', label: 'Duyệt chapter', icon: BookOpen },
   { id: 'ranking',  label: 'Xếp hạng',     icon: Trophy },
   { id: 'rubric',   label: 'Quy chế chấm', icon: ClipboardList },
   { id: 'image',    label: 'Xem ảnh',      icon: ImageIcon },
@@ -72,29 +76,80 @@ export default function Eb() {
     handleApprove,
     handleReject,
     getQueueAssessment,
-    publishFormatDialog,
-    setPublishFormatDialog,
-    selectedPublishFormat,
-    setSelectedPublishFormat,
     ranking,
     loadingRanking,
     loadRanking,
+    importRankings,
+    ebChapters,
+    loadingEbChapters,
+    loadEbChapters,
+    seriesScores,
+    seriesMap,
+    handleEbChapterApprove,
+    handleEbChapterReject,
     history,
+    chapterHistory,
     loadingHistory,
     loadHistory,
     openChangeFormatDialog,
     editFormatDialog,
   } = useEbWorkspace();
 
+  // Lấy chi tiết series (BE có thể trả thêm field tantouComment ở GET /Series/:id
+  // dù GET /Series list không trả). Để EB xem được nhận xét Tantou.
+  const { data: seriesDetail } = useSeriesById(selectedId);
+  const seriesDetailMerged = useMemo(() => {
+    if (!activeSubmission) return null;
+    if (!seriesDetail) return activeSubmission;
+    // Debug: log raw detail + chi tiết tất cả keys để biết BE có trả field comment nào
+    if (selectedId) {
+      // eslint-disable-next-line no-console
+      console.log('[EB] GET /Series/' + selectedId + ' →', seriesDetail);
+      // eslint-disable-next-line no-console
+      console.log('[EB] All keys:', Object.keys(seriesDetail));
+      // eslint-disable-next-line no-console
+      console.log('[EB] activeSubmission keys:', Object.keys(activeSubmission));
+    }
+    return { ...activeSubmission, ...seriesDetail };
+  }, [activeSubmission, seriesDetail, selectedId]);
+
   function handleLogout() { logout(); navigate("/login"); }
 
   const [tab, setTab] = useState("queue");
   const [queueSearch, setQueueSearch] = useState("");
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef(null);
+
+  // Chapter review modal state
+  const [reviewChapter, setReviewChapter] = useState(null); // chapter object
+  const [reviewPageIndex, setReviewPageIndex] = useState(0);
+
+  const handleImportClick = () => importInputRef.current?.click();
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      await importRankings(file);
+      toast.success('Import xếp hạng thành công.');
+    } catch {
+      // toast handled in hook
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
 
   // Mở tab "history" → gọi API lấy lịch sử chấp nhận / từ chối.
   useEffect(() => {
     if (tab === "history") loadHistory();
-  }, [tab, loadHistory]);
+  }, [tab]);
+
+  // Mở tab "chapters" → load chapters từ Tantou
+  useEffect(() => {
+    if (tab === "chapters") loadEbChapters();
+  }, [tab, loadEbChapters]);
 
   const filteredPending = useMemo(() => {
     const q = queueSearch.trim().toLowerCase();
@@ -256,6 +311,48 @@ export default function Eb() {
                   <CardDescription>Chọn series trong hàng chờ, chọn thành viên, nhập điểm rồi Lưu.</CardDescription>
                 </CardHeader>
             <CardContent className="space-y-6">
+              {/* Nhận xét từ Tantou (kèm lịch sử nếu có nhiều lần) */}
+              {(() => {
+                const source = seriesDetailMerged ?? activeSubmission;
+                const last =
+                  source?.tantouComment ??
+                  source?.tantoucomment ??
+                  source?.TantouComment ??
+                  source?.editorialComment ??
+                  source?.EditorialComment ??
+                  source?.comment ??
+                  source?.Comment ??
+                  source?.lastTantouComment ??
+                  "";
+                if (!last) return null;
+                const author =
+                  source?.tantouName ??
+                  source?.tantouEditorName ??
+                  source?.tantouEditor ??
+                  "Tantou";
+                const at =
+                  source?.tantouCommentAt ??
+                  source?.editorialCommentAt ??
+                  source?.CommentAt ??
+                  null;
+                return (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-amber-800">
+                        Nhận xét từ Tantou
+                      </p>
+                      {at && (
+                        <span className="text-[11px] text-amber-700">
+                          {new Date(at).toLocaleString("vi-VN")}
+                        </span>
+                      )}
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm text-amber-900">{last}</p>
+                    <p className="mt-2 text-[11px] text-amber-700">— {author}</p>
+                  </div>
+                );
+              })()}
+
               {/* Banner đại diện */}
               <div className="eb-rep-banner rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
                 <p className="font-medium text-foreground">Tài khoản đại diện: <span className="text-primary">{user?.name ?? "Thư ký Hội đồng"}</span></p>
@@ -539,11 +636,22 @@ export default function Eb() {
                       </table>
                     </div>
                   )}
-                  {!loadingRanking && ranking.length > 0 && (
+                  {!loadingRanking && (
                     <div className="mt-3 flex items-center justify-end gap-3">
+                      <Button size="sm" variant="outline" onClick={handleImportClick} disabled={importing}>
+                        {importing ? <Loader2 className="size-4" /> : <Upload className="size-4" />}
+                        {importing ? 'Đang import...' : 'Import Excel'}
+                      </Button>
                       <Button size="sm" variant="outline" onClick={loadRanking}>
                         <Loader2 className="size-4" />Tải lại
                       </Button>
+                      <input
+                        ref={importInputRef}
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        className="hidden"
+                        onChange={handleImportFile}
+                      />
                     </div>
                   )}
                 </CardContent>
@@ -601,92 +709,343 @@ export default function Eb() {
             </div>
           )}
 
+          {tab === "chapters" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BookOpen className="size-4 text-primary" />
+                    Duyệt chapter
+                  </CardTitle>
+                  <CardDescription>Chỉ hiển thị chapters của series đã có điểm EB và đạt threshold (≥5).</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingEbChapters ? (
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                      Đang tải...
+                    </div>
+                  ) : ebChapters.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+                      <BookOpen className="size-6 opacity-60" />
+                      <p>Không có chapter nào chờ duyệt.</p>
+                      <p className="text-xs">Hãy chấm điểm Series ở tab "Chấm điểm" trước.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Group chapters by series */}
+                      {(() => {
+                        const grouped = {};
+                        ebChapters.forEach((chapter) => {
+                          const sid = String(chapter.seriesid ?? chapter.series_id ?? "");
+                          const seriesInfo = seriesMap[sid];
+                          const seriesName = seriesInfo?.title
+                            ?? seriesInfo?.series_title
+                            ?? seriesInfo?.SeriesTitle
+                            ?? chapter.seriesTitle
+                            ?? chapter.series_title
+                            ?? `Series #${sid}`;
+                          if (!grouped[sid]) {
+                            grouped[sid] = {
+                              seriesTitle: seriesName,
+                              seriesId: sid,
+                              seriesScore: seriesScores[sid] ?? null,
+                              chapters: [],
+                            };
+                          }
+                          grouped[sid].chapters.push(chapter);
+                        });
+                        // Sort chapters within each group by chapter number
+                        Object.values(grouped).forEach(g => {
+                          g.chapters.sort((a, b) => (a.chapternumber ?? 0) - (b.chapternumber ?? 0));
+                        });
+                        return Object.values(grouped);
+                      })().map((group) => {
+                        const isPassing = group.seriesScore != null && isSeriesPassing(group.seriesScore);
+                        return (
+                          <div key={group.seriesId} className="rounded-lg border bg-card">
+                            {/* Series header */}
+                            <div className="flex items-center justify-between border-b px-4 py-3">
+                              <div>
+                                <p className="font-semibold">{group.seriesTitle}</p>
+                                <p className="text-xs text-muted-foreground">Series #{group.seriesId}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {group.seriesScore != null ? (
+                                  <Badge variant={isPassing ? "default" : "destructive"} className="text-sm">
+                                    ⭐ {group.seriesScore.toFixed(1)}/10
+                                    {isPassing ? " · Đạt" : " · Không đạt"}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-sm">
+                                    ⏳ Chưa có điểm
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            {/* Chapters list */}
+                            <div className="divide-y">
+                              {group.chapters.map((chapter) => {
+                                const chapterId = chapter.chapterid ?? chapter.id;
+                                const chapterNum = chapter.chapternumber ?? "?";
+                                const title = chapter.title ?? `Chapter ${chapterNum}`;
+                                const coverUrl = chapter.coverImageUrl ?? chapter.coverimageurl;
+                                const chStatus = String(chapter.status ?? "").toLowerCase();
+                                const isReady = chStatus === "ready";
+                                return (
+                                  <div key={chapterId} className="flex items-start gap-4 p-4">
+                                    {coverUrl && (
+                                      <img src={coverUrl} alt={title} className="h-16 w-12 rounded object-cover" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-medium truncate">{title}</p>
+                                      <p className="text-xs text-muted-foreground">Chapter {chapterNum}</p>
+                                      <Badge variant="outline" className="mt-1 text-xs">{chapter.status}</Badge>
+                                      {!isReady && (
+                                        <p className="mt-1 text-xs text-amber-600">
+                                          Chưa sẵn sàng — chờ chuyển sang Ready mới duyệt được
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setReviewChapter(chapter);
+                                          setReviewPageIndex(0);
+                                        }}
+                                        className="gap-1"
+                                      >
+                                        <ImageIcon className="size-4" />
+                                        Xem
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => handleEbChapterApprove(chapterId, title)}
+                                        disabled={!isReady}
+                                        title={!isReady ? "Chapter phải ở trạng thái Ready để duyệt" : undefined}
+                                        className="gap-1"
+                                      >
+                                        <CheckCircle2 className="size-4" />
+                                        Duyệt
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() => handleEbChapterReject(chapterId, title)}
+                                        className="gap-1"
+                                      >
+                                        <XCircle className="size-4" />
+                                        Từ chối
+                                      </Button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Series chưa có điểm - hiện cảnh báo */}
+              {(() => {
+                // Lấy tất cả series có chapters Ready nhưng chưa có điểm
+                const unscoredSeries = {};
+                // Đây là mockup - thực tế cần lấy từ API
+                return null; // Tạm thời ẩn phần này
+              })()}
+            </div>
+          )}
+
           {tab === "history" && (
             <div className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <History className="size-4 text-primary" />
-                    Lịch sử duyệt
+                    Lịch sử hoạt động
                   </CardTitle>
+                  <CardDescription>Timeline hợp nhất: điểm Series + quyết định Chapter.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {loadingHistory ? (
-                      <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                        <Loader2 className="size-4 animate-spin" />
-                        Đang tải lịch sử...
-                      </div>
-                    ) : history.length === 0 ? (
-                      <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-                        <History className="size-6 opacity-60" />
-                        <p>Chưa có quyết định nào trong DB.</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-hidden rounded-lg border border-border/50">
-                        <table className="w-full text-sm">
-                          <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                            <tr>
-                              <th className="px-3 py-2 text-left font-medium">Thời gian</th>
-                              <th className="px-3 py-2 text-left font-medium">Quyết định</th>
-                              <th className="px-3 py-2 text-left font-medium">Series</th>
-                              <th className="px-3 py-2 text-right font-medium">DTB HĐ</th>
-                              <th className="px-3 py-2 text-left font-medium">Định dạng</th>
-                              <th className="px-3 py-2 text-left font-medium">Người quyết</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border/50">
-                            {history.map(item => {
-                              const isApprove = item.action === "approve";
-                              const time = new Date(item.at);
-                              const timeLabel = time.toLocaleString("vi-VN", {
-                                hour: "2-digit", minute: "2-digit",
-                                day: "2-digit", month: "2-digit", year: "numeric",
-                              });
-                              return (
-                                <tr key={item.id} className="bg-background">
-                                  <td className="px-3 py-2 text-muted-foreground">{timeLabel}</td>
-                                  <td className="px-3 py-2">
-                                    {isApprove ? (
-                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                                        <CheckCircle2 className="size-3" /> Chấp nhận
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                                        <XCircle className="size-3" /> Từ chối
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 font-medium text-foreground">
-                                    {item.seriesTitle || `Series #${item.seriesId}`}
-                                  </td>
-                                  <td className="px-3 py-2 text-right tabular-nums">
-                                    {Number.isFinite(item.score) ? item.score.toFixed(2) : "—"}
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    {item.action === "approve" ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openChangeFormatDialog(item)}
-                                        title="Đổi định dạng phát hành"
-                                        className="group inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-xs font-medium text-foreground transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 dark:hover:bg-amber-900/30 dark:hover:text-amber-200"
-                                      >
-                                        <span>{item.format || "Chưa đặt"}</span>
-                                        <Pencil className="size-3 opacity-60 transition group-hover:opacity-100" />
-                                      </button>
-                                    ) : (
-                                      <span className="text-muted-foreground">—</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-muted-foreground">{item.by}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                  {loadingHistory ? (
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                      Đang tải...
+                    </div>
+                  ) : history.length === 0 && chapterHistory.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+                      <History className="size-6 opacity-60" />
+                      <p>Chưa có hoạt động nào.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-8">
+                      {/* Hợp nhất series events + chapter events */}
+                      {(() => {
+                        // Map series events với series score
+                        const seriesMap = new Map();
+                        const lookupTitle = (sid) => {
+                          const s = seriesMap?.[sid];
+                          return s?.title ?? s?.series_title ?? s?.seriesTitle ?? `Series #${sid}`;
+                        };
+                        // Add series events
+                        history.forEach(item => {
+                          const sid = String(item.seriesId);
+                          if (!seriesMap.has(sid)) {
+                            seriesMap.set(sid, {
+                              seriesId: sid,
+                              seriesTitle: item.seriesTitle || lookupTitle(sid),
+                              seriesScore: item.score,
+                              events: [],
+                            });
+                          } else {
+                            const existing = seriesMap.get(sid);
+                            if (item.score != null && existing.seriesScore == null) {
+                              existing.seriesScore = item.score;
+                            }
+                          }
+                        });
+                        // Add chapter events — gộp thành 1 dòng tóm tắt duy nhất
+                        const chapterByAction = new Map(); // sid → { approve: Set, reject: Set }
+                        chapterHistory.forEach(item => {
+                          const sid = String(item.seriesId ?? item.series_id ?? "");
+                          if (!sid) return;
+                          if (!chapterByAction.has(sid)) {
+                            chapterByAction.set(sid, { approve: [], reject: [], latestAt: null });
+                          }
+                          const agg = chapterByAction.get(sid);
+                          const at = item.at || item.createdAt;
+                          if (!agg.latestAt || new Date(at) > new Date(agg.latestAt)) {
+                            agg.latestAt = at;
+                          }
+                          if (item.action === "approve" || item.status === "Published") {
+                            agg.approve.push(item);
+                          } else if (item.action === "reject" || item.status === "Cancelled" || item.status === "RevisionRequested") {
+                            agg.reject.push(item);
+                          }
+                        });
+                        chapterByAction.forEach((agg, sid) => {
+                          if (!seriesMap.has(sid)) {
+                            seriesMap.set(sid, {
+                              seriesId: sid,
+                              seriesTitle: lookupTitle(sid),
+                              seriesScore: seriesScores[sid] ?? null,
+                              events: [],
+                            });
+                          }
+                          const total = agg.approve.length + agg.reject.length;
+                          const parts = [];
+                          if (agg.approve.length > 0) parts.push(`${agg.approve.length} đã duyệt`);
+                          if (agg.reject.length > 0) parts.push(`${agg.reject.length} từ chối`);
+                          seriesMap.get(sid).events.push({
+                            id: `chapter-summary-${sid}`,
+                            type: "chapter-summary",
+                            at: agg.latestAt,
+                            chapterApprove: agg.approve.length,
+                            chapterReject: agg.reject.length,
+                            chapterTotal: total,
+                            summary: parts.join(" · "),
+                          });
+                        });
+                        // Sort events by time
+                        seriesMap.forEach(group => {
+                          group.events.sort((a, b) => new Date(b.at) - new Date(a.at));
+                        });
+                        return Array.from(seriesMap.values()).sort((a, b) => {
+                          const aTime = a.events[0]?.at ? new Date(a.events[0].at) : new Date(0);
+                          const bTime = b.events[0]?.at ? new Date(b.events[0].at) : new Date(0);
+                          return bTime - aTime;
+                        });
+                      })().map((group) => {
+                        const isPassing = group.seriesScore != null && isSeriesPassing(group.seriesScore);
+                        return (
+                          <div key={group.seriesId} className="rounded-lg border bg-card">
+                            {/* Series header */}
+                            <div className="flex items-center justify-between border-b px-4 py-3">
+                              <div>
+                                <p className="font-semibold">{group.seriesTitle}</p>
+                                <p className="text-xs text-muted-foreground">Series #{group.seriesId}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {group.seriesScore != null ? (
+                                  <Badge variant={isPassing ? "default" : "destructive"} className="text-sm">
+                                    ⭐ {group.seriesScore.toFixed(1)}/10
+                                    {isPassing ? " · Đạt" : " · Không đạt"}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-sm">Chưa chấm điểm</Badge>
+                                )}
+                              </div>
+                            </div>
+                            {/* Events timeline */}
+                            <div className="divide-y">
+                              {group.events.length === 0 ? (
+                                <div className="p-4 text-sm text-muted-foreground text-center">Chưa có hoạt động</div>
+                              ) : (
+                                group.events.map((event, idx) => {
+                                  const time = new Date(event.at);
+                                  const timeLabel = time.toLocaleString("vi-VN", {
+                                    hour: "2-digit", minute: "2-digit",
+                                    day: "2-digit", month: "2-digit",
+                                  });
+                                  const isChapter = event.type === "chapter";
+                                  const isChapterSummary = event.type === "chapter-summary";
+                                  const isApprove = event.action === "approve";
+                                  // chapter-summary dùng icon xanh (đã hoàn tất)
+                                  const iconBg = isChapterSummary
+                                    ? "bg-emerald-100 text-emerald-600"
+                                    : isChapter
+                                      ? (isApprove ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-600")
+                                      : (isApprove ? "bg-blue-100 text-blue-600" : "bg-orange-100 text-orange-600");
+                                  return (
+                                    <div key={event.id ?? idx} className="flex items-start gap-4 p-4">
+                                      <div className={`flex size-8 shrink-0 items-center justify-center rounded-full ${iconBg}`}>
+                                        {isChapterSummary ? (
+                                          <CheckCircle2 className="size-4" />
+                                        ) : isChapter ? (
+                                          isApprove ? <CheckCircle2 className="size-4" /> : <XCircle className="size-4" />
+                                        ) : (
+                                          isApprove ? <CheckCircle2 className="size-4" /> : <XCircle className="size-4" />
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="font-medium">
+                                          {isChapterSummary ? (
+                                            <>Chapters đã xử lý: <span className="text-emerald-700">{event.summary}</span></>
+                                          ) : isChapter ? (
+                                            `Chapter: ${event.chapterTitle ?? `Chapter #${event.chapterId}`}`
+                                          ) : (
+                                            `Series: ${event.seriesTitle}`
+                                          )}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                          {isChapterSummary
+                                            ? `Tổng ${event.chapterTotal} chapter`
+                                            : isChapter
+                                              ? `${isApprove ? "Đã duyệt" : "Đã từ chối"} bởi EB`
+                                              : `${isApprove ? "Đã chấp nhận" : "Đã từ chối"}`}
+                                        </p>
+                                      </div>
+                                      <div className="text-right text-xs text-muted-foreground shrink-0">
+                                        <p>{timeLabel}</p>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
         </main>
@@ -710,53 +1069,115 @@ export default function Eb() {
         </div>
       )}
 
-      {/* Publish Format Dialog */}
-      {publishFormatDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border bg-background p-6 shadow-xl space-y-4 mx-4">
-            <h3 className="text-base font-semibold">Chọn định dạng phát hành</h3>
-            <p className="text-sm text-muted-foreground">
-              Tác phẩm "{publishFormatDialog.title}" đạt yêu cầu. Chọn định dạng phát hành:
-            </p>
-            <div className="space-y-2">
-              <button
-                type="button"
-                className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                  selectedPublishFormat === "Monthly"
-                    ? "border-primary bg-primary/10"
-                    : "border-border hover:bg-muted"
-                }`}
-                onClick={() => setSelectedPublishFormat("Monthly")}
-              >
-                <span className="font-medium">📅 Theo tháng (Monthly)</span>
-                <p className="text-xs text-muted-foreground mt-0.5">Phát hành 1 chapter/tuần trong tháng</p>
-              </button>
-              <button
-                type="button"
-                className={`w-full rounded-lg border p-3 text-left transition-colors ${
-                  selectedPublishFormat === "Weekly"
-                    ? "border-primary bg-primary/10"
-                    : "border-border hover:bg-muted"
-                }`}
-                onClick={() => setSelectedPublishFormat("Weekly")}
-              >
-                <span className="font-medium">📆 Theo tuần (Weekly)</span>
-                <p className="text-xs text-muted-foreground mt-0.5">Phát hành 1 chapter/tuần quanh năm</p>
-              </button>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={publishFormatDialog.onCancel}>Huỷ</Button>
-              <Button onClick={() => publishFormatDialog.onSelect(selectedPublishFormat)}>
-                Xác nhận phát hành
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Đổi định dạng phát hành (gọi từ tab Lịch sử) */}
       <ChangeFormatDialog dialog={editFormatDialog} />
+
+      {/* Modal xem chi tiết chapter */}
+      <ChapterReviewModal
+        chapter={reviewChapter}
+        onClose={() => setReviewChapter(null)}
+        onApprove={handleEbChapterApprove}
+        onReject={handleEbChapterReject}
+      />
     </div>
+  );
+}
+
+// ── Chapter Review Modal ────────────────────────────────────────────────────
+function ChapterReviewModal({ chapter, onClose, onApprove, onReject }) {
+  const chapterId = chapter?.chapterid ?? chapter?.id;
+  const { data: pages = [], isLoading: pagesLoading } = usePages(chapterId);
+  const [pageIndex, setPageIndex] = useState(0);
+
+  if (!chapter) return null;
+
+  const chapterNum = chapter.chapternumber ?? "?";
+  const title = chapter.title ?? `Chapter ${chapterNum}`;
+  const seriesTitle = chapter.seriesTitle ?? chapter.series_title ?? "—";
+  const currentPage = pages[pageIndex];
+
+  return (
+    <Dialog open={!!chapter} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle>{seriesTitle} — {title}</DialogTitle>
+          <DialogDescription>
+            Chapter {chapterNum} • {pages.length} trang
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Nhận xét của Tantou */}
+          {chapter.tantouComment && (
+            <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3">
+              <p className="text-xs font-medium text-amber-800 mb-1">📝 Nhận xét của Tantou</p>
+              <p className="text-sm text-amber-900">{chapter.tantouComment}</p>
+            </div>
+          )}
+
+          {pagesLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : pages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <ImageIcon className="size-8 mb-2 opacity-50" />
+              <p>Không có trang nào.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center gap-4">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={pageIndex === 0}
+                  onClick={() => setPageIndex(i => Math.max(0, i - 1))}
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Trang {pageIndex + 1} / {pages.length}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={pageIndex >= pages.length - 1}
+                  onClick={() => setPageIndex(i => Math.min(pages.length - 1, i + 1))}
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+              {currentPage && (
+                <div className="flex justify-center">
+                  <img
+                    src={currentPage.pageimageurl ?? currentPage.page_image_url}
+                    alt={`Page ${pageIndex + 1}`}
+                    className="max-h-[60vh] max-w-full object-contain rounded border"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-4 border-t">
+          <Button variant="outline" onClick={onClose}>Đóng</Button>
+          <Button
+            variant="destructive"
+            onClick={() => { onReject(chapterId, title); onClose(); }}
+          >
+            <XCircle className="size-4 mr-1" />
+            Từ chối
+          </Button>
+          <Button
+            onClick={() => { onApprove(chapterId, title); onClose(); }}
+          >
+            <CheckCircle2 className="size-4 mr-1" />
+            Chấp nhận
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

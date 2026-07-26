@@ -50,7 +50,8 @@ export function useTantouWorkspace() {
   // ── Load chapter studio (phụ thuộc seriesById) ────────────────────────────
   // LƯU Ý: filter KHÔNG loại bỏ 'draft'/'submitted'/'ready' để Tantou luôn thấy
   // chapter Mantou vừa gửi — kể cả khi BE chưa đổi status (lỗi 400) hoặc status
-  // nằm ngoài whitelist. Chỉ loại 'cancelled' (xóa) và 'published' (đã xong).
+  // nằm ngoài whitelist. Chỉ loại 'cancelled' (xóa) và 'published' (đã xong);
+  // 'ready' (đã gửi EB) vẫn hiển thị trong section "Đang chờ EB chấm".
   const loadStudioChapters = useCallback(async (seriesMap) => {
     if (seriesMap.size === 0) return
     setStudioLoading(true)
@@ -149,10 +150,19 @@ export function useTantouWorkspace() {
   )
 
   const studioQueue = useMemo(
-    () => studioChapters.map(ch => ({
-      ...ch,
-      seriesInfo: seriesById.get(ch.seriesid) ?? null,
-    })),
+    () => studioChapters
+      .map(ch => {
+        const seriesInfo = seriesById.get(ch.seriesid) ?? null
+        // Hiện chapter khi series đã được Tantou duyệt (EBReview trở đi)
+        const isAccepted = seriesInfo && (isEbStatus(seriesInfo.status) || isApprovedStatus(seriesInfo.status))
+        return {
+          ...ch,
+          seriesInfo,
+          _hidden: !isAccepted,
+        }
+      })
+      .filter(ch => !ch._hidden)
+      .map(({ _hidden, ...rest }) => rest),
     [studioChapters, seriesById],
   )
 
@@ -284,6 +294,72 @@ export function useTantouWorkspace() {
     finally { setSavingScheduleId(null) }
   }
 
+  // ── Accept series (Debut queue) ────────────────────────────────────────────
+  async function handleAcceptSeries(seriesId) {
+    try {
+      const series = debutQueue.find(s => s.seriesid === seriesId)
+      // Nếu series còn ở Draft thì phải đẩy qua EditorReview trước,
+      // vì BE không cho chuyển thẳng Draft → EBReview.
+      if (series && normalizeStatus(series.status) === 'draft') {
+        await axiosClient.patch(`/Series/${seriesId}/status`, { status: 'EditorReview' })
+      }
+      await axiosClient.patch(`/Series/${seriesId}/status`, { status: 'EBReview' })
+      toast.success('Đã chấp nhận series.')
+      await loadSeries()
+      await queryClient.invalidateQueries({ queryKey: ['chapters'] })
+    } catch { /* interceptor toast */ }
+  }
+
+  // ── Reject series (Debut queue) ────────────────────────────────────────────
+  async function handleRejectSeries(seriesId, reason) {
+    const safeReason = (reason ?? '').trim()
+    if (!safeReason) {
+      toast.error('Nhập lý do từ chối.')
+      return false
+    }
+    try {
+      // NOTE: Bảng Series hiện KHÔNG có cột rejectReason — chỉ gửi status.
+      // TODO: Sau khi BE thêm cột rejectReason, gửi kèm để lưu lý do.
+      await axiosClient.patch(`/Series/${seriesId}/status`, {
+        status: 'Cancelled',
+      })
+      toast.success('Đã từ chối series.')
+      setSelectedSeriesId(null)
+      await loadSeries()
+      await queryClient.invalidateQueries({ queryKey: ['chapters'] })
+      await queryClient.invalidateQueries({ queryKey: ['series'] })
+      return true
+    } catch { return false }
+  }
+
+  // ── Chapter actions (Studio) ───────────────────────────────────────────────
+  async function handleChapterForwardEb(chapterId) {
+    try {
+      await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Ready')
+      toast.success('Đã gửi chapter cho EB xem.')
+      await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
+      await queryClient.invalidateQueries({ queryKey: ['chapters'] })
+    } catch { /* interceptor toast */ }
+  }
+
+  async function handleChapterRequestRevision(chapterId, comment) {
+    // Bỏ validation ghi chú — nhận xét nằm trong các box trên ảnh (đã gửi riêng khi tạo)
+    try {
+      await axiosClient.patch(`/Chapters/${chapterId}/request-revision`, { Comment: comment || '' })
+      toast.success('Đã gửi yêu cầu sửa cho Mangaka.')
+      await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
+    } catch { /* interceptor toast */ }
+  }
+
+  async function handleChapterApprove(chapterId) {
+    try {
+      await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Published')
+      toast.success('Đã duyệt chapter thành công.')
+      await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
+      await queryClient.invalidateQueries({ queryKey: ['chapters'] })
+    } catch { /* interceptor toast */ }
+  }
+
   function handleRefreshStudio() {
     const map = new Map()
     series.forEach(s => map.set(s.seriesid, s))
@@ -323,6 +399,11 @@ export function useTantouWorkspace() {
     closeReview,
     handleForwardEb,
     handleRequestRevision,
+    handleAcceptSeries,
+    handleRejectSeries,
+    handleChapterForwardEb,
+    handleChapterRequestRevision,
+    handleChapterApprove,
     // schedule
     savingScheduleId,
     handleSetSchedule,

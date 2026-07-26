@@ -19,7 +19,18 @@ export const TYPE_CRITERIA = {
 
 export const SCORE_MAX = 10;
 
+export const SERIES_SCORE_THRESHOLD = 5; // ≥5 = đạt
+
 export const EB_STATUSES = new Set([
   "ebreview", "underreview", "eb_review", "eb-review",
-  "editorreview", "submitted", "readyforreview", "ready_for_review",
+]);
+
+// Series status sau khi EB chấm điểm
+export const SERIES_SCORE_STATUSES = new Set([
+  "awaiting_eb_score", "awaiting-eb-score",
+]);
+
+// Series đã có điểm EB (đạt threshold → có thể duyệt chapter)
+export const SERIES_SCORED_STATUSES = new Set([
+  "eb_scored", "eb-scored", "publishing",
 ]);

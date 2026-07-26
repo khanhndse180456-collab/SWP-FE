@@ -23,16 +23,16 @@ export function normalizeStatus(raw) {
   return (raw ?? '').toLowerCase().replace(/[_\s-]/g, '')
 }
 
-export function isDebutStatus(raw)    { return DEBUT_STATUSES.has(normalizeStatus(raw)) }
+export function isDebutStatus(raw)     { return DEBUT_STATUSES.has(normalizeStatus(raw)) }
 export function isApprovedStatus(raw) { return APPROVED_STATUSES.has(normalizeStatus(raw)) }
-export function isEbStatus(raw)       { return EB_STATUSES.has(normalizeStatus(raw)) }
+export function isEbStatus(raw)        { return EB_STATUSES.has(normalizeStatus(raw)) }
 
 export function statusVariant(raw) {
   const s = normalizeStatus(raw)
-  if (s === 'draft')                             return 'outline'
-  if (s === 'submitted' || s === 'editorreview') return 'secondary'
-  if (s === 'ebreview'  || s === 'underreview')  return 'default'
-  if (s === 'publishing' || s === 'approved')    return 'default'
+  if (s === 'draft')                              return 'outline'
+  if (s === 'editorreview')                      return 'secondary'
+  if (s === 'ebreview')                          return 'default'
+  if (s === 'publishing' || s === 'completed')   return 'default'
   if (s === 'rejected'  || s === 'cancelled')    return 'destructive'
   if (s === 'inproduction')                      return 'secondary'
   if (s === 'ready')                             return 'default'
@@ -43,14 +43,11 @@ export function statusVariant(raw) {
 
 export function statusLabel(raw) {
   const map = {
-    draft:        'Bản nháp',
-    submitted:    'Chờ duyệt',
-    editorreview: 'Tantou đang xét',
-    ebreview:     `Đang xét ${LABEL_EDITOR_BOARD}`,
-    underreview:  `Đang xét ${LABEL_EDITOR_BOARD}`,
-    publishing:   'Đang phát hành',
-    approved:     'Đã duyệt',
-    completed:    'Hoàn thành',
+    draft:          'Bản nháp',
+    editorreview:  'Tantou đang xét',
+    ebreview:      `Đang xét ${LABEL_EDITOR_BOARD}`,
+    publishing:    'Đang phát hành',
+    completed:     'Hoàn thành',
     rejected:     'Đã từ chối',
     cancelled:    'Đã huỷ',
     inproduction: 'Đang thực hiện',

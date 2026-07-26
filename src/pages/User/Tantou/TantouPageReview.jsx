@@ -196,6 +196,11 @@ export default function TantouPageReview({
   onForwardEb,
   onRequestRevision,
   onApproveRecurring,
+  actionsMode = 'eb', // 'eb' = hiện EB actions (debut/recurring review), 'studio' = chapter workspace
+  // Studio chapter actions
+  onChapterForwardEb,
+  onChapterRequestRevision,
+  onChapterApprove,
   pages = [],
   pageIndex = 0,
   onPageIndexChange,
@@ -212,11 +217,12 @@ export default function TantouPageReview({
   const [newBoxDraft, setNewBoxDraft] = useState('')
   const [showNewBoxPanel, setShowNewBoxPanel] = useState(false)
   const [tempBox, setTempBox] = useState(null)
+  // Studio revision comment (đã bỏ — không cần ghi chú riêng, nhận xét nằm trong box)
 
   const boardRef = useRef(null)
 
   const currentPage = pages[pageIndex] ?? null
-  const currentPageId = currentPage?.serverPageId ?? null
+  const currentPageId = currentPage?.pageid ?? null
 
   const { data: pageIssuesRaw = [] } = usePageIssues({ pageId: currentPageId })
   const createIssue = useCreatePageIssue()
@@ -430,7 +436,7 @@ export default function TantouPageReview({
   if (!submission) return null
 
   const isDebut = submission.pipeline === 'debut'
-  const pageImageUrl = currentPage?.url ?? submission.mangakaImageUrl ?? null
+  const pageImageUrl = currentPage?.pageimageurl ?? currentPage?.url ?? submission.mangakaImageUrl ?? null
   const noPagesAvailable = pages.length === 0 // MỚI: chưa có trang nào để hiển thị/nhận xét
 
   return (
@@ -794,30 +800,52 @@ export default function TantouPageReview({
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
-          {isDebut && (
-            <Button
-              variant="outline"
-              onClick={onRequestRevision}
-              className="gap-2"
-            >
-              <XCircle className="size-4" />
-              Yêu cầu chỉnh sửa
-            </Button>
-          )}
-
-          {isDebut ? (
-            <Button onClick={onForwardEb} className="gap-2">
-              <Send className="size-4" />
-              Chuyển sang {LABEL_EDITOR_BOARD}
-            </Button>
+          {actionsMode === 'studio' ? (
+            // Studio mode: chapter actions
+            <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
+              {onChapterRequestRevision && (
+                <Button
+                  variant="outline"
+                  onClick={() => onChapterRequestRevision('')}
+                  className="gap-2 h-8 mr-auto"
+                >
+                  <XCircle className="size-4" />
+                  Yêu cầu sửa
+                </Button>
+              )}
+              {onChapterForwardEb && (
+                <Button
+                  variant="secondary"
+                  onClick={onChapterForwardEb}
+                  className="gap-2 h-8"
+                >
+                  <Send className="size-4" />
+                  Chuyển EB chấm
+                </Button>
+              )}
+              {/* Tantou chỉ được gửi EB, không duyệt trực tiếp */}
+            </div>
           ) : (
-            <Button onClick={onApproveRecurring} className="gap-2">
-              <CheckCircle2 className="size-4" />
-              Duyệt nhanh
-            </Button>
+            // EB/debut review mode
+            <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
+              {isDebut && (
+                <Button
+                  variant="outline"
+                  onClick={onRequestRevision ?? (() => {})}
+                  className="gap-2"
+                >
+                  <XCircle className="size-4" />
+                  Yêu cầu chỉnh sửa
+                </Button>
+              )}
+
+              {/* Tantou: gửi recurring chapter cho EB xem, không duyệt trực tiếp */}
+              <Button onClick={isDebut ? (onForwardEb ?? (() => {})) : (onChapterForwardEb ?? (() => {}))} className="gap-2">
+                <CheckCircle2 className="size-4" />
+                {isDebut ? 'Chấp nhận' : 'Gửi EB xem'}
+              </Button>
+            </div>
           )}
-        </div>
       </div>
     </div>
   )

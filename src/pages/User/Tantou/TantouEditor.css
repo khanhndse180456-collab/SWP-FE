@@ -6,6 +6,21 @@
   --te-tantou: #2a6f97;
 }
 
+/* Hide scrollbar for horizontal slide bars */
+.hide-scrollbar::-webkit-scrollbar {
+  height: 4px;
+}
+.hide-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.hide-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+.hide-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
 .ws-hero--tantou {
   background: linear-gradient(128deg, #121820 0%, #1a3348 42%, #234a66 100%);
   border-bottom: 1px solid rgba(126, 184, 232, 0.15);

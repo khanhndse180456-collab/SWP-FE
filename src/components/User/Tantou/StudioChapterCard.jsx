@@ -5,7 +5,7 @@ import { LABEL_EDITOR_BOARD } from '@/constants/roleTerminology.js'
 import { normalizeStatus, statusVariant, statusLabel, isEbStatus, isApprovedStatus } from '@/pages/User/Tantou/TantouEditor.helpers.jsx'
 import { CoverThumb } from './CoverThumb.jsx'
 
-export function StudioChapterCard({ item }) {
+export function StudioChapterCard({ item, onClick }) {
   const s           = item.seriesInfo
   const st          = normalizeStatus(item.status)
   const isDelayed   = st === 'delayed'
@@ -16,7 +16,10 @@ export function StudioChapterCard({ item }) {
   const seriesEbApproved = s && isApprovedStatus(s.status)
 
   return (
-    <Card className={`transition-all ${isDelayed && !seriesWithEb ? 'border-destructive/50' : ''}`}>
+    <Card
+      onClick={onClick}
+      className={`cursor-pointer transition-all hover:shadow-md ${isDelayed && !seriesWithEb ? 'border-destructive/50' : ''}`}
+    >
       <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
         <CoverThumb url={s?.coverimageurl} />
         <div className="min-w-0 flex-1 space-y-1">
