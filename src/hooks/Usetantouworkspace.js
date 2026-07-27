@@ -339,15 +339,8 @@ export function useTantouWorkspace() {
   }
 
   // ── Chapter actions (Studio) ───────────────────────────────────────────────
-  async function handleChapterForwardEb(chapterId) {
-    try {
-      await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Ready')
-      toast.success('Đã gửi chapter cho EB xem.')
-      await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
-      await queryClient.invalidateQueries({ queryKey: ['chapters'] })
-    } catch { /* interceptor toast */ }
-  }
-
+  // Tantou giờ chỉ có 2 hành động cho chapter: yêu cầu sửa hoặc duyệt xuất
+  // bản (Published) thẳng — không còn bước trung gian "gửi cho EB xem".
   async function handleChapterRequestRevision(chapterId, comment) {
     try {
       await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Delayed')
@@ -407,7 +400,6 @@ export function useTantouWorkspace() {
     handleRequestRevision,
     handleAcceptSeries,
     handleRejectSeries,
-    handleChapterForwardEb,
     handleChapterRequestRevision,
     handleChapterApprove,
     // schedule

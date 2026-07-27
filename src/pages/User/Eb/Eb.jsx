@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon, Trophy, History, Pencil, Upload, ChevronLeft, ChevronRight, Library, RefreshCcw } from "lucide-react";
+import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon, Trophy, History, Pencil, Upload, Library, RefreshCcw } from "lucide-react";
 import SidebarNav from "@/components/layout/SidebarNav.jsx";
 import WorkspaceTopBar from "@/components/layout/WorkspaceTopBar.jsx";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,6 @@ import "./Eb.css";
 
 const SIDEBAR_ITEMS = [
   { id: 'queue',    label: 'Chấm điểm',    icon: Gavel },
-  { id: 'chapters', label: 'Duyệt chapter', icon: BookOpen },
   { id: 'series',   label: 'Quản lý Series', icon: Library },
   { id: 'ranking',  label: 'Xếp hạng',     icon: Trophy },
   { id: 'rubric',   label: 'Quy chế chấm', icon: ClipboardList },
@@ -102,13 +101,6 @@ export default function Eb() {
     loadingIssueRankings,
     currentIssue,
     loadRankingsByIssue,
-    ebChapters,
-    loadingEbChapters,
-    loadEbChapters,
-    seriesScores,
-    seriesMap,
-    handleEbChapterApprove,
-    handleEbChapterReject,
     history,
     chapterHistory,
     loadingHistory,
@@ -157,10 +149,6 @@ export default function Eb() {
     if (currentIssue?.issueNumber != null) setImportIssueNumber(String(currentIssue.issueNumber));
     if (currentIssue?.issueYear != null) setImportIssueYear(String(currentIssue.issueYear));
   }, [currentIssue]);
-
-  // Chapter review modal state
-  const [reviewChapter, setReviewChapter] = useState(null); // chapter object
-  const [reviewPageIndex, setReviewPageIndex] = useState(0);
 
   // ── Quản lý Series: tìm kiếm / lọc / sửa ──────────────────────────────────
   const [seriesMgmtSearch, setSeriesMgmtSearch] = useState("");
@@ -215,10 +203,6 @@ export default function Eb() {
   useEffect(() => {
     if (tab === "history") loadHistory();
   }, [tab]);
-
-  useEffect(() => {
-    if (tab === "chapters") loadEbChapters();
-  }, [tab, loadEbChapters]);
 
   useEffect(() => {
     if (tab === "series") loadAllSeries();
@@ -1169,147 +1153,6 @@ export default function Eb() {
             </div>
           )}
 
-          {tab === "chapters" && (
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BookOpen className="size-4 text-primary" />
-                    Duyệt chapter
-                  </CardTitle>
-                  <CardDescription>Chỉ hiển thị chapters của series đã có điểm EB và đạt threshold (≥5).</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {loadingEbChapters ? (
-                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                      <Loader2 className="size-4 animate-spin" />
-                      Đang tải...
-                    </div>
-                  ) : ebChapters.length === 0 ? (
-                    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-                      <BookOpen className="size-6 opacity-60" />
-                      <p>Không có chapter nào chờ duyệt.</p>
-                      <p className="text-xs">Hãy chấm điểm Series ở tab "Chấm điểm" trước.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {(() => {
-                        const grouped = {};
-                        ebChapters.forEach((chapter) => {
-                          const sid = String(chapter.seriesid ?? chapter.series_id ?? "");
-                          const seriesInfo = seriesMap[sid];
-                          const seriesName = seriesInfo?.title
-                            ?? seriesInfo?.series_title
-                            ?? seriesInfo?.SeriesTitle
-                            ?? chapter.seriesTitle
-                            ?? chapter.series_title
-                            ?? `Series #${sid}`;
-                          if (!grouped[sid]) {
-                            grouped[sid] = {
-                              seriesTitle: seriesName,
-                              seriesId: sid,
-                              seriesScore: seriesScores[sid] ?? null,
-                              chapters: [],
-                            };
-                          }
-                          grouped[sid].chapters.push(chapter);
-                        });
-                        Object.values(grouped).forEach(g => {
-                          g.chapters.sort((a, b) => (a.chapternumber ?? 0) - (b.chapternumber ?? 0));
-                        });
-                        return Object.values(grouped);
-                      })().map((group) => {
-                        const isPassing = group.seriesScore != null && isSeriesPassing(group.seriesScore);
-                        return (
-                          <div key={group.seriesId} className="rounded-lg border bg-card">
-                            <div className="flex items-center justify-between border-b px-4 py-3">
-                              <div>
-                                <p className="font-semibold">{group.seriesTitle}</p>
-                                <p className="text-xs text-muted-foreground">Series #{group.seriesId}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {group.seriesScore != null ? (
-                                  <Badge variant={isPassing ? "default" : "destructive"} className="text-sm">
-                                    ⭐ {group.seriesScore.toFixed(1)}/10
-                                    {isPassing ? " · Đạt" : " · Không đạt"}
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-sm">
-                                    ⏳ Chưa có điểm
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                            <div className="divide-y">
-                              {group.chapters.map((chapter) => {
-                                const chapterId = chapter.chapterid ?? chapter.id;
-                                const chapterNum = chapter.chapternumber ?? "?";
-                                const title = chapter.title ?? `Chapter ${chapterNum}`;
-                                const coverUrl = chapter.coverImageUrl ?? chapter.coverimageurl;
-                                const chStatus = String(chapter.status ?? "").toLowerCase();
-                                const isReady = chStatus === "ready";
-                                return (
-                                  <div key={chapterId} className="flex items-start gap-4 p-4">
-                                    {coverUrl && (
-                                      <img src={coverUrl} alt={title} className="h-16 w-12 rounded object-cover" />
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <p className="font-medium truncate">{title}</p>
-                                      <p className="text-xs text-muted-foreground">Chapter {chapterNum}</p>
-                                      <Badge variant="outline" className="mt-1 text-xs">{chapter.status}</Badge>
-                                      {!isReady && (
-                                        <p className="mt-1 text-xs text-amber-600">
-                                          Chưa sẵn sàng — chờ chuyển sang Ready mới duyệt được
-                                        </p>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-col gap-2">
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setReviewChapter(chapter);
-                                          setReviewPageIndex(0);
-                                        }}
-                                        className="gap-1"
-                                      >
-                                        <ImageIcon className="size-4" />
-                                        Xem
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        onClick={() => handleEbChapterApprove(chapterId, title, group.seriesId)}
-                                        disabled={!isReady}
-                                        title={!isReady ? "Chapter phải ở trạng thái Ready để duyệt" : undefined}
-                                        className="gap-1"
-                                      >
-                                        <CheckCircle2 className="size-4" />
-                                        Duyệt
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() => handleEbChapterReject(chapterId, title, group.seriesId)}
-                                        className="gap-1"
-                                      >
-                                        <XCircle className="size-4" />
-                                        Từ chối
-                                      </Button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
           {tab === "history" && (
             <div className="space-y-6">
               <Card>
@@ -1528,113 +1371,7 @@ export default function Eb() {
           if (ok) setEditingSeries(null);
         }}
       />
-
-      {/* Modal xem chi tiết chapter */}
-      <ChapterReviewModal
-        chapter={reviewChapter}
-        onClose={() => setReviewChapter(null)}
-        onApprove={handleEbChapterApprove}
-        onReject={handleEbChapterReject}
-      />
     </div>
-  );
-}
-
-// ── Chapter Review Modal ────────────────────────────────────────────────────
-function ChapterReviewModal({ chapter, onClose, onApprove, onReject }) {
-  const chapterId = chapter?.chapterid ?? chapter?.id;
-  const { data: pages = [], isLoading: pagesLoading } = usePages(chapterId);
-  const [pageIndex, setPageIndex] = useState(0);
-
-  if (!chapter) return null;
-
-  const chapterNum = chapter.chapternumber ?? "?";
-  const title = chapter.title ?? `Chapter ${chapterNum}`;
-  const seriesTitle = chapter.seriesTitle ?? chapter.series_title ?? "—";
-  const currentPage = pages[pageIndex];
-  const chapterSeriesId = chapter.seriesid ?? chapter.series_id;
-
-  return (
-    <Dialog open={!!chapter} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>{seriesTitle} — {title}</DialogTitle>
-          <DialogDescription>
-            Chapter {chapterNum} • {pages.length} trang
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto">
-          {chapter.tantouComment && (
-            <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3">
-              <p className="text-xs font-medium text-amber-800 mb-1">📝 Nhận xét của Tantou</p>
-              <p className="text-sm text-amber-900">{chapter.tantouComment}</p>
-            </div>
-          )}
-
-          {pagesLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : pages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-              <ImageIcon className="size-8 mb-2 opacity-50" />
-              <p>Không có trang nào.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-center gap-4">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={pageIndex === 0}
-                  onClick={() => setPageIndex(i => Math.max(0, i - 1))}
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  Trang {pageIndex + 1} / {pages.length}
-                </span>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={pageIndex >= pages.length - 1}
-                  onClick={() => setPageIndex(i => Math.min(pages.length - 1, i + 1))}
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-              {currentPage && (
-                <div className="flex justify-center">
-                  <img
-                    src={currentPage.pageimageurl ?? currentPage.page_image_url}
-                    alt={`Page ${pageIndex + 1}`}
-                    className="max-h-[60vh] max-w-full object-contain rounded border"
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-end gap-2 pt-4 border-t">
-          <Button variant="outline" onClick={onClose}>Đóng</Button>
-          <Button
-            variant="destructive"
-            onClick={() => { onReject(chapterId, title, chapterSeriesId); onClose(); }}
-          >
-            <XCircle className="size-4 mr-1" />
-            Từ chối
-          </Button>
-          <Button
-            onClick={() => { onApprove(chapterId, title, chapterSeriesId); onClose(); }}
-          >
-            <CheckCircle2 className="size-4 mr-1" />
-            Chấp nhận
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 
