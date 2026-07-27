@@ -671,7 +671,7 @@ export default function TantouEditor() {
                 Từ chối series
               </DialogTitle>
               <DialogDescription>
-                Nhập lý do từ chối để gửi cho Mangaka. Series sẽ chuyển sang trạng thái <b>Cancelled</b>.
+                Nhập lý do từ chối để gửi cho Mangaka. Series sẽ chuyển sang trạng thái <b>Draft</b>.
               </DialogDescription>
             </DialogHeader>
             <Textarea

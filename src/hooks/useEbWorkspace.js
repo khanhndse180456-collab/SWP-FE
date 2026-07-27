@@ -43,193 +43,196 @@ export function useEbWorkspace() {
   // ── Series scoring state (EB chấm điểm series trước khi duyệt chapter) ──────
   const [seriesScores, setSeriesScores] = useState({}); // { seriesId: councilAverage }
   const [seriesMap, setSeriesMap] = useState({}); // { seriesId: seriesObj } — để hiển thị tên series
-  const [ebChapters, setEbChapters] = useState([]); // Chapters chờ EB duyệt (sau khi series đạt)
+  const [ebChapters, setEbChapters] = useState([]); // Chapters chờ EB duyệt (sau khi Series đạt threshold)
   const [loadingEbChapters, setLoadingEbChapters] = useState(false);
 
   // ── Derived (đặt sớm để loadHistory dùng được) ────────────────────────────
   const scoreFields = useMemo(() => buildScoreFields(), []);
 
-// Lịch sử chấp nhận / từ chối — suy ra từ Series.Status (BE không có audit log,
-// DTO Update của BoardEvaluation cũng thiếu field FinalDecision).
-//
-// Quy ước:
-//   Status = "Publishing" → action = "approve"
-//   Status = "Cancelled"  → action = "reject"
-//   Status khác           → bỏ qua (chưa quyết)
-// Thời gian: ưu tiên Approvedat, fallback Createdat.
-const TERMINAL_STATUSES = new Set(["Publishing", "Cancelled"]);
-const ACTION_OF = new Map([
-  ["Publishing", "approve"],
-  ["Cancelled", "reject"],
-]);
+  // Lịch sử chấp nhận / từ chối — suy ra từ Series.Status (BE không có audit log,
+  // DTO Update của BoardEvaluation cũng thiếu field FinalDecision).
+  //
+  // Quy ước:
+  //   Status = "Publishing" → action = "approve"
+  //   Status = "Cancelled"  → action = "reject"
+  //   Status khác           → bỏ qua (chưa quyết)
+  // Thời gian: ưu tiên Approvedat, fallback Createdat.
+  const TERMINAL_STATUSES = new Set(["Publishing", "Cancelled"]);
+  const ACTION_OF = new Map([
+    ["Publishing", "approve"],
+    ["Cancelled", "reject"],
+  ]);
 
-const [history, setHistory] = useState([]);
-const [chapterHistory, setChapterHistory] = useState([]);
-const [loadingHistory, setLoadingHistory] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [chapterHistory, setChapterHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
-// Lịch sử thông báo đã gửi (do hệ thống tạo khi duyệt/từ chối/chấm điểm)
-const [notifications, setNotifications] = useState([]);
-const [loadingNotifications, setLoadingNotifications] = useState(false);
+  // Lịch sử thông báo đã gửi (do hệ thống tạo khi duyệt/từ chối/chấm điểm)
+  const [notifications, setNotifications] = useState([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
 
-// EB đang thao tác (từ session) — dùng để loại trừ khỏi danh sách thông báo
-const currentSession = getSession();
-const currentUserId = currentSession?.id ?? currentSession?.userid ?? currentSession?.userId ?? null;
+  // EB đang thao tác (từ session) — dùng để loại trừ khỏi danh sách thông báo
+  const currentSession = getSession();
+  const currentUserId = currentSession?.id ?? currentSession?.userid ?? currentSession?.userId ?? null;
 
-const loadHistory = useCallback(async () => {
-  setLoadingHistory(true);
-  try {
-    const [seriesRes, evalsRes, chapterRes] = await Promise.allSettled([
-      axiosClient.get("/Series"),
-      axiosClient.get("/BoardEvaluation"),
-      axiosClient.get("/Chapters"),
-    ]);
-    const raw = seriesRes.status === "fulfilled"
-      ? (seriesRes.value.data?.data ?? seriesRes.value.data ?? [])
-      : [];
-    const series = Array.isArray(raw) ? raw : [];
-    const evals = evalsRes.status === "fulfilled"
-      ? (Array.isArray(evalsRes.value.data?.data ?? evalsRes.value.data) ? (evalsRes.value.data?.data ?? evalsRes.value.data) : [])
-      : [];
+  const loadHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const [seriesRes, evalsRes, chapterRes] = await Promise.allSettled([
+        axiosClient.get("/Series"),
+        axiosClient.get("/BoardEvaluation"),
+        axiosClient.get("/Chapters"),
+      ]);
+      const raw = seriesRes.status === "fulfilled"
+        ? (seriesRes.value.data?.data ?? seriesRes.value.data ?? [])
+        : [];
+      const series = Array.isArray(raw) ? raw : [];
+      const evals = evalsRes.status === "fulfilled"
+        ? (Array.isArray(evalsRes.value.data?.data ?? evalsRes.value.data) ? (evalsRes.value.data?.data ?? evalsRes.value.data) : [])
+        : [];
 
-    // Load chapter history from API - filter client-side
-    const chapterRaw = chapterRes.status === "fulfilled"
-      ? (chapterRes.value.data?.data ?? chapterRes.value.data ?? [])
-      : [];
-    const allChapters = Array.isArray(chapterRaw) ? chapterRaw : [];
-    const publishedChapters = allChapters.filter(ch => {
-      const status = ch.status ?? ch.Status ?? "";
-      return status === "Published" || status === "RevisionRequested";
-    });
-    const chapterItems = publishedChapters.map(ch => ({
-      id: `ch-${ch.id || ch.chapterid}`,
-      action: ch.status === "RevisionRequested" ? "reject" : "approve",
-      type: "chapter",
-      chapterId: ch.id || ch.chapterid,
-      chapterTitle: ch.title ?? `Chapter ${ch.chapternumber ?? ch.chapter_number ?? ""}`,
-      seriesTitle: ch.seriesTitle ?? ch.series_title ?? "",
-      at: ch.updatedAt ?? ch.updated_at ?? ch.createdAt ?? ch.created_at ?? new Date().toISOString(),
-      by: ch.updatedBy ?? ch.updated_by ?? "EB",
-      status: ch.status,
-    }));
-    setChapterHistory(chapterItems);
-
-    // Group evals theo series để tính DTB HĐ — dùng helper chung với loadRanking
-    // để 2 tab Bảng xếp hạng + Lịch sử luôn hiển thị cùng một số.
-    const evalsBySeries = new Map();
-    for (const e of evals) {
-      const sid = String(e.seriesid ?? e.Seriesid ?? e.seriesId ?? "");
-      if (!sid) continue;
-      const arr = evalsBySeries.get(sid) ?? [];
-      arr.push(e);
-      evalsBySeries.set(sid, arr);
-    }
-
-    const items = series
-      .map((s, idx) => {
-        const status = s.status ?? s.Status ?? "";
-        if (!TERMINAL_STATUSES.has(status)) return null;
-        const sid = String(s.seriesid ?? s.Seriesid ?? s.seriesId ?? s.id ?? "");
-        const at = s.approvedAt ?? s.Approvedat ?? s.approvedat
-                ?? s.updatedAt ?? s.Updatedat ?? s.updatedat
-                ?? s.createdAt ?? s.Createdat ?? s.createdat
-                ?? null;
-        const format = s.publishformat ?? s.Publishformat ?? s.publishFormat ?? null;
-        const seriesEvals = evalsBySeries.get(sid) ?? [];
-        const { councilAverage, scoredCount } = computeCouncilAverageForSeries(seriesEvals, scoreFields);
-        return {
-          id: `${sid}-${status}`,
-          action: ACTION_OF.get(status),
-          seriesId: sid,
-          seriesTitle: s.title ?? s.Title ?? s.series_title ?? `Series #${sid}`,
-          at: at ? new Date(at).toISOString() : new Date(0).toISOString(),
-          by: scoredCount > 0 ? `${scoredCount} TV` : "EB", // BE không lưu actor; hiển thị số thành viên chấm
-          score: councilAverage,
-          format: format || null,
-          _sortKey: idx,
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => {
-        const ta = new Date(a.at).getTime();
-        const tb = new Date(b.at).getTime();
-        const aReal = ta > 0 ? ta : -a._sortKey;
-        const bReal = tb > 0 ? tb : -b._sortKey;
-        return bReal - aReal;
-      })
-      .map(({ _sortKey, ...rest }) => rest);
-
-    if (import.meta.env.DEV) {
-      const dist = series.reduce((m, s) => {
-        const v = s.status ?? s.Status ?? "(empty)";
-        m[v] = (m[v] ?? 0) + 1; return m;
-      }, {});
-      console.log("[history] series=", series.length, "items=", items.length,
-        "evals=", evals.length, "status-dist=", dist);
-      console.log("[history] chapters=", allChapters.length, "filtered=", chapterItems.length,
-        "chapter statuses sample:", allChapters.slice(0, 3).map(c => ({
-          status: c.status,
-          Status: c.Status,
-          title: c.title
-        })));
-    }
-    setHistory(items);
-  } catch (err) {
-    console.warn("[history] load failed", err);
-    setHistory([]);
-  } finally {
-    setLoadingHistory(false);
-  }
-}, [scoreFields]);
-
-// Load lịch sử thông báo của user hiện tại (EB) — /Notifications?userId=...
-const loadNotifications = useCallback(async () => {
-  setLoadingNotifications(true);
-  try {
-    const res = await axiosClient.get("/Notifications", {
-      params: currentUserId ? { userId: Number(currentUserId) } : undefined,
-    });
-    const raw = res.data;
-    const list = Array.isArray(raw) ? raw : (raw?.data ?? []);
-    // Chuẩn hoá về camelCase
-    const normalized = list
-      .map((n, idx) => ({
-        id: n.notification_id ?? n.notificationId ?? n.id ?? `n-${idx}`,
-        userId: n.user_id ?? n.userId ?? n.userid ?? null,
-        seriesId: n.series_id ?? n.seriesId ?? n.seriesid ?? null,
-        title: n.title ?? "(không tiêu đề)",
-        message: n.message ?? "",
-        createdAt: n.created_at ?? n.createdAt ?? n.createdat ?? n.created_at ?? null,
-        read: Boolean(n.read ?? n.is_read ?? n.isRead ?? false),
-      }))
-      .sort((a, b) => {
-        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return tb - ta;
+      // Load chapter history from API - filter client-side
+      const chapterRaw = chapterRes.status === "fulfilled"
+        ? (chapterRes.value.data?.data ?? chapterRes.value.data ?? [])
+        : [];
+      const allChapters = Array.isArray(chapterRaw) ? chapterRaw : [];
+      const publishedChapters = allChapters.filter(ch => {
+        const status = ch.status ?? ch.Status ?? "";
+        return status === "Published" || status === "RevisionRequested";
       });
-    setNotifications(normalized);
-  } catch (err) {
-    console.warn("[notifications] load failed", err);
-    setNotifications([]);
-  } finally {
-    setLoadingNotifications(false);
-  }
-}, [currentUserId]);
+      // FIX: thêm seriesId vào mỗi chapter item — trước đây thiếu field này nên
+      // logic gộp timeline ở Eb.jsx (group theo seriesId) luôn bỏ qua chapter events.
+      const chapterItems = publishedChapters.map(ch => ({
+        id: `ch-${ch.id || ch.chapterid}`,
+        action: ch.status === "RevisionRequested" ? "reject" : "approve",
+        type: "chapter",
+        chapterId: ch.id || ch.chapterid,
+        seriesId: String(ch.seriesid ?? ch.series_id ?? ch.SeriesId ?? ""),
+        chapterTitle: ch.title ?? `Chapter ${ch.chapternumber ?? ch.chapter_number ?? ""}`,
+        seriesTitle: ch.seriesTitle ?? ch.series_title ?? "",
+        at: ch.updatedAt ?? ch.updated_at ?? ch.createdAt ?? ch.created_at ?? new Date().toISOString(),
+        by: ch.updatedBy ?? ch.updated_by ?? "EB",
+        status: ch.status,
+      }));
+      setChapterHistory(chapterItems);
 
-// Xóa 1 notification khỏi lịch sử (gọi BE rồi remove khỏi state local để UI cập nhật ngay)
-const deleteNotification = useCallback(async (id) => {
-  if (!id) return;
-  const prev = notifications;
-  // Optimistic remove
-  setNotifications(prev.filter((n) => String(n.id) !== String(id)));
-  try {
-    await notificationsService.delete(id);
-    toast.success("Đã xóa thông báo");
-  } catch (err) {
-    // Rollback nếu BE lỗi
-    setNotifications(prev);
-    toast.error(getApiErrorMessage(err, "Không xóa được thông báo"));
-  }
-}, [notifications]);
+      // Group evals theo series để tính DTB HĐ — dùng helper chung với loadRanking
+      // để 2 tab Bảng xếp hạng + Lịch sử luôn hiển thị cùng một số.
+      const evalsBySeries = new Map();
+      for (const e of evals) {
+        const sid = String(e.seriesid ?? e.Seriesid ?? e.seriesId ?? "");
+        if (!sid) continue;
+        const arr = evalsBySeries.get(sid) ?? [];
+        arr.push(e);
+        evalsBySeries.set(sid, arr);
+      }
+
+      const items = series
+        .map((s, idx) => {
+          const status = s.status ?? s.Status ?? "";
+          if (!TERMINAL_STATUSES.has(status)) return null;
+          const sid = String(s.seriesid ?? s.Seriesid ?? s.seriesId ?? s.id ?? "");
+          const at = s.approvedAt ?? s.Approvedat ?? s.approvedat
+                  ?? s.updatedAt ?? s.Updatedat ?? s.updatedat
+                  ?? s.createdAt ?? s.Createdat ?? s.createdat
+                  ?? null;
+          const format = s.publishformat ?? s.Publishformat ?? s.publishFormat ?? null;
+          const seriesEvals = evalsBySeries.get(sid) ?? [];
+          const { councilAverage, scoredCount } = computeCouncilAverageForSeries(seriesEvals, scoreFields);
+          return {
+            id: `${sid}-${status}`,
+            action: ACTION_OF.get(status),
+            seriesId: sid,
+            seriesTitle: s.title ?? s.Title ?? s.series_title ?? `Series #${sid}`,
+            at: at ? new Date(at).toISOString() : new Date(0).toISOString(),
+            by: scoredCount > 0 ? `${scoredCount} TV` : "EB", // BE không lưu actor; hiển thị số thành viên chấm
+            score: councilAverage,
+            format: format || null,
+            _sortKey: idx,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const ta = new Date(a.at).getTime();
+          const tb = new Date(b.at).getTime();
+          const aReal = ta > 0 ? ta : -a._sortKey;
+          const bReal = tb > 0 ? tb : -b._sortKey;
+          return bReal - aReal;
+        })
+        .map(({ _sortKey, ...rest }) => rest);
+
+      if (import.meta.env.DEV) {
+        const dist = series.reduce((m, s) => {
+          const v = s.status ?? s.Status ?? "(empty)";
+          m[v] = (m[v] ?? 0) + 1; return m;
+        }, {});
+        console.log("[history] series=", series.length, "items=", items.length,
+          "evals=", evals.length, "status-dist=", dist);
+        console.log("[history] chapters=", allChapters.length, "filtered=", chapterItems.length,
+          "chapter statuses sample:", allChapters.slice(0, 3).map(c => ({
+            status: c.status,
+            Status: c.Status,
+            title: c.title
+          })));
+      }
+      setHistory(items);
+    } catch (err) {
+      console.warn("[history] load failed", err);
+      setHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [scoreFields]);
+
+  // Load lịch sử thông báo của user hiện tại (EB) — /Notifications?userId=...
+  const loadNotifications = useCallback(async () => {
+    setLoadingNotifications(true);
+    try {
+      const res = await axiosClient.get("/Notifications", {
+        params: currentUserId ? { userId: Number(currentUserId) } : undefined,
+      });
+      const raw = res.data;
+      const list = Array.isArray(raw) ? raw : (raw?.data ?? []);
+      // Chuẩn hoá về camelCase
+      const normalized = list
+        .map((n, idx) => ({
+          id: n.notification_id ?? n.notificationId ?? n.id ?? `n-${idx}`,
+          userId: n.user_id ?? n.userId ?? n.userid ?? null,
+          seriesId: n.series_id ?? n.seriesId ?? n.seriesid ?? null,
+          title: n.title ?? "(không tiêu đề)",
+          message: n.message ?? "",
+          createdAt: n.created_at ?? n.createdAt ?? n.createdat ?? n.created_at ?? null,
+          read: Boolean(n.read ?? n.is_read ?? n.isRead ?? false),
+        }))
+        .sort((a, b) => {
+          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return tb - ta;
+        });
+      setNotifications(normalized);
+    } catch (err) {
+      console.warn("[notifications] load failed", err);
+      setNotifications([]);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }, [currentUserId]);
+
+  // Xóa 1 notification khỏi lịch sử (gọi BE rồi remove khỏi state local để UI cập nhật ngay)
+  const deleteNotification = useCallback(async (id) => {
+    if (!id) return;
+    const prev = notifications;
+    // Optimistic remove
+    setNotifications(prev.filter((n) => String(n.id) !== String(id)));
+    try {
+      await notificationsService.delete(id);
+      toast.success("Đã xóa thông báo");
+    } catch (err) {
+      // Rollback nếu BE lỗi
+      setNotifications(prev);
+      toast.error(getApiErrorMessage(err, "Không xóa được thông báo"));
+    }
+  }, [notifications]);
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [selectedId, setSelectedId] = useState(null);
@@ -379,28 +382,19 @@ const deleteNotification = useCallback(async (id) => {
     setScoreErrors(buildInitialScores());
   }, [activeMemberId, members]);
 
-  // ── Derived (đã khai báo ở đầu hook để loadHistory dùng được) ──────────────
-// const scoreFields = useMemo(() => buildScoreFields(), []);
-
   // ── Ranking: điểm TB HĐ của tất cả series trong hàng chờ ──────────────────
-  // Phải đặt SAU `scoreFields` vì loadRanking đọc scoreFields để tính average.
   const [ranking, setRanking] = useState([]);
   const [loadingRanking, setLoadingRanking] = useState(false);
 
   const loadRanking = useCallback(async () => {
     setLoadingRanking(true);
     try {
-      // Lấy song song: hàng chờ (cùng nguồn /Series như loadQueue) + tất cả evaluations + tất cả evaluators
       const [queueRes, evalsRes, usersRes] = await Promise.allSettled([
         axiosClient.get("/Series"),
         axiosClient.get("/BoardEvaluation"),
         axiosClient.get("/users/evaluators"),
       ]);
 
-      // Pending list — ranking lấy trực tiếp từ /Series (KHÔNG lọc isEbStatus
-      // như queue) rồi chỉ giữ những series đã được chấp nhận (status = "Publishing").
-      // Sau khi "Chấp nhận", status rời khỏi nhóm EB_STATUSES → isEbStatus sẽ loại
-      // mất series đã duyệt, nên ta bỏ isEbStatus khỏi filter cho ranking.
       const queueRaw = queueRes.status === "fulfilled"
         ? (queueRes.value.data?.data ?? queueRes.value.data ?? [])
         : [];
@@ -412,7 +406,6 @@ const deleteNotification = useCallback(async (id) => {
         })
         .filter(s => normalizeStatus(s.status ?? s.Status) === "publishing");
 
-      // Map evaluator id → name (để hiển thị cột người chấm)
       const userListRaw = usersRes.status === "fulfilled"
         ? (usersRes.value.data?.data ?? usersRes.value.data ?? [])
         : [];
@@ -424,12 +417,9 @@ const deleteNotification = useCallback(async (id) => {
         if (uid) userMap.set(uid, { id: uid, name });
       }
 
-      // All evaluations
       const evalsRaw = evalsRes.status === "fulfilled" ? (evalsRes.value.data?.data ?? evalsRes.value.data ?? []) : [];
       const evalsAll = Array.isArray(evalsRaw) ? evalsRaw : [];
 
-      // Tính aggregate per series — dùng helper chung với tab Lịch sử
-      // để đảm bảo DTB hiển thị giống hệt nhau ở cả hai nơi.
       const rows = resolved.map((s) => {
         const sid = s._resolvedId;
         const seriesEvals = evalsAll.filter(e => {
@@ -467,8 +457,6 @@ const deleteNotification = useCallback(async (id) => {
         };
       });
 
-      // Sort: chỉ sort theo DTB HĐ giảm dần.
-      // Vì đã filter status=Publishing + có điểm, không cần nhánh "chưa đủ".
       const ranked = rows
         .filter(r => r.scoredCount > 0)
         .sort((a, b) => b.councilAverage - a.councilAverage);
@@ -482,7 +470,6 @@ const deleteNotification = useCallback(async (id) => {
   }, [scoreFields]);
 
   // ── Bảng xếp hạng theo kỳ phát hành (từ dữ liệu vừa import) ──────────────
-  // Nguồn: /weekly_rankings — khác với `ranking` (tính từ BoardEvaluation).
   const [issueRankings, setIssueRankings] = useState([]);
   const [loadingIssueRankings, setLoadingIssueRankings] = useState(false);
   const [currentIssue, setCurrentIssue] = useState(null); // { issueYear, issueNumber }
@@ -509,8 +496,6 @@ const deleteNotification = useCallback(async (id) => {
         .sort((a, b) => (a.rankPosition ?? 999) - (b.rankPosition ?? 999));
       setIssueRankings(normalized);
       setCurrentIssue({ issueYear, issueNumber });
-      // Nhớ lại kỳ vừa xem — để tự load lại đúng bảng này sau khi F5 trang,
-      // vì state của React sẽ mất khi component mount lại từ đầu.
       try {
         localStorage.setItem('eb_last_issue', JSON.stringify({ issueYear, issueNumber }));
       } catch { /* ignore storage errors (private mode, quota...) */ }
@@ -522,7 +507,6 @@ const deleteNotification = useCallback(async (id) => {
     }
   }, []);
 
-  // Khi mở lại trang/tab EB — tự động tải lại kỳ đã xem gần nhất (nếu có lưu)
   useEffect(() => {
     try {
       const saved = localStorage.getItem('eb_last_issue');
@@ -538,8 +522,6 @@ const deleteNotification = useCallback(async (id) => {
 
   const importRankings = useCallback(async (file, issueNumber, issueYear) => {
     if (!file) return
-    // FIX: backend yêu cầu đúng 3 field multipart: excelFile, issueNumber, issueYear
-    // (thiếu 2 field số → 400 "The value 'undefined' is not valid for IssueYear/IssueNumber")
     const formData = new FormData()
     formData.append('excelFile', file)
     formData.append('issueNumber', issueNumber)
@@ -549,9 +531,6 @@ const deleteNotification = useCallback(async (id) => {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       await loadRanking()
-      // Sau khi import, tải luôn bảng xếp hạng theo đúng kỳ vừa nhập
-      // (GET /Rankings/{issueYear}/{issueNumber}) — đây là dữ liệu vote/rank
-      // thật sự vừa được tính, khác với loadRanking() (dựa trên điểm Hội đồng).
       await loadRankingsByIssue(issueYear, issueNumber)
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'Không thể import xếp hạng.'
@@ -607,14 +586,12 @@ const deleteNotification = useCallback(async (id) => {
       return;
     }
 
-    // FIX: Kiểm tra member đã có evaluation chưa để POST hay PUT
     const activeMemberData = members.find(m => m.id === activeMemberId);
     const existingEvalId = activeMemberData?.evalDetail?.evaluationId;
 
     setSaving(true);
     try {
       if (existingEvalId) {
-        // PUT /BoardEvaluation/{id} — cập nhật evaluation đã có
         const res = await axiosClient.put(`/BoardEvaluation/${existingEvalId}`, {
           storyScore: clampScore(scores.plotDialogue),
           artScore: clampScore(scores.artDesign),
@@ -625,7 +602,6 @@ const deleteNotification = useCallback(async (id) => {
         });
         console.log('[handleSaveAssessment] PUT response:', res.data);
       } else {
-        // POST /BoardEvaluation — tạo evaluation mới
         const res = await axiosClient.post("/BoardEvaluation", {
           seriesid: Number(selectedId),
           inputtedbyid: Number(activeMemberId),
@@ -639,23 +615,17 @@ const deleteNotification = useCallback(async (id) => {
         console.log('[handleSaveAssessment] POST response:', res.data);
       }
 
-      // Reload để cập nhật bảng điểm
       await loadEvaluatorsStatus(selectedId);
       toast.success(
         `Đã lưu điểm ${activeMember?.name ?? "thành viên"} · DTB cá nhân ${average.toFixed(1)}`
       );
     } catch (err) {
       console.error('[handleSaveAssessment] Error:', err?.response?.data ?? err);
-      // axiosClient interceptor đã toast lỗi
     } finally {
       setSaving(false);
     }
   }
 
-  // assessment chỉ thực sự chính xác cho series đang được chọn (selectedId),
-  // vì members/councilAggregate được load theo selectedId. Series khác trong
-  // list trả về scoredCount=0 → nút Approve/Reject sẽ bị disable cho tới khi
-  // được click chọn (đúng ý: bắt buộc chọn + xem bảng điểm trước khi duyệt).
   function getQueueAssessment(seriesId) {
     if (String(seriesId) !== String(selectedId)) {
       return { scoredCount: 0, total: REQUIRED_COUNCIL_MEMBERS, classification: null, councilAverage: 0, isSelected: false };
@@ -689,26 +659,14 @@ const deleteNotification = useCallback(async (id) => {
       return;
     }
 
-    // Đồng bộ UX với "Duyệt chapter" của Tantou: không bật dialog phụ, chấp
-    // nhận thẳng với định dạng mặc định "Monthly". Có thể đổi sau tại tab Lịch sử.
     await doApprove(seriesId, title, "Monthly");
   }
 
   async function doApprove(seriesId, title, format) {
     try {
-      // 1. Cập nhật định dạng phát hành (Monthly / Weekly)
       await axiosClient.patch(`/Series/${seriesId}/publish-format`, { publishformat: format });
-
-      // 2. Cập nhật status sang "Publishing" — ĐÂY LÀ FIX QUAN TRỌNG:
-      //    CHECK constraint của bảng [series] trong DB CHỈ cho phép các giá trị:
-      //    'Draft' | 'EditorReview' | 'EBReview' | 'Publishing' | 'Completed' | 'Cancelled'
-      //    → "EB_Scored" / "EBScored" KHÔNG tồn tại trong enum này, luôn bị SQL
-      //    reject với lỗi 400 "Trạng thái không hợp lệ". "Publishing" là giá trị
-      //    đúng cho hành động "Chấp nhận" (khớp với TERMINAL_STATUSES/ACTION_OF
-      //    ở trên và filter status=publishing trong loadRanking()).
       await axiosClient.patch(`/Series/${seriesId}/status`, { status: "Publishing" });
 
-      // Lưu series score vào state để UI chapters hiển thị
       const assessment = getQueueAssessment(seriesId);
       if (assessment?.councilAverage != null) {
         setSeriesScores(prev => ({ ...prev, [seriesId]: assessment.councilAverage }));
@@ -717,16 +675,14 @@ const deleteNotification = useCallback(async (id) => {
       const councilAvg = councilAggregate.councilAverage.toFixed(1);
 
       toast.success(`Đã chấm điểm "${title}" — đạt yêu cầu (${councilAvg}/10).`);
-      // Reload history từ API (đã có FinalDecision = Approve trong DB).
       loadHistory();
-      loadEbChapters(); // Refresh danh sách chapters
+      loadEbChapters();
       setSelectedId(null);
       loadedRef.current = false;
       loadQueue();
     } catch { /* interceptor toast */ }
   }
 
-  // ── Đổi định dạng phát hành (gọi từ bảng Lịch sử) ────────────────────────
   function openChangeFormatDialog(item) {
     setEditFormatDialog({
       seriesId: item.seriesId,
@@ -778,11 +734,7 @@ const deleteNotification = useCallback(async (id) => {
     try {
       await axiosClient.patch(`/Series/${seriesId}/status`, { status: "Cancelled" });
 
-      const councilAvg = councilAggregate.councilAverage.toFixed(1);
-
       toast.success(`Đã từ chối "${title}" — trả về Mangaka.`);
-      // Series đã bị Cancelled — lịch sử Approve/Reject vẫn do BoardEvaluation quyết định,
-      // nên reload từ API.
       loadHistory();
       setSelectedId(null);
       loadedRef.current = false;
@@ -794,8 +746,6 @@ const deleteNotification = useCallback(async (id) => {
   const loadEbChapters = useCallback(async () => {
     setLoadingEbChapters(true);
     try {
-      // Lấy tất cả chapters (sẽ filter theo series status trong FE)
-      // Hoặc dùng status = "Ready" nếu backend phân biệt rõ
       const [chaptersRes, seriesRes, evalsRes] = await Promise.allSettled([
         axiosClient.get("/Chapters"),
         axiosClient.get("/Series"),
@@ -812,7 +762,6 @@ const deleteNotification = useCallback(async (id) => {
         ? (evalsRes.value.data?.data ?? evalsRes.value.data ?? [])
         : [];
 
-      // Build series map với status (lowercase seriesid + fallback)
       const seriesLookup = {};
       for (const s of seriesRaw) {
         const sid = String(s.seriesid ?? s.series_id ?? s.Seriesid ?? s.id ?? "");
@@ -820,10 +769,8 @@ const deleteNotification = useCallback(async (id) => {
       }
       setSeriesMap(seriesLookup);
 
-      // Build series score map từ evaluations
       const scoresMap = {};
       for (const s of seriesRaw) {
-        // Field id của Series là `seriesid` (lowercase)
         const sid = String(s.seriesid ?? s.series_id ?? s.Seriesid ?? s.id ?? "");
         const seriesEvals = evalsRaw.filter(e => {
           const evalSid = String(e.seriesid ?? e.Seriesid ?? e.series_id ?? "");
@@ -833,16 +780,12 @@ const deleteNotification = useCallback(async (id) => {
         if (councilAverage != null) {
           scoresMap[sid] = councilAverage;
         }
-        // Nếu series có ebScore từ BE, dùng luôn
         if (s.ebScore != null || s.eb_score != null) {
           scoresMap[sid] = s.ebScore ?? s.eb_score;
         }
       }
       setSeriesScores(scoresMap);
 
-      // Filter: lấy chapters của series đã có điểm + đạt threshold,
-      // status phải là "Ready" hoặc "InProduction" (để EB thấy được
-      // các chapter đang chờ - chỉ Duyệt được khi status = "Ready")
       const chapters = chaptersRaw.filter(ch => {
         const sid = String(ch.seriesid ?? ch.series_id ?? ch.SeriesId ?? "");
         const score = scoresMap[sid];
@@ -870,16 +813,18 @@ const deleteNotification = useCallback(async (id) => {
     loadEbChapters();
   }, [loadEbChapters]);
 
-  async function handleEbChapterApprove(chapterId, chapterTitle) {
+  // FIX: nhận thêm `seriesId` để history item có đủ field, khớp với logic
+  // group-theo-seriesId trong Eb.jsx tab "Lịch sử".
+  async function handleEbChapterApprove(chapterId, chapterTitle, seriesId) {
     try {
       await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Published');
       toast.success(`Đã duyệt chapter — published.`);
-      // Add to local chapter history
       setChapterHistory(prev => [{
         id: `ch-${chapterId}-${Date.now()}`,
         action: "approve",
         type: "chapter",
         chapterId,
+        seriesId: seriesId != null ? String(seriesId) : "",
         chapterTitle,
         at: new Date().toISOString(),
         by: currentSession?.username ?? "EB",
@@ -888,32 +833,39 @@ const deleteNotification = useCallback(async (id) => {
     } catch { /* interceptor toast */ }
   }
 
-  async function handleEbChapterReject(chapterId, chapterTitle) {
-    const confirmed = await new Promise((resolve) => {
-      setConfirmDialog({
-        message: `Từ chối chapter "${chapterTitle}"?`,
-        onConfirm: () => { setConfirmDialog(null); resolve(true); },
-        onCancel: () => { setConfirmDialog(null); resolve(false); },
-        danger: true,
-      });
+async function handleEbChapterReject(chapterId, chapterTitle, seriesId) {
+  const confirmed = await new Promise((resolve) => {
+    setConfirmDialog({
+      message: `Từ chối chapter "${chapterTitle}"? Chapter sẽ được trả về trạng thái "InProduction" để chỉnh sửa lại.`,
+      onConfirm: () => { setConfirmDialog(null); resolve(true); },
+      onCancel: () => { setConfirmDialog(null); resolve(false); },
+      danger: true,
     });
-    if (!confirmed) return;
-    try {
-      await axiosClient.patch(`/Chapters/${chapterId}/status`, 'RevisionRequested');
-      toast.success(`Đã từ chối chapter.`);
-      // Add to local chapter history
-      setChapterHistory(prev => [{
-        id: `ch-${chapterId}-${Date.now()}`,
-        action: "reject",
-        type: "chapter",
-        chapterId,
-        chapterTitle,
-        at: new Date().toISOString(),
-        by: currentSession?.username ?? "EB",
-      }, ...prev]);
-      loadEbChapters();
-    } catch { /* interceptor toast */ }
+  });
+  if (!confirmed) return;
+  try {
+    // FIX: Backend không có trạng thái "RevisionRequested" trong _validTransitions
+    // (ChapterService.cs) — từ "Ready" chỉ được đi tới Published/InProduction/
+    // Delayed/Cancelled. Dùng "InProduction" để trả chapter về sản xuất/chỉnh sửa.
+    await axiosClient.patch(`/Chapters/${chapterId}/status`, 'InProduction');
+    toast.success(`Đã từ chối chapter — trả về sản xuất.`);
+    setChapterHistory(prev => [{
+      id: `ch-${chapterId}-${Date.now()}`,
+      action: "reject",
+      type: "chapter",
+      chapterId,
+      seriesId: seriesId != null ? String(seriesId) : "",
+      chapterTitle,
+      at: new Date().toISOString(),
+      by: currentSession?.username ?? "EB",
+    }, ...prev]);
+    loadEbChapters();
+  } catch (err) {
+    const msg = err?.response?.data?.message ?? "Từ chối chapter thất bại.";
+    console.error('[handleEbChapterReject] Error:', err?.response?.data ?? err);
+    toast.error(msg);
   }
+}
 
   return {
     // server state
@@ -925,6 +877,7 @@ const deleteNotification = useCallback(async (id) => {
     confirmDialog,
     // history (hành động duyệt)
     history,
+    chapterHistory,
     loadingHistory,
     loadHistory,
     // notifications (lịch sử thông báo)

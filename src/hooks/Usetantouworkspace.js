@@ -318,18 +318,24 @@ export function useTantouWorkspace() {
       return false
     }
     try {
+      // Tantou từ chối = trả về Draft để Mangaka sửa lại và gửi lại (KHÁC với
+      // EB từ chối = Cancelled, là quyết định cuối cùng không thể quay lại).
+      // Yêu cầu: backend đã thêm "EditorReview -> Draft" vào _validTransitions
+      // trong SeriesService.cs.
       // NOTE: Bảng Series hiện KHÔNG có cột rejectReason — chỉ gửi status.
       // TODO: Sau khi BE thêm cột rejectReason, gửi kèm để lưu lý do.
       await axiosClient.patch(`/Series/${seriesId}/status`, {
-        status: 'Cancelled',
+        status: 'Draft',
       })
-      toast.success('Đã từ chối series.')
+      toast.success('Đã từ chối series, trả về Mangaka để chỉnh sửa.')
       setSelectedSeriesId(null)
       await loadSeries()
       await queryClient.invalidateQueries({ queryKey: ['chapters'] })
       await queryClient.invalidateQueries({ queryKey: ['series'] })
       return true
-    } catch { return false }
+    } catch {
+      return false
+    }
   }
 
   // ── Chapter actions (Studio) ───────────────────────────────────────────────
@@ -343,11 +349,11 @@ export function useTantouWorkspace() {
   }
 
   async function handleChapterRequestRevision(chapterId, comment) {
-    // Bỏ validation ghi chú — nhận xét nằm trong các box trên ảnh (đã gửi riêng khi tạo)
     try {
-      await axiosClient.patch(`/Chapters/${chapterId}/request-revision`, { Comment: comment || '' })
+      await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Delayed')
       toast.success('Đã gửi yêu cầu sửa cho Mangaka.')
       await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
+      await queryClient.invalidateQueries({ queryKey: ['chapters'] })
     } catch { /* interceptor toast */ }
   }
 

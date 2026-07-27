@@ -105,7 +105,6 @@ export default function Eb() {
   const seriesDetailMerged = useMemo(() => {
     if (!activeSubmission) return null;
     if (!seriesDetail) return activeSubmission;
-    // Debug: log raw detail + chi tiết tất cả keys để biết BE có trả field comment nào
     if (selectedId) {
       // eslint-disable-next-line no-console
       console.log('[EB] GET /Series/' + selectedId + ' →', seriesDetail);
@@ -124,13 +123,9 @@ export default function Eb() {
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef(null);
 
-  // Import xếp hạng — issueNumber (1-53) + issueYear bắt buộc theo API
-  // POST /Rankings/import (multipart/form-data: excelFile, issueNumber, issueYear)
   const [importIssueNumber, setImportIssueNumber] = useState("");
   const [importIssueYear, setImportIssueYear] = useState(String(new Date().getFullYear()));
 
-  // Đồng bộ 2 ô input Kỳ/Năm theo kỳ đang hiển thị (kể cả khi được tự khôi
-  // phục từ localStorage sau khi F5 trang) — tránh lệch giữa input và bảng.
   useEffect(() => {
     if (currentIssue?.issueNumber != null) setImportIssueNumber(String(currentIssue.issueNumber));
     if (currentIssue?.issueYear != null) setImportIssueYear(String(currentIssue.issueYear));
@@ -184,12 +179,10 @@ export default function Eb() {
     }
   };
 
-  // Mở tab "history" → gọi API lấy lịch sử chấp nhận / từ chối.
   useEffect(() => {
     if (tab === "history") loadHistory();
   }, [tab]);
 
-  // Mở tab "chapters" → load chapters từ Tantou
   useEffect(() => {
     if (tab === "chapters") loadEbChapters();
   }, [tab, loadEbChapters]);
@@ -354,7 +347,6 @@ export default function Eb() {
                   <CardDescription>Chọn series trong hàng chờ, chọn thành viên, nhập điểm rồi Lưu.</CardDescription>
                 </CardHeader>
             <CardContent className="space-y-6">
-              {/* Nhận xét từ Tantou (kèm lịch sử nếu có nhiều lần) */}
               {(() => {
                 const source = seriesDetailMerged ?? activeSubmission;
                 const last =
@@ -396,13 +388,11 @@ export default function Eb() {
                 );
               })()}
 
-              {/* Banner đại diện */}
               <div className="eb-rep-banner rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
                 <p className="font-medium text-foreground">Tài khoản đại diện: <span className="text-primary">{user?.name ?? "Thư ký Hội đồng"}</span></p>
                 <p className="mt-1 text-xs text-muted-foreground">Chọn thành viên HĐ, nhập điểm thay họ, rồi lưu — có thể lần lượt nhập cho từng người trong cùng series.</p>
               </div>
 
-              {/* Series */}
               <div className="space-y-2">
                 <Label>Series đang chấm</Label>
                 {loadingQueue
@@ -431,7 +421,6 @@ export default function Eb() {
                   )}
               </div>
 
-              {/* Thành viên */}
               <div className="space-y-2">
                 <Label>Thành viên đang nhập điểm</Label>
                 {loadingMembers
@@ -479,7 +468,6 @@ export default function Eb() {
                 )}
               </div>
 
-              {/* Bảng điểm HĐ */}
               <div className="space-y-3">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Điểm các thành viên Hội đồng</h3>
@@ -501,7 +489,6 @@ export default function Eb() {
                   )}
               </div>
 
-              {/* Score fields */}
               <div className="grid gap-4 md:grid-cols-2">
                 {scoreFields.map((field, idx) => {
                   const isLastOdd = idx === scoreFields.length - 1 && scoreFields.length % 2 === 1;
@@ -519,7 +506,6 @@ export default function Eb() {
                 })}
               </div>
 
-              {/* Nhận xét chung */}
               <div className="space-y-2">
                 <Label htmlFor="feedback">Nhận xét chung cho series</Label>
                 <Textarea
@@ -531,7 +517,6 @@ export default function Eb() {
                 />
               </div>
 
-              {/* DTB tổng hợp */}
               <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
                 <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">DTB Hội đồng (tổng hợp)</p>
                 <div className="flex items-end justify-between gap-3">
@@ -547,7 +532,6 @@ export default function Eb() {
                 <ThresholdTable />
               </div>
 
-              {/* Sticky save bar */}
               <div className="sticky bottom-4 z-10">
                 <div className="flex items-center gap-3 rounded-xl border bg-background/95 px-4 py-3 shadow-md backdrop-blur">
                   <div className="flex-1 min-w-0">
@@ -681,7 +665,6 @@ export default function Eb() {
                   )}
                   {!loadingRanking && (
                     <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
-                      {/* Issue Number + Issue Year — bắt buộc theo API POST /Rankings/import */}
                       <div className="flex items-center gap-1.5">
                         <Label htmlFor="import-issue-number" className="text-xs text-muted-foreground whitespace-nowrap">
                           Kỳ (1-53)
@@ -729,9 +712,6 @@ export default function Eb() {
                 </CardContent>
               </Card>
 
-              {/* Bảng xếp hạng theo kỳ phát hành — dữ liệu vote thật vừa import,
-                  khác với bảng phía trên (tính từ điểm Hội đồng). Nguồn:
-                  GET /Rankings/{issueYear}/{issueNumber}. */}
               <Card>
                 <CardHeader className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
@@ -838,11 +818,6 @@ export default function Eb() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/*
-                    Dùng lại đúng cách fit đã sửa ở khối "Ảnh series từ Tantou":
-                    object-contain (không crop) + w-fit/mx-auto (khung ôm sát đúng
-                    kích thước ảnh, không dư khoảng trắng 2 bên).
-                  */}
                   <div className="mx-auto flex max-h-[70vh] w-fit items-center justify-center overflow-hidden rounded-2xl border bg-muted/30">
                     <img
                       src={activeSeriesImage}
@@ -884,7 +859,6 @@ export default function Eb() {
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      {/* Group chapters by series */}
                       {(() => {
                         const grouped = {};
                         ebChapters.forEach((chapter) => {
@@ -906,7 +880,6 @@ export default function Eb() {
                           }
                           grouped[sid].chapters.push(chapter);
                         });
-                        // Sort chapters within each group by chapter number
                         Object.values(grouped).forEach(g => {
                           g.chapters.sort((a, b) => (a.chapternumber ?? 0) - (b.chapternumber ?? 0));
                         });
@@ -915,7 +888,6 @@ export default function Eb() {
                         const isPassing = group.seriesScore != null && isSeriesPassing(group.seriesScore);
                         return (
                           <div key={group.seriesId} className="rounded-lg border bg-card">
-                            {/* Series header */}
                             <div className="flex items-center justify-between border-b px-4 py-3">
                               <div>
                                 <p className="font-semibold">{group.seriesTitle}</p>
@@ -934,7 +906,6 @@ export default function Eb() {
                                 )}
                               </div>
                             </div>
-                            {/* Chapters list */}
                             <div className="divide-y">
                               {group.chapters.map((chapter) => {
                                 const chapterId = chapter.chapterid ?? chapter.id;
@@ -973,7 +944,7 @@ export default function Eb() {
                                       </Button>
                                       <Button
                                         size="sm"
-                                        onClick={() => handleEbChapterApprove(chapterId, title)}
+                                        onClick={() => handleEbChapterApprove(chapterId, title, group.seriesId)}
                                         disabled={!isReady}
                                         title={!isReady ? "Chapter phải ở trạng thái Ready để duyệt" : undefined}
                                         className="gap-1"
@@ -984,7 +955,7 @@ export default function Eb() {
                                       <Button
                                         size="sm"
                                         variant="destructive"
-                                        onClick={() => handleEbChapterReject(chapterId, title)}
+                                        onClick={() => handleEbChapterReject(chapterId, title, group.seriesId)}
                                         className="gap-1"
                                       >
                                         <XCircle className="size-4" />
@@ -1003,12 +974,9 @@ export default function Eb() {
                 </CardContent>
               </Card>
 
-              {/* Series chưa có điểm - hiện cảnh báo */}
               {(() => {
-                // Lấy tất cả series có chapters Ready nhưng chưa có điểm
                 const unscoredSeries = {};
-                // Đây là mockup - thực tế cần lấy từ API
-                return null; // Tạm thời ẩn phần này
+                return null;
               })()}
             </div>
           )}
@@ -1021,7 +989,7 @@ export default function Eb() {
                     <History className="size-4 text-primary" />
                     Lịch sử hoạt động
                   </CardTitle>
-                  <CardDescription>Timeline hợp nhất: điểm Series + quyết định Chapter.</CardDescription>
+                  <CardDescription>Timeline hợp nhất: điểm Series + quyết định Chapter — chỉ hiển thị series mà Hội đồng đã ra quyết định (Chấp nhận/Từ chối).</CardDescription>
                 </CardHeader>
                 <CardContent>
                   {loadingHistory ? (
@@ -1029,22 +997,22 @@ export default function Eb() {
                       <Loader2 className="size-4 animate-spin" />
                       Đang tải...
                     </div>
-                  ) : history.length === 0 && chapterHistory.length === 0 ? (
+                  ) : history.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
                       <History className="size-6 opacity-60" />
                       <p>Chưa có hoạt động nào.</p>
                     </div>
                   ) : (
                     <div className="space-y-8">
-                      {/* Hợp nhất series events + chapter events */}
                       {(() => {
-                        // Map series events với series score
                         const seriesMap = new Map();
                         const lookupTitle = (sid) => {
                           const s = seriesMap?.[sid];
                           return s?.title ?? s?.series_title ?? s?.seriesTitle ?? `Series #${sid}`;
                         };
-                        // Add series events
+                        // Add series events — đây là nguồn DUY NHẤT quyết định series nào
+                        // được hiển thị. Chỉ series đã có quyết định EB (Publishing/Cancelled)
+                        // mới xuất hiện trong Lịch sử.
                         history.forEach(item => {
                           const sid = String(item.seriesId);
                           if (!seriesMap.has(sid)) {
@@ -1061,11 +1029,16 @@ export default function Eb() {
                             }
                           }
                         });
-                        // Add chapter events — gộp thành 1 dòng tóm tắt duy nhất
-                        const chapterByAction = new Map(); // sid → { approve: Set, reject: Set }
+                        // Add chapter events — gộp thành 1 dòng tóm tắt duy nhất.
+                        // FIX: chỉ gộp chapter event cho series đã có trong seriesMap
+                        // (tức đã được EB chấm điểm/duyệt). Series chưa có quyết định EB
+                        // không được tạo entry mới ở đây, dù có chapter Published/Rejected
+                        // từ nguồn khác.
+                        const chapterByAction = new Map(); // sid → { approve: [], reject: [], latestAt: null }
                         chapterHistory.forEach(item => {
                           const sid = String(item.seriesId ?? item.series_id ?? "");
                           if (!sid) return;
+                          if (!seriesMap.has(sid)) return; // series chưa được EB chấm điểm → bỏ qua
                           if (!chapterByAction.has(sid)) {
                             chapterByAction.set(sid, { approve: [], reject: [], latestAt: null });
                           }
@@ -1081,14 +1054,6 @@ export default function Eb() {
                           }
                         });
                         chapterByAction.forEach((agg, sid) => {
-                          if (!seriesMap.has(sid)) {
-                            seriesMap.set(sid, {
-                              seriesId: sid,
-                              seriesTitle: lookupTitle(sid),
-                              seriesScore: seriesScores[sid] ?? null,
-                              events: [],
-                            });
-                          }
                           const total = agg.approve.length + agg.reject.length;
                           const parts = [];
                           if (agg.approve.length > 0) parts.push(`${agg.approve.length} đã duyệt`);
@@ -1116,7 +1081,6 @@ export default function Eb() {
                         const isPassing = group.seriesScore != null && isSeriesPassing(group.seriesScore);
                         return (
                           <div key={group.seriesId} className="rounded-lg border bg-card">
-                            {/* Series header */}
                             <div className="flex items-center justify-between border-b px-4 py-3">
                               <div>
                                 <p className="font-semibold">{group.seriesTitle}</p>
@@ -1133,7 +1097,6 @@ export default function Eb() {
                                 )}
                               </div>
                             </div>
-                            {/* Events timeline */}
                             <div className="divide-y">
                               {group.events.length === 0 ? (
                                 <div className="p-4 text-sm text-muted-foreground text-center">Chưa có hoạt động</div>
@@ -1147,7 +1110,6 @@ export default function Eb() {
                                   const isChapter = event.type === "chapter";
                                   const isChapterSummary = event.type === "chapter-summary";
                                   const isApprove = event.action === "approve";
-                                  // chapter-summary dùng icon xanh (đã hoàn tất)
                                   const iconBg = isChapterSummary
                                     ? "bg-emerald-100 text-emerald-600"
                                     : isChapter
@@ -1246,6 +1208,7 @@ function ChapterReviewModal({ chapter, onClose, onApprove, onReject }) {
   const title = chapter.title ?? `Chapter ${chapterNum}`;
   const seriesTitle = chapter.seriesTitle ?? chapter.series_title ?? "—";
   const currentPage = pages[pageIndex];
+  const chapterSeriesId = chapter.seriesid ?? chapter.series_id;
 
   return (
     <Dialog open={!!chapter} onOpenChange={(open) => !open && onClose()}>
@@ -1258,7 +1221,6 @@ function ChapterReviewModal({ chapter, onClose, onApprove, onReject }) {
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto">
-          {/* Nhận xét của Tantou */}
           {chapter.tantouComment && (
             <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3">
               <p className="text-xs font-medium text-amber-800 mb-1">📝 Nhận xét của Tantou</p>
@@ -1315,13 +1277,13 @@ function ChapterReviewModal({ chapter, onClose, onApprove, onReject }) {
           <Button variant="outline" onClick={onClose}>Đóng</Button>
           <Button
             variant="destructive"
-            onClick={() => { onReject(chapterId, title); onClose(); }}
+            onClick={() => { onReject(chapterId, title, chapterSeriesId); onClose(); }}
           >
             <XCircle className="size-4 mr-1" />
             Từ chối
           </Button>
           <Button
-            onClick={() => { onApprove(chapterId, title); onClose(); }}
+            onClick={() => { onApprove(chapterId, title, chapterSeriesId); onClose(); }}
           >
             <CheckCircle2 className="size-4 mr-1" />
             Chấp nhận
