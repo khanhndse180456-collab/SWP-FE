@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon, Trophy, History, Pencil, Upload, ChevronLeft, ChevronRight } from "lucide-react";
+import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon, Trophy, History, Pencil, Upload, ChevronLeft, ChevronRight, Library, RefreshCcw } from "lucide-react";
 import SidebarNav from "@/components/layout/SidebarNav.jsx";
 import WorkspaceTopBar from "@/components/layout/WorkspaceTopBar.jsx";
 import { Button } from "@/components/ui/button";
@@ -39,10 +39,27 @@ import "./Eb.css";
 const SIDEBAR_ITEMS = [
   { id: 'queue',    label: 'Chấm điểm',    icon: Gavel },
   { id: 'chapters', label: 'Duyệt chapter', icon: BookOpen },
+  { id: 'series',   label: 'Quản lý Series', icon: Library },
   { id: 'ranking',  label: 'Xếp hạng',     icon: Trophy },
   { id: 'rubric',   label: 'Quy chế chấm', icon: ClipboardList },
   { id: 'image',    label: 'Xem ảnh',      icon: ImageIcon },
   { id: 'history',  label: 'Lịch sử',      icon: History },
+];
+
+// Định dạng phát hành hợp lệ (dùng chung cho dialog đổi định dạng & quản lý series)
+const FORMAT_OPTIONS = [
+  { value: "Weekly",  label: "📆 Theo tuần (Weekly)",   hint: "1 chapter / tuần" },
+  { value: "Monthly", label: "📅 Theo tháng (Monthly)", hint: "1 chapter / tháng" },
+];
+
+// Nhóm trạng thái dùng cho các Tab lọc ở tab "Quản lý Series". `statuses: null`
+// nghĩa là nhóm "Tất cả" — không lọc theo trạng thái, dùng chung với dropdown lọc
+// chi tiết bên cạnh.
+const SERIES_GROUPS = [
+  { id: "pending",     label: "Chờ duyệt",     statuses: ["Draft", "EditorReview", "EBReview", "PendingReview"] },
+  { id: "publishing",  label: "Chờ xuất bản",  statuses: ["Publishing"] },
+  { id: "completed",   label: "Đã hoàn tất",   statuses: ["Completed"] },
+  { id: "all",         label: "Tất cả",        statuses: null },
 ];
 
 export default function Eb() {
@@ -73,7 +90,8 @@ export default function Eb() {
     updateScore,
     normalizeScoreField,
     handleSaveAssessment,
-    handleApprove,
+    requestApprove,
+    approveFormatDialog,
     handleReject,
     getQueueAssessment,
     ranking,
@@ -97,6 +115,15 @@ export default function Eb() {
     loadHistory,
     openChangeFormatDialog,
     editFormatDialog,
+    // quản lý series
+    allSeries,
+    loadingAllSeries,
+    loadAllSeries,
+    savingSeriesEdit,
+    updateSeriesInfo,
+    updateSeriesStatus,
+    updateSeriesFormat,
+    handleMarkCompleted,
   } = useEbWorkspace();
 
   // Lấy chi tiết series (BE có thể trả thêm field tantouComment ở GET /Series/:id
@@ -134,6 +161,12 @@ export default function Eb() {
   // Chapter review modal state
   const [reviewChapter, setReviewChapter] = useState(null); // chapter object
   const [reviewPageIndex, setReviewPageIndex] = useState(0);
+
+  // ── Quản lý Series: tìm kiếm / lọc / sửa ──────────────────────────────────
+  const [seriesMgmtSearch, setSeriesMgmtSearch] = useState("");
+  const [seriesStatusFilter, setSeriesStatusFilter] = useState("all");
+  const [seriesGroupTab, setSeriesGroupTab] = useState("pending");
+  const [editingSeries, setEditingSeries] = useState(null); // series object đang sửa
 
   const handleImportClick = () => {
     const issueNumber = Number(importIssueNumber);
@@ -187,6 +220,10 @@ export default function Eb() {
     if (tab === "chapters") loadEbChapters();
   }, [tab, loadEbChapters]);
 
+  useEffect(() => {
+    if (tab === "series") loadAllSeries();
+  }, [tab, loadAllSeries]);
+
   const filteredPending = useMemo(() => {
     const q = queueSearch.trim().toLowerCase();
     if (!q) return pending;
@@ -196,6 +233,73 @@ export default function Eb() {
       return title.includes(q) || synopsis.includes(q);
     });
   }, [pending, queueSearch]);
+
+  // Danh sách trạng thái xuất hiện trong dữ liệu thực tế + các trạng thái quyết
+  // định thủ công phổ biến (Publishing / Cancelled / Completed) để luôn có sẵn
+  // trong bộ lọc.
+  const seriesStatusOptions = useMemo(() => {
+    const set = new Set(["Publishing", "Cancelled", "Completed"]);
+    allSeries.forEach(s => {
+      const st = s.status ?? s.Status;
+      if (st) set.add(st);
+    });
+    return Array.from(set).sort();
+  }, [allSeries]);
+
+  // Số lượng series theo từng nhóm Tab — hiển thị badge đếm trên mỗi Tab.
+  const seriesGroupCounts = useMemo(() => {
+    const counts = {};
+    SERIES_GROUPS.forEach(g => {
+      counts[g.id] = g.statuses
+        ? allSeries.filter(s => g.statuses.includes(s.status ?? s.Status ?? "")).length
+        : allSeries.length;
+    });
+    return counts;
+  }, [allSeries]);
+
+  const filteredAllSeries = useMemo(() => {
+    const q = seriesMgmtSearch.trim().toLowerCase();
+    const activeGroup = SERIES_GROUPS.find(g => g.id === seriesGroupTab);
+    return allSeries.filter(s => {
+      const title = (s.title ?? s.series_title ?? "").toLowerCase();
+      const author = (s.authorname ?? s.author ?? "").toLowerCase();
+      const status = s.status ?? s.Status ?? "";
+      const matchesQuery = !q || title.includes(q) || author.includes(q);
+      const matchesGroup = !activeGroup?.statuses || activeGroup.statuses.includes(status);
+      // Dropdown lọc chi tiết chỉ áp dụng thêm khi đang ở Tab "Tất cả".
+      const matchesStatus = seriesGroupTab !== "all" || seriesStatusFilter === "all" || status === seriesStatusFilter;
+      return matchesQuery && matchesGroup && matchesStatus;
+    });
+  }, [allSeries, seriesMgmtSearch, seriesStatusFilter, seriesGroupTab]);
+
+  function seriesStatusBadgeClass(status) {
+    if (status === "Publishing") return "border-blue-200 bg-blue-50 text-blue-700";
+    if (status === "Completed") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    if (status === "Cancelled") return "border-red-200 bg-red-50 text-red-700";
+    return "border-zinc-200 bg-zinc-50 text-zinc-600";
+  }
+
+  // BE có thể trả `genre`/`tags` dạng string, object {tag_id, tag_name}, hoặc
+  // mảng các object đó — chuẩn hoá về text hiển thị an toàn (tránh crash React
+  // "Objects are not valid as a React child").
+  function resolveDisplayText(raw) {
+    if (raw == null || raw === "") return "—";
+    if (typeof raw === "string" || typeof raw === "number") return String(raw);
+    const pickName = (item) => {
+      if (item == null) return "";
+      if (typeof item === "string" || typeof item === "number") return String(item);
+      return item.tag_name ?? item.tagName ?? item.name ?? item.Name ?? item.label ?? "";
+    };
+    if (Array.isArray(raw)) {
+      const names = raw.map(pickName).filter(Boolean);
+      return names.length ? names.join(", ") : "—";
+    }
+    if (typeof raw === "object") {
+      const name = pickName(raw);
+      return name || "—";
+    }
+    return "—";
+  }
 
   const activeTitle = activeSubmission?.title ?? activeSubmission?.series_title ?? "";
   const activeSeriesImage =
@@ -581,7 +685,7 @@ export default function Eb() {
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => handleApprove(selectedId, title)}
+                        onClick={() => requestApprove(selectedId, title)}
                         disabled={notReady}
                         title={notReady ? "Cần chấm đủ điểm trước khi duyệt" : undefined}
                       >
@@ -595,6 +699,236 @@ export default function Eb() {
           </Card>
 
           </div>
+          )}
+
+          {tab === "series" && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Library className="size-5 text-primary" />
+                    <CardTitle>Quản lý Series</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Xem toàn bộ series theo trạng thái, sửa thông tin cơ bản, đổi trạng thái / định dạng phát hành thủ công, hoặc đánh dấu series đã xuất bản xong.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Tab lọc theo nhóm trạng thái */}
+                  <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 pb-4 dark:border-zinc-800">
+                    {SERIES_GROUPS.map(g => {
+                      const isActive = seriesGroupTab === g.id;
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setSeriesGroupTab(g.id)}
+                          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            isActive
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                          }`}
+                        >
+                          {g.label}
+                          <Badge
+                            variant="secondary"
+                            className={`px-1.5 py-0 text-[10px] ${isActive ? "bg-primary/15 text-primary" : ""}`}
+                          >
+                            {seriesGroupCounts[g.id] ?? 0}
+                          </Badge>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative flex-1 min-w-[220px]">
+                      <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+                      <Input
+                        placeholder="Tìm theo tên series hoặc tác giả..."
+                        value={seriesMgmtSearch}
+                        onChange={e => setSeriesMgmtSearch(e.target.value)}
+                        className="h-9 pl-8 pr-8 text-sm"
+                      />
+                      {seriesMgmtSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setSeriesMgmtSearch("")}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {seriesGroupTab === "all" && (
+                      <Select value={seriesStatusFilter} onValueChange={setSeriesStatusFilter}>
+                        <SelectTrigger className="h-9 w-48 text-sm">
+                          <SelectValue placeholder="Lọc theo trạng thái" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                          {seriesStatusOptions.map(st => (
+                            <SelectItem key={st} value={st}>{st}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Button size="sm" variant="outline" onClick={loadAllSeries} disabled={loadingAllSeries}>
+                      {loadingAllSeries ? <Loader2 className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
+                      Tải lại
+                    </Button>
+                  </div>
+
+                  {loadingAllSeries ? (
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />Đang tải danh sách series…
+                    </div>
+                  ) : filteredAllSeries.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-10 text-center text-sm text-muted-foreground dark:border-zinc-800">
+                      {allSeries.length === 0 ? "Chưa có series nào trong hệ thống." : "Không tìm thấy series khớp bộ lọc."}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border dark:border-zinc-800">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Series</th>
+                            <th className="px-3 py-2 text-left">Tác giả</th>
+                            <th className="px-3 py-2 text-left">Thể loại</th>
+                            <th className="px-3 py-2 text-center">Trạng thái</th>
+                            <th className="px-3 py-2 text-center">Định dạng</th>
+                            <th className="px-3 py-2 text-right">Hành động</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredAllSeries.map((s) => {
+                            const sid = s._resolvedId;
+                            const title = s.title ?? s.series_title ?? s.Title ?? `Series #${sid}`;
+                            const author = resolveDisplayText(
+                              s.authorname ?? s.author_name ?? s.authorName ?? s.Authorname ??
+                              s.author ?? s.Author ?? s.mangakaName ?? s.mangaka_name ??
+                              s.mangakaname ?? s.creatorName ?? s.penName
+                            );
+                            const genre = resolveDisplayText(
+                              s.genre ?? s.Genre ?? s.category ?? s.Category ??
+                              s.genreName ?? s.genre_name ?? s.tags ?? s.Tags
+                            );
+                            const status = s.status ?? s.Status ?? "—";
+                            const format = s.publishformat ?? s.Publishformat ?? s.publishFormat ?? "—";
+                            const cover = s.coverimageurl ?? s.cover_image_url ?? s.coverImageUrl;
+                            const isCancelled = status === "Cancelled";
+                            const isCompleted = status === "Completed";
+                            const isLocked = isCancelled || isCompleted;
+                            const isPublishing = status === "Publishing";
+                            return (
+                              <tr key={sid} className="border-t align-top dark:border-zinc-800">
+                                <td className="px-3 py-3">
+                                  <div className="flex items-center gap-2.5">
+                                    {cover ? (
+                                      <img src={cover} alt="" className="size-9 shrink-0 rounded object-cover" />
+                                    ) : (
+                                      <div className="flex size-9 shrink-0 items-center justify-center rounded bg-zinc-100 text-xs font-semibold text-zinc-500 dark:bg-zinc-800">
+                                        {(title?.[0] ?? "?").toUpperCase()}
+                                      </div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => { setSelectedId(sid); setTab("queue"); }}
+                                        className="line-clamp-1 text-left font-medium text-foreground hover:text-primary hover:underline"
+                                        title="Mở series này trong tab Chấm điểm"
+                                      >
+                                        {title}
+                                      </button>
+                                      <p className="text-[11px] text-muted-foreground">#{sid}</p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-3 text-muted-foreground">{author}</td>
+                                <td className="px-3 py-3 text-muted-foreground">{genre}</td>
+                                <td className="px-3 py-3 text-center">
+                                  {isLocked ? (
+                                    <Badge variant="secondary" className={`border text-[11px] ${seriesStatusBadgeClass(status)}`}>
+                                      {status}
+                                    </Badge>
+                                  ) : (
+                                    <Select
+                                      value={status}
+                                      onValueChange={(v) => updateSeriesStatus(sid, v)}
+                                    >
+                                      <SelectTrigger className={`h-7 w-auto min-w-[110px] border px-2 text-[11px] ${seriesStatusBadgeClass(status)}`}>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {Array.from(new Set([status, ...seriesStatusOptions])).map(st => (
+                                          <SelectItem key={st} value={st}>{st}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 text-center">
+                                  {isLocked ? (
+                                    <span className="text-[11px] text-muted-foreground">{format !== "—" ? format : "—"}</span>
+                                  ) : (
+                                    <Select
+                                      value={format !== "—" ? format : ""}
+                                      onValueChange={(v) => updateSeriesFormat(sid, v)}
+                                    >
+                                      <SelectTrigger className="h-7 w-auto min-w-[110px] px-2 text-[11px]">
+                                        <SelectValue placeholder="Chưa đặt" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {FORMAT_OPTIONS.map(opt => (
+                                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 text-right">
+                                  {isCancelled ? (
+                                    <span className="text-[11px] text-muted-foreground italic">Đã hủy — không thể sửa</span>
+                                  ) : (
+                                    <div className="flex items-center justify-end gap-2">
+                                      {isPublishing && (
+                                        <Button
+                                          size="sm"
+                                          className="gap-1 bg-emerald-600 hover:bg-emerald-700"
+                                          onClick={() => handleMarkCompleted(sid, title)}
+                                          title="Đánh dấu series đã đăng xong lên web"
+                                        >
+                                          <CheckCircle2 className="size-3.5" />
+                                          Hoàn tất
+                                        </Button>
+                                      )}
+                                      {!isCompleted && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="gap-1"
+                                          onClick={() => setEditingSeries(s)}
+                                        >
+                                          <Pencil className="size-3.5" />
+                                          Sửa
+                                        </Button>
+                                      )}
+                                      {isCompleted && (
+                                        <span className="text-[11px] text-muted-foreground italic">Đã hoàn tất</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {tab === "ranking" && (
@@ -973,11 +1307,6 @@ export default function Eb() {
                   )}
                 </CardContent>
               </Card>
-
-              {(() => {
-                const unscoredSeries = {};
-                return null;
-              })()}
             </div>
           )}
 
@@ -1182,8 +1511,23 @@ export default function Eb() {
         </div>
       )}
 
+      {/* Chọn định dạng phát hành ngay khi bấm Chấp nhận */}
+      <ApproveFormatDialog dialog={approveFormatDialog} />
+
       {/* Đổi định dạng phát hành (gọi từ tab Lịch sử) */}
       <ChangeFormatDialog dialog={editFormatDialog} />
+
+      {/* Sửa thông tin series (gọi từ tab Quản lý Series) */}
+      <SeriesEditDialog
+        series={editingSeries}
+        saving={savingSeriesEdit}
+        onClose={() => setEditingSeries(null)}
+        onSave={async (payload) => {
+          const sid = editingSeries._resolvedId;
+          const ok = await updateSeriesInfo(sid, payload);
+          if (ok) setEditingSeries(null);
+        }}
+      />
 
       {/* Modal xem chi tiết chapter */}
       <ChapterReviewModal
@@ -1294,12 +1638,40 @@ function ChapterReviewModal({ chapter, onClose, onApprove, onReject }) {
   );
 }
 
-// ── Dialog đổi định dạng phát hành (mở từ tab Lịch sử) ─────────────────────
-const FORMAT_OPTIONS = [
-  { value: "Weekly",  label: "📆 Theo tuần (Weekly)",   hint: "1 chapter / tuần" },
-  { value: "Monthly", label: "📅 Theo tháng (Monthly)", hint: "1 chapter / tháng" },
-];
+// ── Dialog chọn định dạng phát hành khi bấm "Chấp nhận" ────────────────────
+// Không tự động gán "Monthly" nữa — nhân viên chọn Weekly/Monthly ngay lúc
+// duyệt, chọn xong là xác nhận luôn (không cần bấm thêm nút Lưu).
+function ApproveFormatDialog({ dialog }) {
+  if (!dialog) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border bg-background p-6 shadow-xl space-y-4 mx-4">
+        <h3 className="text-base font-semibold">Chọn định dạng phát hành</h3>
+        <p className="text-sm text-muted-foreground">
+          Chấp nhận <strong className="text-foreground">{dialog.title}</strong> — chọn tần suất phát hành cho series này.
+        </p>
+        <div className="space-y-2">
+          {FORMAT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className="w-full rounded-lg border border-border p-3 text-left transition-colors hover:border-primary hover:bg-primary/5"
+              onClick={() => dialog.onSelect(opt.value)}
+            >
+              <span className="font-medium">{opt.label}</span>
+              <p className="text-xs text-muted-foreground mt-0.5">{opt.hint}</p>
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end pt-2">
+          <Button variant="outline" onClick={dialog.onCancel}>Huỷ</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
+// ── Dialog đổi định dạng phát hành (mở từ tab Lịch sử) ─────────────────────
 function ChangeFormatDialog({ dialog }) {
   const [picked, setPicked] = useState(dialog?.currentFormat || "Weekly");
   useEffect(() => {
@@ -1345,5 +1717,76 @@ function ChangeFormatDialog({ dialog }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Dialog sửa thông tin series (mở từ tab Quản lý Series) ────────────────
+// LƯU Ý: gửi PUT /Series/{id} với các field bên dưới — hãy đối chiếu tên field
+// với DTO Update thực tế ở backend (ASP.NET Core) nếu API trả lỗi 400.
+function SeriesEditDialog({ series, saving, onClose, onSave }) {
+  const [form, setForm] = useState({ title: "", genre: "", authorname: "", coverimageurl: "", synopsis: "" });
+
+  useEffect(() => {
+    if (!series) return;
+    setForm({
+      title: series.title ?? series.series_title ?? "",
+      genre: series.genre ?? series.Genre ?? "",
+      authorname: series.authorname ?? series.author ?? "",
+      coverimageurl: series.coverimageurl ?? series.cover_image_url ?? "",
+      synopsis: series.synopsis ?? "",
+    });
+  }, [series]);
+
+  if (!series) return null;
+
+  function update(key, value) {
+    setForm(cur => ({ ...cur, [key]: value }));
+  }
+
+  return (
+    <Dialog open={!!series} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Sửa thông tin series</DialogTitle>
+          <DialogDescription>Series #{series._resolvedId}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="series-title">Tên series</Label>
+            <Input id="series-title" value={form.title} onChange={e => update("title", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="series-genre">Thể loại</Label>
+              <Input id="series-genre" value={form.genre} onChange={e => update("genre", e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="series-author">Tác giả</Label>
+              <Input id="series-author" value={form.authorname} onChange={e => update("authorname", e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="series-cover">Link ảnh bìa</Label>
+            <Input id="series-cover" value={form.coverimageurl} onChange={e => update("coverimageurl", e.target.value)} placeholder="https://..." />
+            {form.coverimageurl && (
+              <img src={form.coverimageurl} alt="" className="mt-2 h-24 w-18 rounded object-cover border" />
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="series-synopsis">Mô tả / Synopsis</Label>
+            <Textarea id="series-synopsis" value={form.synopsis} onChange={e => update("synopsis", e.target.value)} className="min-h-24" />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose} disabled={saving}>Huỷ</Button>
+          <Button onClick={() => onSave(form)} disabled={saving}>
+            {saving && <Loader2 className="size-4 animate-spin" />}
+            Lưu thay đổi
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
