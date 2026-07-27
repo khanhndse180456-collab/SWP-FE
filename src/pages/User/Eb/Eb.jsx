@@ -80,6 +80,10 @@ export default function Eb() {
     loadingRanking,
     loadRanking,
     importRankings,
+    issueRankings,
+    loadingIssueRankings,
+    currentIssue,
+    loadRankingsByIssue,
     ebChapters,
     loadingEbChapters,
     loadEbChapters,
@@ -120,18 +124,57 @@ export default function Eb() {
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef(null);
 
+  // Import xếp hạng — issueNumber (1-53) + issueYear bắt buộc theo API
+  // POST /Rankings/import (multipart/form-data: excelFile, issueNumber, issueYear)
+  const [importIssueNumber, setImportIssueNumber] = useState("");
+  const [importIssueYear, setImportIssueYear] = useState(String(new Date().getFullYear()));
+
+  // Đồng bộ 2 ô input Kỳ/Năm theo kỳ đang hiển thị (kể cả khi được tự khôi
+  // phục từ localStorage sau khi F5 trang) — tránh lệch giữa input và bảng.
+  useEffect(() => {
+    if (currentIssue?.issueNumber != null) setImportIssueNumber(String(currentIssue.issueNumber));
+    if (currentIssue?.issueYear != null) setImportIssueYear(String(currentIssue.issueYear));
+  }, [currentIssue]);
+
   // Chapter review modal state
   const [reviewChapter, setReviewChapter] = useState(null); // chapter object
   const [reviewPageIndex, setReviewPageIndex] = useState(0);
 
-  const handleImportClick = () => importInputRef.current?.click();
+  const handleImportClick = () => {
+    const issueNumber = Number(importIssueNumber);
+    const issueYear = Number(importIssueYear);
+    if (!issueNumber || issueNumber < 1 || issueNumber > 53) {
+      toast.error("Issue Number phải từ 1 đến 53.");
+      return;
+    }
+    if (!issueYear || issueYear < 2000) {
+      toast.error("Vui lòng nhập Issue Year hợp lệ.");
+      return;
+    }
+    importInputRef.current?.click();
+  };
 
   const handleImportFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const issueNumber = Number(importIssueNumber);
+    const issueYear = Number(importIssueYear);
+
+    if (!issueNumber || issueNumber < 1 || issueNumber > 53) {
+      toast.error("Issue Number phải từ 1 đến 53.");
+      e.target.value = '';
+      return;
+    }
+    if (!issueYear || issueYear < 2000) {
+      toast.error("Vui lòng nhập Issue Year hợp lệ.");
+      e.target.value = '';
+      return;
+    }
+
     setImporting(true);
     try {
-      await importRankings(file);
+      await importRankings(file, issueNumber, issueYear);
       toast.success('Import xếp hạng thành công.');
     } catch {
       // toast handled in hook
@@ -637,7 +680,36 @@ export default function Eb() {
                     </div>
                   )}
                   {!loadingRanking && (
-                    <div className="mt-3 flex items-center justify-end gap-3">
+                    <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
+                      {/* Issue Number + Issue Year — bắt buộc theo API POST /Rankings/import */}
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="import-issue-number" className="text-xs text-muted-foreground whitespace-nowrap">
+                          Kỳ (1-53)
+                        </Label>
+                        <Input
+                          id="import-issue-number"
+                          type="number"
+                          placeholder="Kỳ"
+                          value={importIssueNumber}
+                          onChange={e => setImportIssueNumber(e.target.value)}
+                          className="h-9 w-20 text-sm"
+                          min={1}
+                          max={53}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Label htmlFor="import-issue-year" className="text-xs text-muted-foreground whitespace-nowrap">
+                          Năm
+                        </Label>
+                        <Input
+                          id="import-issue-year"
+                          type="number"
+                          placeholder="Năm"
+                          value={importIssueYear}
+                          onChange={e => setImportIssueYear(e.target.value)}
+                          className="h-9 w-24 text-sm"
+                        />
+                      </div>
                       <Button size="sm" variant="outline" onClick={handleImportClick} disabled={importing}>
                         {importing ? <Loader2 className="size-4" /> : <Upload className="size-4" />}
                         {importing ? 'Đang import...' : 'Import Excel'}
@@ -652,6 +724,85 @@ export default function Eb() {
                         className="hidden"
                         onChange={handleImportFile}
                       />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Bảng xếp hạng theo kỳ phát hành — dữ liệu vote thật vừa import,
+                  khác với bảng phía trên (tính từ điểm Hội đồng). Nguồn:
+                  GET /Rankings/{issueYear}/{issueNumber}. */}
+              <Card>
+                <CardHeader className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">Xếp hạng theo kỳ (vote độc giả)</CardTitle>
+                      <CardDescription>
+                        {currentIssue
+                          ? <>Kỳ {currentIssue.issueNumber}/{currentIssue.issueYear} — dữ liệu vote đã import.</>
+                          : "Chưa có dữ liệu — import Excel hoặc nhập Kỳ/Năm rồi bấm Xem."}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => loadRankingsByIssue(Number(importIssueYear), Number(importIssueNumber))}
+                        disabled={loadingIssueRankings}
+                      >
+                        {loadingIssueRankings ? <Loader2 className="size-4 animate-spin" /> : <Trophy className="size-4" />}
+                        Xem kỳ {importIssueNumber || "?"}/{importIssueYear || "?"}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {loadingIssueRankings ? (
+                    <div className="flex items-center justify-center gap-2 px-3 py-10 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />Đang tải…
+                    </div>
+                  ) : issueRankings.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-zinc-200 px-3 py-10 text-center text-sm text-muted-foreground dark:border-zinc-800">
+                      Chưa có dữ liệu xếp hạng cho kỳ này.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border dark:border-zinc-800">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2 text-center w-16">Hạng</th>
+                            <th className="px-3 py-2 text-left">Series</th>
+                            <th className="px-3 py-2 text-center w-28">Vote</th>
+                            <th className="px-3 py-2 text-center w-32">Bottom rank</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {issueRankings.map((row, idx) => (
+                            <tr key={row.rankingId ?? `${row.seriesId ?? "row"}-${idx}`} className="border-t dark:border-zinc-800">
+                              <td className="px-3 py-3 text-center text-base">
+                                {row.rankPosition === 1 ? "🥇" : row.rankPosition === 2 ? "🥈" : row.rankPosition === 3 ? "🥉" : `#${row.rankPosition ?? "-"}`}
+                              </td>
+                              <td className="px-3 py-3">
+                                <button
+                                  type="button"
+                                  onClick={() => { setSelectedId(String(row.seriesId)); setTab("queue"); }}
+                                  className="text-left font-medium text-foreground hover:text-primary hover:underline"
+                                >
+                                  {row.seriesTitle}
+                                </button>
+                              </td>
+                              <td className="px-3 py-3 text-center font-semibold tabular-nums">{row.voteCount}</td>
+                              <td className="px-3 py-3 text-center">
+                                {row.isBottomRank ? (
+                                  <Badge variant="destructive" className="text-[10px]">Bottom rank</Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </CardContent>
