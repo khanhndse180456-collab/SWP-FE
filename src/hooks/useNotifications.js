@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { notificationsService } from '@/api/notificationsService.js'
+import { useAuth } from '@/lib/providers'
 
 const POLL_INTERVAL_MS = 45_000
 const MAX_ITEMS = 30
@@ -43,7 +44,7 @@ function pickFirst(...candidates) {
   return undefined
 }
 
-function normalize(raw) {
+function normalize(raw, role) {
   if (!raw) return null
   const id = pickFirst(
     raw.id,
@@ -54,25 +55,70 @@ function normalize(raw) {
     raw.notificationID,
   )
   if (id == null) return null
+
+  const title = pickFirst(raw.title, raw.Title, 'Thông báo') || 'Thông báo'
+  const message = pickFirst(raw.message, raw.Message, raw.body, raw.Body, '') || ''
+  const isRead = Boolean(
+    pickFirst(
+      raw.isRead,
+      raw.IsRead,
+      raw.read,
+      raw.Read,
+      raw.is_read,
+      raw.isread,
+    ),
+  )
+  const createdAt = pickFirst(raw.createdAt, raw.CreatedAt, raw.created_at, raw.createdat)
+  const userId = pickFirst(raw.userId, raw.UserId, raw.user_id, raw.userid)
+  const seriesId = pickFirst(raw.seriesId, raw.SeriesId, raw.series_id, raw.seriesid)
+  const referenceType = pickFirst(raw.referenceType, raw.ReferenceType, raw.reference_type)
+  const referenceId = pickFirst(raw.referenceId, raw.ReferenceId, raw.reference_id)
+
+  const seriesTitle = pickFirst(raw.seriesTitle, raw.SeriesTitle, raw.series_title)
+  const chapterId = pickFirst(raw.chapterId, raw.ChapterId, raw.chapter_id)
+  const pageId = pickFirst(raw.pageId, raw.PageId, raw.page_id)
+
+  let link = ''
+  let linkState = null
+
+  if (referenceType === 'Issue') {
+    if (seriesTitle && chapterId && pageId) {
+      const slug = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      link = `/mangaka/series/${slug}/chapter/${chapterId}/page/${pageId}`
+    }
+  } else if (referenceType === 'Chapter') {
+    link = '/mangaka'
+    linkState = {
+      tab: 'page',
+      series: seriesTitle,
+      seriesId: seriesId,
+      chapterId: chapterId ? String(chapterId) : null
+    }
+  } else if (referenceType === 'Contract') {
+    if (role === 'ASSISTANT') {
+      link = '/assistant'
+      linkState = { openCollab: true }
+    } else {
+      link = '/mangaka'
+      linkState = { tab: 'contract' }
+    }
+  } else if (referenceType === 'Evaluation') {
+    link = '/mangaka'
+    linkState = { tab: 'history' }
+  }
+
   return {
     id: String(id),
-    title: pickFirst(raw.title, raw.Title, 'Thông báo') || 'Thông báo',
-    message: pickFirst(raw.message, raw.Message, raw.body, raw.Body, '') || '',
-    isRead: Boolean(
-      pickFirst(
-        raw.isRead,
-        raw.IsRead,
-        raw.read,
-        raw.Read,
-        raw.is_read,
-        raw.isread,
-      ),
-    ),
-    createdAt: pickFirst(raw.createdAt, raw.CreatedAt, raw.created_at, raw.createdat),
-    userId: pickFirst(raw.userId, raw.UserId, raw.user_id, raw.userid),
-    seriesId: pickFirst(raw.seriesId, raw.SeriesId, raw.series_id, raw.seriesid),
-    referenceType: pickFirst(raw.referenceType, raw.ReferenceType, raw.reference_type),
-    referenceId: pickFirst(raw.referenceId, raw.ReferenceId, raw.reference_id),
+    title,
+    message,
+    isRead,
+    createdAt,
+    userId,
+    seriesId,
+    referenceType,
+    referenceId,
+    link,
+    linkState,
     raw,
   }
 }
@@ -83,6 +129,7 @@ export function useNotifications({
   onNew,
   userId = null,
 } = {}) {
+  const { user } = useAuth()
   const [items, setItems] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -117,7 +164,8 @@ export function useNotifications({
     try {
       const params = userIdRef.current ? { userId: Number(userIdRef.current) } : {}
       const res = await notificationsService.list(params)
-      const list = (Array.isArray(res) ? res : []).map(normalize).filter(n => n.id)
+      const role = user?.role ?? null
+      const list = (Array.isArray(res) ? res : []).map(raw => normalize(raw, role)).filter(n => n.id)
 
       const seen = seenIdsRef.current
       const fresh = list.filter(n => !seen.has(n.id))

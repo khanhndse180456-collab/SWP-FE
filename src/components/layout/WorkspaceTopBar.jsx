@@ -56,6 +56,7 @@ function timeAgo(iso) {
 const TICK_MS = 500
 
 function TopBarBell({ userId }) {
+  const navigate = useNavigate()
   const { items, unreadCount, loading, refresh, markAllRead, markRead } = useNotifications({
     enabled: true,
     onNew: (n) => {
@@ -66,15 +67,6 @@ function TopBarBell({ userId }) {
   })
   const [open, setOpen] = useState(false)
 
-  // Refs queue giảm dần (tách khỏi useEffect để không reset khi items đổi)
-  const queueRef = useRef([])
-  const viewedRef = useRef(new Set())
-  const timersRef = useRef([])
-  const markReadRef = useRef(markRead)
-
-  useEffect(() => { markReadRef.current = markRead }, [markRead])
-
-  // Lọc theo userId ở client nếu BE trả về danh sách toàn hệ thống
   const scopedItems = useMemo(() => {
     if (!userId) return items
     const uid = Number(userId)
@@ -83,84 +75,21 @@ function TopBarBell({ userId }) {
       return !nid || Number(nid) === uid
     })
   }, [items, userId])
-  const scopedList = useMemo(() => scopedItems.slice(0, 8), [scopedItems])
+  const scopedList = useMemo(() => scopedItems, [scopedItems])
   // Badge đếm unread thực sự trong scope user hiện tại
   const scopedBadge = useMemo(
     () => scopedItems.filter(n => !n.isRead).length,
     [scopedItems],
   )
 
-  // Mở dropdown → drain queue (mỗi TICK_MS markRead 1 cái chưa đọc)
-  useEffect(() => {
-    for (const t of timersRef.current) window.clearTimeout(t)
-    timersRef.current = []
-
-    if (!open) {
-      queueRef.current = []
-      return undefined
-    }
-
-    const buildFromVisible = () => {
-      queueRef.current = scopedList
-        .filter(n => !n.isRead && !viewedRef.current.has(n.id))
-        .map(n => n.id)
-    }
-    buildFromVisible()
-
-    const drain = () => {
-      if (queueRef.current.length === 0) return
-      const id = queueRef.current.shift()
-      if (!id) return
-      viewedRef.current.add(id)
-      const p = markReadRef.current(id)
-      if (p && typeof p.catch === 'function') p.catch(() => {})
-      const t = window.setTimeout(drain, TICK_MS)
-      timersRef.current.push(t)
-    }
-
-    const start = window.setTimeout(drain, 600)
-    timersRef.current.push(start)
-
-    return () => {
-      for (const t of timersRef.current) window.clearTimeout(t)
-      timersRef.current = []
-    }
-  }, [open, scopedList, markRead])
-
-  // Items đổi (refresh) → bổ sung unread mới (chưa viewed) vào queue phía sau
-  useEffect(() => {
-    if (!open) return
-    const existing = new Set(queueRef.current)
-    let added = false
-    for (const n of scopedList) {
-      if (!n.isRead && !viewedRef.current.has(n.id) && !existing.has(n.id)) {
-        queueRef.current.push(n.id)
-        added = true
-      }
-    }
-    if (added && timersRef.current.length === 0) {
-      const drain = () => {
-        if (queueRef.current.length === 0) return
-        const id = queueRef.current.shift()
-        if (!id) return
-        viewedRef.current.add(id)
-        const p = markReadRef.current(id)
-        if (p && typeof p.catch === 'function') p.catch(() => {})
-        const t = window.setTimeout(drain, TICK_MS)
-        timersRef.current.push(t)
-      }
-      const t = window.setTimeout(drain, TICK_MS)
-      timersRef.current.push(t)
-    }
-  }, [items, open, scopedList])
-
   function handleItemClick(n) {
-    viewedRef.current.add(n.id)
     if (!n.isRead) {
-      const p = markReadRef.current(n.id)
-      if (p && typeof p.catch === 'function') p.catch(() => {})
+      void markRead(n.id)
     }
-    queueRef.current = queueRef.current.filter(id => id !== n.id)
+    if (n.link) {
+      navigate(n.link, { state: n.linkState })
+    }
+    setOpen(false)
   }
 
   return (
@@ -201,12 +130,10 @@ function TopBarBell({ userId }) {
             >
               <RefreshCcw className={cn('size-3.5', loading && 'animate-spin')} />
             </button>
-            {scopedBadge > 0 ? (
+             {scopedBadge > 0 ? (
               <button
                 type="button"
                 onClick={() => {
-                  for (const n of scopedList) viewedRef.current.add(n.id)
-                  queueRef.current = []
                   void markAllRead()
                 }}
                 className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -224,7 +151,11 @@ function TopBarBell({ userId }) {
             <p>Bạn đã cập nhật tất cả thông báo.</p>
           </div>
         ) : (
-          <ScrollArea className="flex-1">
+          <div 
+            className="flex-1 overflow-y-auto max-h-[360px]"
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+          >
             <ul className="divide-y">
               {scopedList.map((n) => {
                 const isRead = !!n.isRead
@@ -259,20 +190,9 @@ function TopBarBell({ userId }) {
                 )
               })}
             </ul>
-          </ScrollArea>
+          </div>
         )}
 
-        <div className="sticky bottom-0 z-10 -mx-1 border-t bg-popover px-1 pt-1 shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.08)]">
-          <DropdownMenuItem asChild>
-            <Link
-              to="/notifications"
-              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium"
-            >
-              Xem tất cả
-              <ExternalLink className="size-3" />
-            </Link>
-          </DropdownMenuItem>
-        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   )

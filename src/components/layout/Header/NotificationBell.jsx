@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Bell, Check, ExternalLink, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -50,89 +50,19 @@ export default function NotificationBell({
   })
   const [open, setOpen] = useState(false)
 
-  const queueRef = useRef([])        // Hàng đợi ID cần markRead
-  const viewedRef = useRef(new Set()) // Đã đẩy vào markRead (chống gọi 2 lần)
-  const timersRef = useRef([])
-  const markReadRef = useRef(markRead)
+  const visible = useMemo(() => items, [items])
 
-  // Giữ ref của markRead mới nhất
-  useEffect(() => { markReadRef.current = markRead }, [markRead])
-
-  const visible = useMemo(() => items.slice(0, maxItems), [items, maxItems])
-
-  // Khi mở dropdown: xây queue + bắt đầu drain.
-  // Deps [open] (không [visible]) để giữa chừng refresh là không reset queue.
-  useEffect(() => {
-    for (const t of timersRef.current) window.clearTimeout(t)
-    timersRef.current = []
-
-    if (!open) {
-      queueRef.current = []
-      return undefined
-    }
-
-    const buildFromVisible = () => {
-      queueRef.current = visible
-        .filter((n) => !n.isRead && !viewedRef.current.has(n.id))
-        .map((n) => n.id)
-    }
-    buildFromVisible()
-
-    const drain = () => {
-      if (queueRef.current.length === 0) return
-      const id = queueRef.current.shift()
-      if (!id) return
-      viewedRef.current.add(id)
-      const p = markReadRef.current(id)
-      if (p && typeof p.catch === 'function') p.catch(() => {})
-      const t = window.setTimeout(drain, TICK_MS)
-      timersRef.current.push(t)
-    }
-
-    const start = window.setTimeout(drain, 600)
-    timersRef.current.push(start)
-
-    return () => {
-      for (const t of timersRef.current) window.clearTimeout(t)
-      timersRef.current = []
-    }
-  }, [open, visible, markRead])
-
-  // Khi items thay đổi (refresh) → bổ sung unread mới (chưa viewed) vào queue phía sau
-  useEffect(() => {
-    if (!open) return
-    const existing = new Set(queueRef.current)
-    let added = false
-    for (const n of visible) {
-      if (!n.isRead && !viewedRef.current.has(n.id) && !existing.has(n.id)) {
-        queueRef.current.push(n.id)
-        added = true
-      }
-    }
-    if (added && timersRef.current.length === 0) {
-      const drain = () => {
-        if (queueRef.current.length === 0) return
-        const id = queueRef.current.shift()
-        if (!id) return
-        viewedRef.current.add(id)
-        const p = markReadRef.current(id)
-        if (p && typeof p.catch === 'function') p.catch(() => {})
-        const t = window.setTimeout(drain, TICK_MS)
-        timersRef.current.push(t)
-      }
-      const t = window.setTimeout(drain, TICK_MS)
-      timersRef.current.push(t)
-    }
-  }, [items, open, visible])
+  const navigate = useNavigate()
 
   function handleItemClick(n) {
-    viewedRef.current.add(n.id)
     if (!n.isRead) {
-      const p = markReadRef.current(n.id)
-      if (p && typeof p.catch === 'function') p.catch(() => {})
+      void markRead(n.id)
     }
-    queueRef.current = queueRef.current.filter((id) => id !== n.id)
-    if (typeof onItemClick === 'function') onItemClick(n)
+    if (typeof onItemClick === 'function') {
+      onItemClick(n)
+    } else if (n.link) {
+      navigate(n.link, { state: n.linkState })
+    }
     setOpen(false)
   }
 
@@ -177,10 +107,7 @@ export default function NotificationBell({
                 type="button"
                 onClick={(e) => {
                   e.preventDefault()
-                  // Đánh dấu toàn bộ ID hiện tại đã xem để UI cập nhật ngay
-                  for (const n of visible) viewedRef.current.add(n.id)
                   void markAllRead()
-                  queueRef.current = []
                 }}
                 className="rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10"
                 title="Đánh dấu tất cả đã đọc"
@@ -192,7 +119,11 @@ export default function NotificationBell({
           </div>
         </div>
 
-        <ScrollArea className="max-h-[360px]">
+        <div 
+          className="max-h-[360px] overflow-y-auto"
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
           {visible.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-1 px-3 py-8 text-center text-xs text-muted-foreground">
               <Bell className="size-6 opacity-40" />
@@ -222,11 +153,11 @@ export default function NotificationBell({
                     )}
                   </div>
                 )
-                if (n.link && !onItemClick) {
+                 if (n.link && !onItemClick) {
                   return (
                     <li key={n.id}>
                       <DropdownMenuItem asChild>
-                        <Link to={n.link} onClick={() => handleItemClick(n)} className="block">
+                        <Link to={n.link} state={n.linkState} onClick={() => handleItemClick(n)} className="block">
                           {content}
                         </Link>
                       </DropdownMenuItem>
@@ -246,16 +177,6 @@ export default function NotificationBell({
               })}
             </ul>
           )}
-        </ScrollArea>
-        <div className="border-t px-3 py-1.5 text-center">
-          <Button
-            asChild
-            variant="ghost"
-            size="sm"
-            className="h-7 w-full text-[11px]"
-          >
-            <Link to="/notifications">Xem tất cả</Link>
-          </Button>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

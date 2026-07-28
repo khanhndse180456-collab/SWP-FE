@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
@@ -87,6 +87,7 @@ const FILTERS = [
 
 export default function Assistant() {
   const navigate = useNavigate()
+  const location = useLocation()
   const session = getSession()
   const user = session ?? {}
 
@@ -98,6 +99,15 @@ export default function Assistant() {
   const [collabDialogOpen, setCollabDialogOpen] = useState(false)
   const [tab, setTab] = useState('dashboard')
   const [studioSearch, setStudioSearch] = useState('')
+
+  useEffect(() => {
+    if (location.state?.openCollab) {
+      setCollabDialogOpen(true)
+    }
+    if (location.state?.tab) {
+      setTab(location.state.tab)
+    }
+  }, [location.state])
 
   const selectedAssignment = useMemo(
     () => {

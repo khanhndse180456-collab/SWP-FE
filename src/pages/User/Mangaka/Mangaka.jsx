@@ -1639,7 +1639,7 @@ export default function Mangaka() {
     if (processedNavStateRef.current === st) return
     processedNavStateRef.current = st
 
-    if (st.tab === 'chapters' || st.tab === 'chapter' || st.tab === 'annotate' || st.tab === 'page' || st.tab === 'series' || st.tab === 'assistants') {
+    if (st.tab === 'chapters' || st.tab === 'chapter' || st.tab === 'annotate' || st.tab === 'page' || st.tab === 'series' || st.tab === 'assistants' || st.tab === 'contract' || st.tab === 'history') {
       setTab(st.tab === 'chapters' ? 'chapter' : st.tab)
     }
     // Prefer seriesId (resolved via seriesList) over raw title string — avoids race when
