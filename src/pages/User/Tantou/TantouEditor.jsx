@@ -58,7 +58,6 @@ export default function TantouEditor() {
     handleRequestRevision,
     handleAcceptSeries,
     handleRejectSeries,
-    handleChapterForwardEb,
     handleChapterRequestRevision,
     handleChapterApprove,
   } = useTantouWorkspace()
@@ -428,7 +427,6 @@ export default function TantouEditor() {
                         onRequestRevision={undefined}
                         onApproveRecurring={undefined}
                         actionsMode="studio"
-                        onChapterForwardEb={() => handleChapterForwardEb(selectedChapter.chapterid ?? selectedChapter.id)}
                         onChapterRequestRevision={(comment) => handleChapterRequestRevision(selectedChapter.chapterid ?? selectedChapter.id, comment)}
                         onChapterApprove={() => handleChapterApprove(selectedChapter.chapterid ?? selectedChapter.id)}
                         pages={selectedChapterPages}
@@ -519,7 +517,7 @@ export default function TantouEditor() {
                 <div>
                   <h2 className="text-xl font-semibold">Duyệt Chapters</h2>
                   <p className="text-sm text-muted-foreground">
-                    Chọn series để xem &amp; nhận xét chapters. Gửi duyệt EB chấm điểm.
+                    Chọn series để xem &amp; nhận xét chapters. Duyệt thẳng để xuất bản.
                   </p>
                 </div>
 

@@ -198,7 +198,6 @@ export default function TantouPageReview({
   onApproveRecurring,
   actionsMode = 'eb', // 'eb' = hiện EB actions (debut/recurring review), 'studio' = chapter workspace
   // Studio chapter actions
-  onChapterForwardEb,
   onChapterRequestRevision,
   onChapterApprove,
   pages = [],
@@ -801,7 +800,9 @@ export default function TantouPageReview({
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           {actionsMode === 'studio' ? (
-            // Studio mode: chapter actions
+            // Studio mode: chapter actions — Tantou chỉ có 2 hành động:
+            // yêu cầu sửa (Delayed) hoặc duyệt xuất bản thẳng (Published),
+            // không còn bước trung gian gửi cho EB xem.
             <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
               {onChapterRequestRevision && (
                 <Button
@@ -813,17 +814,15 @@ export default function TantouPageReview({
                   Yêu cầu sửa
                 </Button>
               )}
-              {onChapterForwardEb && (
+              {onChapterApprove && (
                 <Button
-                  variant="secondary"
-                  onClick={onChapterForwardEb}
+                  onClick={onChapterApprove}
                   className="gap-2 h-8"
                 >
-                  <Send className="size-4" />
-                  Chuyển EB chấm
+                  <CheckCircle2 className="size-4" />
+                  Duyệt xuất bản
                 </Button>
               )}
-              {/* Tantou chỉ được gửi EB, không duyệt trực tiếp */}
             </div>
           ) : (
             // EB/debut review mode
@@ -839,10 +838,9 @@ export default function TantouPageReview({
                 </Button>
               )}
 
-              {/* Tantou: gửi recurring chapter cho EB xem, không duyệt trực tiếp */}
-              <Button onClick={isDebut ? (onForwardEb ?? (() => {})) : (onChapterForwardEb ?? (() => {}))} className="gap-2">
+              <Button onClick={onForwardEb ?? (() => {})} className="gap-2">
                 <CheckCircle2 className="size-4" />
-                {isDebut ? 'Chấp nhận' : 'Gửi EB xem'}
+                {isDebut ? 'Chấp nhận' : `Chuyển ${LABEL_EDITOR_BOARD}`}
               </Button>
             </div>
           )}

@@ -13,7 +13,6 @@ import {
   getClassification,
   isAwaitingEbScore,
   isEbStatus,
-  isSeriesPassing,
   mapEvalDetailToScores,
   normalizeStatus,
   validateScore,
@@ -24,6 +23,8 @@ import {
  * - tải hàng chờ EB + danh sách thành viên hội đồng + điểm đã chấm
  * - quản lý form nhập điểm (theo từng thành viên, từng series)
  * - lưu điểm, chấp nhận / từ chối series
+ * - quản lý series (xem tất cả, sửa thông tin, đổi trạng thái/định dạng thủ công,
+ *   đánh dấu series đã xuất bản xong → Completed)
  */
 // Số thành viên Hội đồng bắt buộc phải chấm đủ trước khi được Chấp nhận/Từ chối
 const REQUIRED_COUNCIL_MEMBERS = 5;
@@ -40,11 +41,8 @@ export function useEbWorkspace() {
   // ── Đổi định dạng phát hành từ tab Lịch sử (sửa sau khi đã chấp nhận) ────
   const [editFormatDialog, setEditFormatDialog] = useState(null); // { seriesId, title, currentFormat, onSelect, onCancel }
 
-  // ── Series scoring state (EB chấm điểm series trước khi duyệt chapter) ──────
-  const [seriesScores, setSeriesScores] = useState({}); // { seriesId: councilAverage }
-  const [seriesMap, setSeriesMap] = useState({}); // { seriesId: seriesObj } — để hiển thị tên series
-  const [ebChapters, setEbChapters] = useState([]); // Chapters chờ EB duyệt (sau khi Series đạt threshold)
-  const [loadingEbChapters, setLoadingEbChapters] = useState(false);
+  // ── Chọn định dạng phát hành ngay khi bấm "Chấp nhận" (thay vì mặc định Monthly) ─
+  const [approveFormatDialog, setApproveFormatDialog] = useState(null); // { seriesId, title, onSelect, onCancel }
 
   // ── Derived (đặt sớm để loadHistory dùng được) ────────────────────────────
   const scoreFields = useMemo(() => buildScoreFields(), []);
@@ -57,10 +55,11 @@ export function useEbWorkspace() {
   //   Status = "Cancelled"  → action = "reject"
   //   Status khác           → bỏ qua (chưa quyết)
   // Thời gian: ưu tiên Approvedat, fallback Createdat.
-  const TERMINAL_STATUSES = new Set(["Publishing", "Cancelled"]);
+  const TERMINAL_STATUSES = new Set(["Publishing", "Cancelled", "Completed"]);
   const ACTION_OF = new Map([
     ["Publishing", "approve"],
     ["Cancelled", "reject"],
+    ["Completed", "approve"],
   ]);
 
   const [history, setHistory] = useState([]);
@@ -543,6 +542,104 @@ export function useEbWorkspace() {
     loadRanking();
   }, [loadRanking]);
 
+  // ── Quản lý Series (tab riêng — xem TẤT CẢ series bất kể trạng thái,
+  // sửa thông tin cơ bản, đổi trạng thái / định dạng phát hành thủ công) ─────
+  // LƯU Ý: endpoint PUT /Series/{id} dùng để sửa thông tin (title, genre,
+  // coverimageurl, synopsis, authorname) không xuất hiện ở nơi khác trong
+  // codebase gốc — cần đối chiếu lại với BE (payload/route) nếu khác.
+  const [allSeries, setAllSeries] = useState([]);
+  const [loadingAllSeries, setLoadingAllSeries] = useState(false);
+  const [savingSeriesEdit, setSavingSeriesEdit] = useState(false);
+
+  const loadAllSeries = useCallback(async () => {
+    setLoadingAllSeries(true);
+    try {
+      const res = await axiosClient.get("/Series");
+      const raw = res.data?.data ?? res.data ?? [];
+      const list = Array.isArray(raw) ? raw : [];
+      const normalized = list.map((s, idx) => ({
+        ...s,
+        _resolvedId: String(s.seriesid ?? s.series_id ?? s.SeriesId ?? s.id ?? idx),
+      }));
+      setAllSeries(normalized);
+    } catch (err) {
+      console.warn("[allSeries] load failed", err);
+      toast.error("Không thể tải danh sách series.");
+      setAllSeries([]);
+    } finally {
+      setLoadingAllSeries(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAllSeries();
+  }, [loadAllSeries]);
+
+  // Sửa thông tin cơ bản của series (tên, thể loại, ảnh bìa, mô tả, tác giả)
+  const updateSeriesInfo = useCallback(async (seriesId, payload) => {
+    setSavingSeriesEdit(true);
+    try {
+      await axiosClient.put(`/Series/${seriesId}`, payload);
+      toast.success("Đã cập nhật thông tin series.");
+      await loadAllSeries();
+      return true;
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Không thể cập nhật thông tin series."));
+      return false;
+    } finally {
+      setSavingSeriesEdit(false);
+    }
+  }, [loadAllSeries]);
+
+  // Đổi trạng thái series thủ công — tái dùng endpoint PATCH /Series/{id}/status
+  const updateSeriesStatus = useCallback(async (seriesId, status) => {
+    try {
+      await axiosClient.patch(`/Series/${seriesId}/status`, { status });
+      toast.success(`Đã đổi trạng thái series → ${status}.`);
+      await loadAllSeries();
+      // đồng bộ các danh sách khác đang phụ thuộc status series
+      loadedRef.current = false;
+      loadQueue();
+      loadHistory();
+      return true;
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Không thể đổi trạng thái series."));
+      return false;
+    }
+  }, [loadAllSeries, loadQueue, loadHistory]);
+
+  // Đổi định dạng phát hành thủ công — tái dùng endpoint publish-format
+  const updateSeriesFormat = useCallback(async (seriesId, format) => {
+    try {
+      await axiosClient.patch(`/Series/${seriesId}/publish-format`, { publishformat: format });
+      toast.success(`Đã đổi định dạng phát hành → ${format}.`);
+      await loadAllSeries();
+      loadHistory();
+      return true;
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Không thể đổi định dạng phát hành."));
+      return false;
+    }
+  }, [loadAllSeries, loadHistory]);
+
+  // Đánh dấu series đã đăng xong lên web — Publishing → Completed. Dùng ở tab
+  // "Quản lý Series" khi nhân viên hoàn tất việc đăng thủ công cho series đang
+  // ở trạng thái Publishing. Nếu về sau có tool up truyện tự động, API up truyện
+  // có thể gọi thẳng updateSeriesStatus(seriesId, "Completed") khi chạy xong,
+  // không cần người bấm nút này nữa.
+  const handleMarkCompleted = useCallback(async (seriesId, title) => {
+    const confirmed = await new Promise((resolve) => {
+      setConfirmDialog({
+        message: `Đánh dấu "${title}" đã hoàn tất xuất bản? Series sẽ chuyển sang trạng thái Completed.`,
+        onConfirm: () => { setConfirmDialog(null); resolve(true); },
+        onCancel: () => { setConfirmDialog(null); resolve(false); },
+        danger: false,
+      });
+    });
+    if (!confirmed) return false;
+    return updateSeriesStatus(seriesId, "Completed");
+  }, [updateSeriesStatus]);
+
   const councilAggregate = useMemo(
     () => buildCouncilAggregateFromMembers(members, scoreFields),
     [members, scoreFields]
@@ -639,7 +736,10 @@ export function useEbWorkspace() {
     };
   }
 
-  async function handleApprove(seriesId, title) {
+  // Chạy các bước kiểm tra như handleApprove trước đây, nhưng thay vì tự chọn
+  // định dạng "Monthly", mở dialog cho nhân viên chọn Theo tuần (Weekly) hay
+  // Theo tháng (Monthly) trước khi thật sự duyệt.
+  function requestApprove(seriesId, title) {
     const assessment = getQueueAssessment(seriesId);
 
     if (!assessment.isSelected) {
@@ -659,7 +759,15 @@ export function useEbWorkspace() {
       return;
     }
 
-    await doApprove(seriesId, title, "Monthly");
+    setApproveFormatDialog({
+      seriesId,
+      title,
+      onSelect: (format) => {
+        setApproveFormatDialog(null);
+        doApprove(seriesId, title, format);
+      },
+      onCancel: () => setApproveFormatDialog(null),
+    });
   }
 
   async function doApprove(seriesId, title, format) {
@@ -667,16 +775,10 @@ export function useEbWorkspace() {
       await axiosClient.patch(`/Series/${seriesId}/publish-format`, { publishformat: format });
       await axiosClient.patch(`/Series/${seriesId}/status`, { status: "Publishing" });
 
-      const assessment = getQueueAssessment(seriesId);
-      if (assessment?.councilAverage != null) {
-        setSeriesScores(prev => ({ ...prev, [seriesId]: assessment.councilAverage }));
-      }
-
       const councilAvg = councilAggregate.councilAverage.toFixed(1);
 
       toast.success(`Đã chấm điểm "${title}" — đạt yêu cầu (${councilAvg}/10).`);
       loadHistory();
-      loadEbChapters();
       setSelectedId(null);
       loadedRef.current = false;
       loadQueue();
@@ -742,131 +844,6 @@ export function useEbWorkspace() {
     } catch { /* interceptor toast */ }
   }
 
-  // ── EB Chapters (duyệt chapter từ Tantou gửi lên, sau khi Series đạt threshold) ─
-  const loadEbChapters = useCallback(async () => {
-    setLoadingEbChapters(true);
-    try {
-      const [chaptersRes, seriesRes, evalsRes] = await Promise.allSettled([
-        axiosClient.get("/Chapters"),
-        axiosClient.get("/Series"),
-        axiosClient.get("/BoardEvaluation"),
-      ]);
-
-      const chaptersRaw = chaptersRes.status === "fulfilled"
-        ? (chaptersRes.value.data?.data ?? chaptersRes.value.data ?? [])
-        : [];
-      const seriesRaw = seriesRes.status === "fulfilled"
-        ? (seriesRes.value.data?.data ?? seriesRes.value.data ?? [])
-        : [];
-      const evalsRaw = evalsRes.status === "fulfilled"
-        ? (evalsRes.value.data?.data ?? evalsRes.value.data ?? [])
-        : [];
-
-      const seriesLookup = {};
-      for (const s of seriesRaw) {
-        const sid = String(s.seriesid ?? s.series_id ?? s.Seriesid ?? s.id ?? "");
-        seriesLookup[sid] = s;
-      }
-      setSeriesMap(seriesLookup);
-
-      const scoresMap = {};
-      for (const s of seriesRaw) {
-        const sid = String(s.seriesid ?? s.series_id ?? s.Seriesid ?? s.id ?? "");
-        const seriesEvals = evalsRaw.filter(e => {
-          const evalSid = String(e.seriesid ?? e.Seriesid ?? e.series_id ?? "");
-          return evalSid === sid;
-        });
-        const { councilAverage } = computeCouncilAverageForSeries(seriesEvals, scoreFields);
-        if (councilAverage != null) {
-          scoresMap[sid] = councilAverage;
-        }
-        if (s.ebScore != null || s.eb_score != null) {
-          scoresMap[sid] = s.ebScore ?? s.eb_score;
-        }
-      }
-      setSeriesScores(scoresMap);
-
-      const chapters = chaptersRaw.filter(ch => {
-        const sid = String(ch.seriesid ?? ch.series_id ?? ch.SeriesId ?? "");
-        const score = scoresMap[sid];
-        const chStatus = String(ch.status ?? "").toLowerCase();
-        if (score == null) return false;
-        if (!isSeriesPassing(score)) return false;
-        if (chStatus !== "ready" && chStatus !== "inproduction") return false;
-        return true;
-      });
-
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`[EbChapters] total chapters: ${chaptersRaw.length}, filtered: ${chapters.length}`);
-        console.log(`[EbChapters] scoresMap:`, scoresMap);
-      }
-
-      setEbChapters(chapters);
-    } catch {
-      setEbChapters([]);
-    } finally {
-      setLoadingEbChapters(false);
-    }
-  }, [scoreFields]);
-
-  useEffect(() => {
-    loadEbChapters();
-  }, [loadEbChapters]);
-
-  // FIX: nhận thêm `seriesId` để history item có đủ field, khớp với logic
-  // group-theo-seriesId trong Eb.jsx tab "Lịch sử".
-  async function handleEbChapterApprove(chapterId, chapterTitle, seriesId) {
-    try {
-      await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Published');
-      toast.success(`Đã duyệt chapter — published.`);
-      setChapterHistory(prev => [{
-        id: `ch-${chapterId}-${Date.now()}`,
-        action: "approve",
-        type: "chapter",
-        chapterId,
-        seriesId: seriesId != null ? String(seriesId) : "",
-        chapterTitle,
-        at: new Date().toISOString(),
-        by: currentSession?.username ?? "EB",
-      }, ...prev]);
-      loadEbChapters();
-    } catch { /* interceptor toast */ }
-  }
-
-async function handleEbChapterReject(chapterId, chapterTitle, seriesId) {
-  const confirmed = await new Promise((resolve) => {
-    setConfirmDialog({
-      message: `Từ chối chapter "${chapterTitle}"? Chapter sẽ được trả về trạng thái "InProduction" để chỉnh sửa lại.`,
-      onConfirm: () => { setConfirmDialog(null); resolve(true); },
-      onCancel: () => { setConfirmDialog(null); resolve(false); },
-      danger: true,
-    });
-  });
-  if (!confirmed) return;
-  try {
-    // FIX: Backend không có trạng thái "RevisionRequested" trong _validTransitions
-    // (ChapterService.cs) — từ "Ready" chỉ được đi tới Published/InProduction/
-    // Delayed/Cancelled. Dùng "InProduction" để trả chapter về sản xuất/chỉnh sửa.
-    await axiosClient.patch(`/Chapters/${chapterId}/status`, 'InProduction');
-    toast.success(`Đã từ chối chapter — trả về sản xuất.`);
-    setChapterHistory(prev => [{
-      id: `ch-${chapterId}-${Date.now()}`,
-      action: "reject",
-      type: "chapter",
-      chapterId,
-      seriesId: seriesId != null ? String(seriesId) : "",
-      chapterTitle,
-      at: new Date().toISOString(),
-      by: currentSession?.username ?? "EB",
-    }, ...prev]);
-    loadEbChapters();
-  } catch (err) {
-    const msg = err?.response?.data?.message ?? "Từ chối chapter thất bại.";
-    console.error('[handleEbChapterReject] Error:', err?.response?.data ?? err);
-    toast.error(msg);
-  }
-}
-
   return {
     // server state
     pending,
@@ -905,7 +882,8 @@ async function handleEbChapterReject(chapterId, chapterTitle, seriesId) {
     updateScore,
     normalizeScoreField,
     handleSaveAssessment,
-    handleApprove,
+    requestApprove,
+    approveFormatDialog,
     handleReject,
     getQueueAssessment,
     loadQueue,
@@ -919,18 +897,18 @@ async function handleEbChapterReject(chapterId, chapterTitle, seriesId) {
     loadingIssueRankings,
     currentIssue,
     loadRankingsByIssue,
-    // eb chapters
-    ebChapters,
-    loadingEbChapters,
-    loadEbChapters,
-    handleEbChapterApprove,
-    handleEbChapterReject,
-    // series scores (cho UI chapters check threshold)
-    seriesScores,
-    seriesMap,
     // đổi định dạng phát hành từ bảng lịch sử
     openChangeFormatDialog,
     editFormatDialog,
+    // ── quản lý series (tab mới) ──
+    allSeries,
+    loadingAllSeries,
+    loadAllSeries,
+    savingSeriesEdit,
+    updateSeriesInfo,
+    updateSeriesStatus,
+    updateSeriesFormat,
+    handleMarkCompleted,
   };
 }
 
