@@ -799,51 +799,53 @@ export default function TantouPageReview({
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          {actionsMode === 'studio' ? (
-            // Studio mode: chapter actions — Tantou chỉ có 2 hành động:
-            // yêu cầu sửa (Delayed) hoặc duyệt xuất bản thẳng (Published),
-            // không còn bước trung gian gửi cho EB xem.
-            <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
-              {onChapterRequestRevision && (
-                <Button
-                  variant="outline"
-                  onClick={() => onChapterRequestRevision('')}
-                  className="gap-2 h-8 mr-auto"
-                >
-                  <XCircle className="size-4" />
-                  Yêu cầu sửa
-                </Button>
-              )}
-              {onChapterApprove && (
-                <Button
-                  onClick={onChapterApprove}
-                  className="gap-2 h-8"
-                >
-                  <CheckCircle2 className="size-4" />
-                  Duyệt xuất bản
-                </Button>
-              )}
-            </div>
-          ) : (
-            // EB/debut review mode
-            <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
-              {isDebut && (
-                <Button
-                  variant="outline"
-                  onClick={onRequestRevision ?? (() => {})}
-                  className="gap-2"
-                >
-                  <XCircle className="size-4" />
-                  Yêu cầu chỉnh sửa
-                </Button>
-              )}
-
-              <Button onClick={onForwardEb ?? (() => {})} className="gap-2">
-                <CheckCircle2 className="size-4" />
-                {isDebut ? 'Chấp nhận' : `Chuyển ${LABEL_EDITOR_BOARD}`}
+        {actionsMode === 'studio' ? (
+          // Studio mode: chapter actions — Tantou chỉ có 2 hành động:
+          // yêu cầu sửa (Delayed) hoặc duyệt xuất bản thẳng (Published),
+          // không còn bước trung gian gửi cho EB xem.
+          <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
+            {onChapterRequestRevision && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={(e) => { e.preventDefault(); onChapterRequestRevision('') }}
+                className="gap-2 h-8 mr-auto"
+              >
+                <XCircle className="size-4" />
+                Yêu cầu sửa
               </Button>
-            </div>
-          )}
+            )}
+            {onChapterApprove && (
+              <Button
+                type="button"
+                onClick={(e) => { e.preventDefault(); onChapterApprove() }}
+                className="gap-2 h-8"
+              >
+                <CheckCircle2 className="size-4" />
+                Duyệt xuất bản
+              </Button>
+            )}
+          </div>
+        ) : (
+          // EB/debut review mode
+          <div className="page-container flex flex-wrap items-center justify-end gap-2 py-3">
+            {isDebut && (
+              <Button
+                variant="outline"
+                onClick={onRequestRevision ?? (() => { })}
+                className="gap-2"
+              >
+                <XCircle className="size-4" />
+                Yêu cầu chỉnh sửa
+              </Button>
+            )}
+
+            <Button onClick={onForwardEb ?? (() => { })} className="gap-2">
+              <CheckCircle2 className="size-4" />
+              {isDebut ? 'Chấp nhận' : `Chuyển ${LABEL_EDITOR_BOARD}`}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )
