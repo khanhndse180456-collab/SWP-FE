@@ -97,6 +97,7 @@ export default function Assistant() {
   const [selectedChapterId, setSelectedChapterId] = useState(null)
   const [selectedPageId, setSelectedPageId] = useState(null)
   const [taskFilter, setTaskFilter] = useState('all')
+  const [selectedSeries, setSelectedSeries] = useState('all')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [collabDialogOpen, setCollabDialogOpen] = useState(false)
   const [tab, setTab] = useState('dashboard')
@@ -143,16 +144,36 @@ export default function Assistant() {
     [assignments, selectedChapterId],
   )
 
+  const uniqueSeriesList = useMemo(() => {
+    const titles = new Set()
+    assignments.forEach(a => {
+      if (a.seriesTitle) titles.add(a.seriesTitle)
+    })
+    return Array.from(titles).sort()
+  }, [assignments])
+
+  const filteredChapters = useMemo(() => {
+    let result = assignments
+    if (selectedSeries !== 'all') {
+      result = result.filter(a => a.seriesTitle === selectedSeries)
+    }
+    if (taskFilter === 'all') return result
+    return result.filter(a => {
+      const s = String(a.status ?? '').toLowerCase()
+      return s === taskFilter
+    })
+  }, [assignments, taskFilter, selectedSeries])
+
   // Auto-select chapter đầu tiên
   useEffect(() => {
-    if (!assignments.length) {
+    if (!filteredChapters.length) {
       setSelectedChapterId(null)
       return
     }
-    if (!assignments.some(a => String(a.chapterId ?? a.id) === String(selectedChapterId))) {
-      setSelectedChapterId(assignments[0]?.chapterId ?? assignments[0]?.id ?? null)
+    if (!filteredChapters.some(a => String(a.chapterId ?? a.id) === String(selectedChapterId))) {
+      setSelectedChapterId(filteredChapters[0]?.chapterId ?? filteredChapters[0]?.id ?? null)
     }
-  }, [assignments, selectedChapterId])
+  }, [filteredChapters, selectedChapterId])
 
   // ESC để thoát fullscreen
   useEffect(() => {
@@ -162,22 +183,17 @@ export default function Assistant() {
     return () => window.removeEventListener('keydown', onKey)
   }, [isFullscreen])
 
-  const filteredChapters = useMemo(() => {
-    if (taskFilter === 'all') return assignments
-    return assignments.filter(a => {
-      const s = String(a.status ?? '').toLowerCase()
-      return s === taskFilter
-    })
-  }, [assignments, taskFilter])
-
   const counts = useMemo(() => {
-    const c = { all: assignments.length }
+    const base = selectedSeries === 'all'
+      ? assignments
+      : assignments.filter(a => a.seriesTitle === selectedSeries)
+    const c = { all: base.length }
     for (const f of FILTERS) {
       if (f.id === 'all') continue
-      c[f.id] = assignments.filter(a => String(a.status ?? '').toLowerCase() === f.id).length
+      c[f.id] = base.filter(a => String(a.status ?? '').toLowerCase() === f.id).length
     }
     return c
-  }, [assignments])
+  }, [assignments, selectedSeries])
 
   const statsDisplayed = useMemo(() => {
     const pending = assignments.filter(a => String(a.status).toLowerCase() === 'pending').length
@@ -303,6 +319,24 @@ export default function Assistant() {
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">Chapter được giao</CardTitle>
                       <CardDescription>Chọn chapter để xử lý</CardDescription>
+
+                      {uniqueSeriesList.length > 0 && (
+                        <div className="mt-2">
+                          <select
+                            value={selectedSeries}
+                            onChange={(e) => setSelectedSeries(e.target.value)}
+                            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground outline-none ring-offset-background focus:border-violet-500 focus:ring-1 focus:ring-violet-500 dark:border-zinc-800 dark:bg-zinc-900"
+                          >
+                            <option value="all">Tất cả Series</option>
+                            {uniqueSeriesList.map((title) => (
+                              <option key={title} value={title}>
+                                {title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
                       <div className="-mb-1 mt-1 flex flex-wrap gap-1 pt-2">
                         {FILTERS.map(f => (
                           <button
