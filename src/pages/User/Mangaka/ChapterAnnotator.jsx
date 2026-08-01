@@ -29,6 +29,7 @@ import {
   useChapters,
   useDeleteChapter,
   useCreateChapter,
+  useUploadChapterCover,
   useCreatePage,
   useCreatePageIssue,
   useUpdatePageIssue,
@@ -99,7 +100,7 @@ function mapApiChapterToLocal(raw, seriesTitle) {
     title,
     series: seriesTitle,
     pages: [],
-    cover: null,
+    cover: raw.coverimageurl ?? raw.coverImageUrl ?? raw.CoverImageUrl ? { url: raw.coverimageurl ?? raw.coverImageUrl ?? raw.CoverImageUrl, name: 'cover' } : null,
     pageCount: raw.pagecount ?? raw.Pagecount ?? null,
     apiStatus: raw.status ?? raw.Status ?? null,
     deadline: raw.deadline ?? raw.Deadline ?? null,
@@ -228,6 +229,7 @@ export default function ChapterAnnotator({
   const deleteChapterApi = useDeleteChapter()
 
   const createChapterMutation = useCreateChapter()
+  const uploadChapterCoverMutation = useUploadChapterCover()
   const createPage = useCreatePage()
   const createPageIssue = useCreatePageIssue()
   const updatePageIssue = useUpdatePageIssue()
@@ -912,9 +914,25 @@ export default function ChapterAnnotator({
     }
     try {
       const { dataUrl } = await fileToStorableDataUrl(file)
+
+      const isServerChapter = activeChapterId && !String(activeChapterId).startsWith('u-')
+      let serverUrl = null
+
+      if (isServerChapter) {
+        const uploadToast = toast.loading('Đang tải ảnh bìa lên server...')
+        try {
+          const res = await uploadChapterCoverMutation.mutateAsync({ id: Number(activeChapterId), file })
+          serverUrl = res?.data?.coverImageUrl ?? res?.data?.CoverImageUrl
+          toast.success('Đã cập nhật ảnh bìa chapter lên server!', { id: uploadToast })
+        } catch (err) {
+          toast.error('Tải ảnh bìa thất bại: ' + (err?.response?.data?.message ?? err.message), { id: uploadToast })
+          return
+        }
+      }
+
       setChapters(prev => {
         const exists = prev.some(c => c.id === activeChapterId)
-        const patch = { cover: { url: dataUrl, name: file.name }, isCoverLocal: true }
+        const patch = { cover: { url: serverUrl || dataUrl, name: file.name }, isCoverLocal: !serverUrl }
         if (exists) {
           return prev.map(c => (c.id === activeChapterId ? { ...c, ...patch } : c))
         }
@@ -927,7 +945,7 @@ export default function ChapterAnnotator({
     } catch {
       setUploadRejectMessage('Không đọc được ảnh bìa — thử lại.')
     }
-  }, [activeChapterId, setChapters, seriesChapters])
+  }, [activeChapterId, setChapters, seriesChapters, uploadChapterCoverMutation])
 
   function onCoverChange(e) {
     void handleCoverFile(e.target.files?.[0])

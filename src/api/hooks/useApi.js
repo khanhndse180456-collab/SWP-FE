@@ -198,6 +198,17 @@ export function useDeleteChapter() {
   })
 }
 
+export function useUploadChapterCover() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, file }) => chaptersService.uploadCover(id, file),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['chapters'] })
+      qc.invalidateQueries({ queryKey: ['chapters', id] })
+    },
+  })
+}
+
 export function useUpdateChapterStatus() {
   const qc = useQueryClient()
   return useMutation({

@@ -222,7 +222,7 @@ export default function ChapterView({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                <th className="p-4 w-[12%]">Ảnh gộp</th>
+                <th className="p-4 w-[12%]">Ảnh bìa</th>
                 <th className="p-4 w-[16%]">Chapter</th>
                 <th className="p-4 w-[34%]">Tiêu đề</th>
                 <th className="p-4 w-[14%]">Trạng thái</th>
@@ -314,6 +314,8 @@ function ChapterRow({ chapter, badge, isReady, onView, onEdit, onDelete, onRevie
   }, [seriesList, chapter.series, chapter.seriesid])
   const isSeriesPublishing = String(seriesObj?.publicationStatus ?? '').toLowerCase() === 'publishing'
   const isChapterInProduction = String(chapter.status).toLowerCase() === 'inproduction'
+  const displayCoverUrl = chapter.coverimageurl ?? chapter.coverImageUrl ?? chapter.CoverImageUrl ?? null
+  const hasAnnotated = pages.some(p => p.isAnnotated)
 
   return (
     <tr className="hover:bg-muted/30 transition-colors">
@@ -329,19 +331,23 @@ function ChapterRow({ chapter, badge, isReady, onView, onEdit, onDelete, onRevie
               <div className="flex size-full items-center justify-center text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />
               </div>
-            ) : compositeUrl ? (
-              <img src={compositeUrl} alt="" className="size-full object-cover" />
+            ) : displayCoverUrl ? (
+              <img src={displayCoverUrl} alt="" className="size-full object-cover" />
             ) : (
-              <div className="flex size-full items-center justify-center text-muted-foreground">
+              <div className="flex size-full items-center justify-center text-muted-foreground/50">
                 <ImageIcon className="size-4" />
               </div>
             )}
-            {compositeUrl && (
+            {hasAnnotated && (
               <span className="absolute right-0.5 top-0.5 rounded-full bg-sky-500 px-1 py-0.5 text-[8px] font-bold text-white">
                 <Sparkles className="size-2.5" />
               </span>
             )}
           </button>
+        ) : displayCoverUrl ? (
+          <div className="relative size-12 overflow-hidden rounded-md border bg-muted">
+            <img src={displayCoverUrl} alt="" className="size-full object-cover" />
+          </div>
         ) : (
           <div className="flex size-12 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground/50">
             <ImageIcon className="size-4" />

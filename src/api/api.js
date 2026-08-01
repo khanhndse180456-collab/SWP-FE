@@ -95,6 +95,12 @@ export const chaptersService = {
     console.log('[API] PUT /Chapters/:id', id, data)
     return axios.put(`/Chapters/${id}`, data)
   },
+  uploadCover: (id, file) => {
+    console.log('[API] POST /Chapters/:id/upload-cover', id, file)
+    const fd = new FormData()
+    fd.append('coverImage', file)
+    return axios.post(`/Chapters/${id}/upload-cover`, fd)
+  },
   delete: (id) => {
     console.log('[API] DELETE /Chapters/:id/soft', id)
     return axios.delete(`/Chapters/${id}/soft`)
