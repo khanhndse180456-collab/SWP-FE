@@ -129,13 +129,13 @@ import './Mangaka.css'
 const NAV_LINKS = [{ to: '/', label: 'Trang chủ' }]
 
 const SIDEBAR_ITEMS = [
-  { id: 'dashboard',     label: 'Dashboard',         icon: LayoutDashboard },
-  { id: 'series',        label: 'Series của tôi',    icon: BookOpen },
-  { id: 'chapter',       label: 'Chapter',           icon: FileText },
-  { id: 'page',          label: 'Workspace',         icon: Layers },
-  { id: 'assistants',    label: 'Assistant',         icon: UserPlus },
-  { id: 'stats',         label: 'Thống kê',          icon: BarChart3 },
-  { id: 'settings',      label: 'Cài đặt',           icon: SettingsIcon },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'series', label: 'Series của tôi', icon: BookOpen },
+  { id: 'chapter', label: 'Chapter', icon: FileText },
+  { id: 'page', label: 'Workspace', icon: Layers },
+  { id: 'assistants', label: 'Assistant', icon: UserPlus },
+  { id: 'stats', label: 'Thống kê', icon: BarChart3 },
+  { id: 'settings', label: 'Cài đặt', icon: SettingsIcon },
 ]
 
 const STAT_DEFS = [
@@ -398,7 +398,13 @@ export default function Mangaka() {
   const [editingChapter, setEditingChapter] = useState(null)
   const [editChapterOpen, setEditChapterOpen] = useState(false)
 
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab] = useState(() => {
+    return localStorage.getItem('mangaka_active_tab') || 'dashboard'
+  })
+
+  useEffect(() => {
+    localStorage.setItem('mangaka_active_tab', tab)
+  }, [tab])
   // annotateSeries must read from location.state first (navigation carries the correct series),
   // then fall back to persisted workspace value — otherwise navigating from series detail
   // with "Upload chapter" shows the wrong series in the dropdown. Prefer seriesId over title
@@ -521,10 +527,10 @@ export default function Mangaka() {
     }
   }, [apiSeries.length, apiChapters.length])
   const [uploadPctBySeries, setUploadPctBySeries] = useState({})
-  
+
   const [annotatorChapters, setAnnotatorChapters] = useState([])
   const [annotatorNotes, setAnnotatorNotes] = useState({})
-  
+
   const [annotatorActiveChapterId, setAnnotatorActiveChapterId] = useState(null)
   const [annotatorPageIndex, setAnnotatorPageIndex] = useState(0)
   const [annotatorChapterNum, setAnnotatorChapterNum] = useState('1')
@@ -676,9 +682,9 @@ export default function Mangaka() {
     const filteredRows = filterSeriesId === 'all'
       ? chapterRows
       : chapterRows.filter(row => {
-          const seriesObj = seriesList.find(s => String(s.id) === String(filterSeriesId))
-          return seriesObj && String(row.series) === String(seriesObj.title)
-        })
+        const seriesObj = seriesList.find(s => String(s.id) === String(filterSeriesId))
+        return seriesObj && String(row.series) === String(seriesObj.title)
+      })
 
     const order = []
     const map = new Map()
@@ -745,7 +751,7 @@ export default function Mangaka() {
     if (!notes?.length) return
     const assistant = hiredAssistants.find(a => String(a.assistantId) === String(assistantId))
     const effectivePageId = apiPageId ?? chapter?.pages?.[pageIndex]?.apiPageId
-    
+
     console.log('[Mangaka] handleSendToAssistant →', {
       series: chapter.series,
       chapterId: chapter.id,
@@ -770,8 +776,8 @@ export default function Mangaka() {
 
         const deadline = note.deadline
           ? new Date(note.deadline).toISOString()
-          : (chapter.deadline 
-            ? new Date(chapter.deadline).toISOString() 
+          : (chapter.deadline
+            ? new Date(chapter.deadline).toISOString()
             : new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString())
 
         return pageIssuesService.create({
@@ -1392,7 +1398,7 @@ export default function Mangaka() {
     // Gui genreIds/tagIds (numbers tu modal props), khong phai string names
     if (Array.isArray(form.genreIds)) form.genreIds.forEach(g => fd.append('genreIds', String(g)))
     if (Array.isArray(form.tagIds)) form.tagIds.forEach(t => fd.append('tagIds', String(t)))
-    
+
     // Đính kèm file mới nếu người dùng chọn thay đổi
     const proposalFile = form.proposalFile instanceof File ? form.proposalFile : null
     const coverFile = form.coverImage instanceof File ? form.coverImage : null
@@ -1981,7 +1987,7 @@ export default function Mangaka() {
                       rel="noreferrer"
                       className="text-emerald-600 hover:text-emerald-700 font-semibold underline"
                     >
-                      Bản đề xuất (PDF)
+                      Bản đề xuất
                     </a>
                   </div>
                 )}
