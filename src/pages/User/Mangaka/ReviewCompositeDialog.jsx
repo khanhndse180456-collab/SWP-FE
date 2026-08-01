@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { pagesService, pageIssuesService } from '@/api/api.js'
 import { layersService } from '@/api/layersService.js'
+import LayerCanvas from '@/components/layer/LayerCanvas.jsx'
 
 /**
  * Modal xem ảnh composite đã gộp từ Assistant. Có 2 hành động:
@@ -99,11 +100,13 @@ export default function ReviewCompositeDialog({
       }))
   }
   const compositeUrl =
-    safePage?.pageimageurl
-    ?? safePage?.pageImageUrl
-    ?? safePage?.compositeimageurl
+    safePage?.compositeimageurl
     ?? safePage?.compositeImageUrl
     ?? safePage?.composite_image_url
+    ?? safePage?.merged_image_url
+    ?? safePage?.mergedImageUrl
+    ?? safePage?.pageimageurl
+    ?? safePage?.pageImageUrl
     ?? null
 
   // Layer do Assistant upload lên cho page này — Mangaka có thể bật/tắt để soi từng layer.
@@ -653,13 +656,23 @@ function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pag
   const visibleLayers = layers.filter((l) => isLayerVisible?.(l) ?? true)
   const showOriginal = isLayerVisible?.({ id: 'original-image' }) ?? true
 
-  let baseSrc = (showOriginal ? (originalUrl || compositeUrl) : null) || null
-  if (!baseSrc && visibleLayers.length > 0) {
-    const top = [...visibleLayers].filter(l => l.id !== 'original-image').sort((a, b) => b.z - a.z)[0]
-    baseSrc = top?.url || null
-  }
+  const mappedLayers = useMemo(() => {
+    return layers
+      .filter((l) => l.id !== 'original-image')
+      .map((l) => ({
+        id: l.id,
+        imageUrl: l.url,
+        opacity: (l.opacity ?? 1) * 100,
+        visible: isLayerVisible?.(l) ?? true,
+        index: l.z ?? 0,
+        blendMode: 'normal',
+      }))
+  }, [layers, isLayerVisible])
 
-  if (!baseSrc) {
+  const hasOriginal = !!originalUrl
+  const hasBase = showOriginal ? !!(originalUrl || compositeUrl) : false
+
+  if (!hasBase && mappedLayers.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 text-white/40">
         <ImageIcon className="size-10" />
@@ -671,23 +684,16 @@ function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pag
     )
   }
 
-  const overlays = visibleLayers.filter(
-    (l) => l.url && l.url !== baseSrc && l.id !== 'original-image',
-  )
-
-  const hasOriginal = !!originalUrl
-  const hasComposite = !!compositeUrl
-
   return (
     <div className="flex w-full items-center justify-center gap-6 p-1">
       {hasOriginal && (
         <div className="flex flex-col items-center gap-2 max-w-[45%]">
           <span className="text-xs font-semibold text-white/50">Ảnh gốc (Original)</span>
-          <div className="relative border border-white/10 rounded-lg overflow-hidden bg-white/5">
+          <div className="relative border border-white/10 rounded-lg overflow-hidden bg-white/5 aspect-[800/1100] h-[65vh] max-h-[65vh] max-w-full">
             <img
               src={originalUrl}
               alt="Original"
-              className="max-h-[65vh] w-auto max-w-full object-contain"
+              className="h-full w-full object-contain"
               draggable={false}
             />
           </div>
@@ -697,35 +703,15 @@ function CompositeStack({ compositeUrl, originalUrl, layers, isLayerVisible, pag
         <span className="text-xs font-semibold text-white/50">
           {hasOriginal ? 'Ảnh mới (Composite)' : 'Xem trước bản vẽ'}
         </span>
-        <div className="relative border border-white/10 rounded-lg overflow-hidden bg-white/5">
-          <img
-            src={compositeUrl || baseSrc}
-            alt={`Trang ${pageNumber}`}
-            className="max-h-[65vh] w-auto max-w-full object-contain"
-            draggable={false}
+        <div className="relative border border-white/10 rounded-lg overflow-hidden bg-white/5 aspect-[800/1100] h-[65vh] max-h-[65vh] max-w-full">
+          <LayerCanvas
+            layers={mappedLayers}
+            baseImage={showOriginal ? (originalUrl || compositeUrl) : null}
+            width={800}
+            height={1100}
+            fitMode="contain"
+            showNotes={false}
           />
-          {overlays.length > 0 && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              {overlays.map((l) => (
-                <img
-                  key={l.id}
-                  src={l.url}
-                  alt={l.name}
-                  style={{ opacity: l.opacity }}
-                  className="max-h-[65vh] w-auto max-w-full object-contain"
-                  draggable={false}
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
-              ))}
-            </div>
-          )}
-          {!compositeUrl && showOriginal && (
-            <div className="pointer-events-none absolute left-2 top-2 rounded bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
-              Chưa gộp — đang hiện layer cao nhất
-            </div>
-          )}
         </div>
       </div>
     </div>
