@@ -158,9 +158,10 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
       toast.error('Chưa có trang để thêm layer. Hãy chọn 1 trang trước.')
       return
     }
-    const nextIdx = layers.length
+    const maxIdx = layers.reduce((max, l) => Math.max(max, l.index ?? 0), 0)
+    const nextIdx = maxIdx + 1
     await addLayer({ file, index: nextIdx })
-  }, [activePageId, layers.length, addLayer])
+  }, [activePageId, layers, addLayer])
 
   const handleFinalize = useCallback(async () => {
     if (!activePageId) return
@@ -470,39 +471,6 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
 
         {/* Sidebar — Final image preview + layer stack */}
         <div className="flex w-96 shrink-0 flex-col border-l border-white/5 bg-zinc-950">
-          {/* Final preview */}
-          {resultImage && (
-            <div className="border-b border-white/5 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-6 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
-                    <ImageIcon className="size-3" />
-                  </div>
-                  <span className="text-xs font-semibold text-white/80">Ảnh gộp</span>
-                </div>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
-                  sẵn sàng
-                </span>
-              </div>
-              <div
-                className="group/final relative cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-white/5"
-                onClick={() => setInspectOpen(true)}
-                title="Click để kiểm tra từng layer"
-              >
-                <img
-                  src={resultImage}
-                  alt="Final"
-                  className="block h-28 w-full object-contain"
-                  style={{ background: 'rgba(255,255,255,0.03)' }}
-                />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/final:bg-black/40">
-                  <div className="flex items-center gap-1 rounded-full border border-white/20 bg-black/70 px-2 py-1 text-[10px] font-medium text-white opacity-0 backdrop-blur transition-opacity group-hover/final:opacity-100">
-                    <LayersIcon className="size-3" /> Xem layer
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div className="min-h-0 flex-1 overflow-hidden p-2">
             <LayerStackPanel

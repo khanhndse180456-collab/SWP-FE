@@ -158,7 +158,7 @@ export default function LayerInspectDialog({
               </div>
             ) : (
               <ul className="space-y-1.5">
-                {sorted.map((layer) => {
+                {sorted.map((layer, idx) => {
                   const isVisible = soloId ? layer.id === soloId : (localVisible[layer.id] ?? layer.visible)
                   const isSolo = soloId === layer.id
                   return (
@@ -196,7 +196,7 @@ export default function LayerInspectDialog({
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium text-white/90">{layer.name}</p>
                         <p className="text-[10px] text-white/40">
-                          Layer #{layer.index + 1} · {layer.opacity}%
+                          Layer #{idx + 1} · {layer.opacity}%
                         </p>
                       </div>
 

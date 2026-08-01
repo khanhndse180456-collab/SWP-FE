@@ -57,6 +57,32 @@ function apiLayerToUi(raw) {
   };
 }
 
+function sortLayers(list) {
+  const sorted = [...list].sort((a, b) => {
+    const isDefaultA = String(a.name || '').toLowerCase() === 'default';
+    const isDefaultB = String(b.name || '').toLowerCase() === 'default';
+    if (isDefaultA && !isDefaultB) return -1;
+    if (!isDefaultA && isDefaultB) return 1;
+    return (a.index ?? 0) - (b.index ?? 0);
+  });
+
+  let customCount = 0;
+  return sorted.map((l) => {
+    const isDefault = String(l.name || '').toLowerCase() === 'default';
+    if (isDefault) return l;
+
+    const isDefaultPattern = !l.name || /^layer\s*\d*$/i.test(l.name);
+    if (isDefaultPattern) {
+      customCount++;
+      return {
+        ...l,
+        name: `Layer ${customCount}`,
+      };
+    }
+    return l;
+  });
+}
+
 // Backend có thể trả về layer theo nhiều "hình dạng" khác nhau tuỳ endpoint:
 // - object layer trực tiếp: { layerId, layerName, ... }
 // - bọc trong { data: {...} }
@@ -65,6 +91,15 @@ function apiLayerToUi(raw) {
 // - bọc trong { message, data: {...} } (như finalize())
 // Hàm này thử từng khả năng, ưu tiên object nào có field id nhận diện được layer.
 function extractLayerPayload(res) {
+  if (res && (res.id ?? res.Id) && res.data) {
+    return {
+      ...res.data,
+      id: res.id ?? res.Id,
+      layerid: res.id ?? res.Id,
+      fileurl: res.fileurl ?? res.Fileurl ?? res.url ?? res.imageUrl,
+    };
+  }
+
   const candidates = [
     res,
     res?.data,
@@ -131,10 +166,11 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       setOriginalImage(originalUrl);
       setResultImage(resultUrl);
 
-      const rawLayers = Array.isArray(layersRes) ? layersRes : [];
+       const rawLayers = Array.isArray(layersRes) ? layersRes : [];
       const uiLayers = rawLayers.map(apiLayerToUi);
-      setLayers(uiLayers);
-      setDbLayers(JSON.parse(JSON.stringify(uiLayers)));
+      const sortedLayers = sortLayers(uiLayers);
+      setLayers(sortedLayers);
+      setDbLayers(JSON.parse(JSON.stringify(sortedLayers)));
     } catch (err) {
       setError(err?.message ?? "Lỗi không xác định");
     } finally {
@@ -151,12 +187,15 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       if (!pageId) return null;
       setUploading(true);
       try {
-        const nextIdx = index ?? layers.length;
+        const maxIdx = layers.reduce((max, l) => Math.max(max, l.index ?? 0), 0);
+        const nextIdx = index ?? (maxIdx + 1);
+        const customCount = layers.filter((l) => String(l.name || '').toLowerCase() !== 'default').length;
+        const defaultName = `Layer ${customCount + 1}`;
         const res = await layersService.uploadLayer(pageId, {
           file,
           index: nextIdx,
           uploaderId,
-          layerName: layerName || `Layer ${nextIdx + 1}`,
+          layerName: layerName || defaultName,
         });
 
         // DEBUG TẠM: nếu vẫn lỗi, mở console và copy log này gửi lại để mình xem field thật.
@@ -173,21 +212,19 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
             res
           );
           await refresh();
-          toast.success(`Đã thêm layer #${nextIdx}.`);
+          toast.success("Đã thêm layer thành công.");
           return null;
         }
 
         setLayers((cur) => {
           const next = [...cur.filter((l) => l.id !== ui.id), ui];
-          next.sort((a, b) => a.index - b.index);
-          return next;
+          return sortLayers(next);
         });
         setDbLayers((cur) => {
           const next = [...cur.filter((l) => l.id !== ui.id), ui];
-          next.sort((a, b) => a.index - b.index);
-          return next;
+          return sortLayers(next);
         });
-        toast.success(`Đã thêm layer #${ui.index}.`);
+        toast.success(`Đã thêm layer "${ui.name}".`);
         return ui;
       } catch (err) {
         toast.error(err?.response?.data?.message ?? "Không upload được layer.");
@@ -201,9 +238,10 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
 
   const updateLayer = useCallback(
     async (layerId, patch) => {
-      setLayers((cur) =>
-        cur.map((l) => (l.id === layerId ? { ...l, ...patch } : l)),
-      );
+      setLayers((cur) => {
+        const next = cur.map((l) => (l.id === layerId ? { ...l, ...patch } : l));
+        return sortLayers(next);
+      });
       try {
         // MỚI: backend bắt buộc LayerName ở mọi request update, kể cả khi
         // chỉ đổi opacity/index — nên luôn lấy tên hiện tại nếu patch không có,

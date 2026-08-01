@@ -15,7 +15,7 @@ const ACCENT_BY_INDEX = [
   '#a3a3a3',
 ]
 
-function LayerRow({ layer, accent, draggable, onDragStart, onDragOver, onDrop, onToggle, onOpacity, onRemove, onPickFile, onRename, uploading }) {
+function LayerRow({ layer, index, accent, draggable, onDragStart, onDragOver, onDrop, onToggle, onOpacity, onRemove, onPickFile, onRename, uploading }) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(layer.name)
   // FIX: trước đây cả <li> luôn draggable={true}, nên chỉ cần bấm/di chuột nhẹ
@@ -103,15 +103,25 @@ function LayerRow({ layer, accent, draggable, onDragStart, onDragOver, onDrop, o
               {layer.name}
             </button>
           )}
-          <p className="text-[10px] text-white/40">Layer #{layer.index + 1}</p>
+          <p className="text-[10px] text-white/40">Layer #{index}</p>
         </div>
 
         <Button
           size="icon-xs"
           variant="ghost"
-          className="size-7 text-white/40 hover:bg-white/10 hover:text-white"
-          onClick={() => onRemove(layer.id)}
-          title="Xóa layer"
+          className={cn(
+            "size-7 transition-colors",
+            String(layer.name || '').toLowerCase() === 'default'
+              ? "text-white/10 cursor-not-allowed opacity-30"
+              : "text-white/40 hover:bg-white/10 hover:text-white"
+          )}
+          onClick={() => {
+            if (String(layer.name || '').toLowerCase() !== 'default') {
+              onRemove(layer.id)
+            }
+          }}
+          disabled={String(layer.name || '').toLowerCase() === 'default'}
+          title={String(layer.name || '').toLowerCase() === 'default' ? "Không thể xóa layer mặc định" : "Xóa layer"}
         >
           <Trash2 className="size-3.5" />
         </Button>
@@ -281,6 +291,7 @@ export default function LayerStackPanel({
               >
                 <LayerRow
                   layer={layer}
+                  index={idx + 1}
                   accent={ACCENT_BY_INDEX[idx % ACCENT_BY_INDEX.length]}
                   draggable
                   onDragStart={handleDragStart}
