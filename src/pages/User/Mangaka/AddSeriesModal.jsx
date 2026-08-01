@@ -105,20 +105,34 @@ export default function AddSeriesModal({
 
   // Helper resolve: lay selected IDs tu series (co the la string names hoac numbers)
   const resolveSelectedIds = (seriesGenres, seriesTags) => {
-    // Genres: seriesGenres la array of string names
-    const gIds = Array.isArray(seriesGenres) ? seriesGenres.map(gName => {
-      // Tim trong apiGenres da load
-      const found = apiGenres.find(g => g.name === String(gName))
-      if (found?.id != null) return Number(found.id)
-      // Neu apiGenres chua load, tra ve null de reset
-      return null
+    // Genres
+    const gIds = Array.isArray(seriesGenres) ? seriesGenres.map(g => {
+      if (!g) return null
+      if (typeof g === 'object') {
+        const id = itemId(g)
+        if (id != null) return Number(id)
+        const name = itemName(g)
+        const found = apiGenres.find(item => String(item.name).trim().toLowerCase() === String(name).trim().toLowerCase())
+        return found?.id != null ? Number(found.id) : null
+      }
+      const found = apiGenres.find(item => String(item.name).trim().toLowerCase() === String(g).trim().toLowerCase())
+      return found?.id != null ? Number(found.id) : null
     }).filter(id => id != null) : []
-    // Tags: seriesTags la array of string names
-    const tIds = Array.isArray(seriesTags) ? seriesTags.map(tName => {
-      const found = apiTags.find(t => t.name === String(tName))
-      if (found?.id != null) return Number(found.id)
-      return null
+
+    // Tags
+    const tIds = Array.isArray(seriesTags) ? seriesTags.map(t => {
+      if (!t) return null
+      if (typeof t === 'object') {
+        const id = itemId(t)
+        if (id != null) return Number(id)
+        const name = itemName(t)
+        const found = apiTags.find(item => String(item.name).trim().toLowerCase() === String(name).trim().toLowerCase())
+        return found?.id != null ? Number(found.id) : null
+      }
+      const found = apiTags.find(item => String(item.name).trim().toLowerCase() === String(t).trim().toLowerCase())
+      return found?.id != null ? Number(found.id) : null
     }).filter(id => id != null) : []
+
     return { gIds, tIds }
   }
 

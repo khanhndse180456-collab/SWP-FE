@@ -147,6 +147,7 @@ export function normalizeSeries(raw, index = 0) {
     tags,
     color: s.color ?? SERIES_PALETTE[(s.id ?? index) % SERIES_PALETTE.length],
     coverImage: s.coverImage ?? null,
+    proposalFileUrl: s.proposalFileUrl ?? null,
     chapters: s.chapters ?? 0,
     marks: s.marks ?? 0,
     status: s.status ?? 'draft',
@@ -394,11 +395,11 @@ export function mapApiSeriesToLocal(raw, index = 0) {
     title,
     altTitle: title,
     synopsis: String(raw.synopsis ?? '').trim(),
-    coverImage: raw.coverimageurl ?? raw.cover_image_url ?? raw.coverImageUrl ?? null,
-    proposalFileUrl: raw.proposalfileurl ?? raw.proposal_file_url ?? raw.proposalFileUrl ?? null,
+    coverImage: raw.coverimageurl ?? raw.coverImageUrl ?? raw.CoverImageUrl ?? raw.Coverimageurl ?? raw.cover_image_url ?? null,
+    proposalFileUrl: raw.proposalfileurl ?? raw.proposalFileUrl ?? raw.ProposalFileUrl ?? raw.Proposalfileurl ?? raw.proposal_file_url ?? null,
     genres: Array.isArray(raw.genres)
       ? raw.genres.map(g => {
-          const v = g.genre_name ?? g.genreName ?? null
+          const v = g.genre_name ?? g.genrename ?? g.genreName ?? g.name ?? g.Name ?? null
           if (typeof v === 'object' && v !== null) {
             return Object.values(v).find(val => typeof val === 'string' && val) ?? null
           }
@@ -407,7 +408,7 @@ export function mapApiSeriesToLocal(raw, index = 0) {
       : [],
     tags: Array.isArray(raw.tags)
       ? raw.tags.map(t => {
-          const v = t.tag_name ?? t.tagName ?? null
+          const v = t.tag_name ?? t.tagname ?? t.tagName ?? t.name ?? t.Name ?? null
           if (typeof v === 'object' && v !== null) {
             return Object.values(v).find(val => typeof val === 'string' && val) ?? null
           }
