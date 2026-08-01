@@ -49,7 +49,7 @@ const STATS = [
   { label: 'Đánh giá', value: '4.9', icon: Star },
 ]
 
-export default function Profile() {
+export default function Profile({ isWorkspaceMode = false }) {
   const navigate = useNavigate()
   const { data: profile, isLoading } = useProfile()
 
@@ -158,6 +158,14 @@ export default function Profile() {
   }
 
   if (isLoading) {
+    if (isWorkspaceMode) {
+      return (
+        <div className="animate-pulse space-y-6">
+          <div className="h-32 rounded-2xl bg-muted" />
+          <div className="h-48 rounded-2xl bg-muted" />
+        </div>
+      )
+    }
     return (
       <div className="flex min-h-screen flex-col">
         <Header links={NAV_LINKS} />
@@ -175,10 +183,10 @@ export default function Profile() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <Header links={NAV_LINKS} />
+    <div className={cn("flex flex-col bg-background", !isWorkspaceMode && "min-h-screen")}>
+      {!isWorkspaceMode && <Header links={NAV_LINKS} />}
 
-      <main className="flex-1 py-8">
+      <main className={cn("flex-1", !isWorkspaceMode && "py-8")}>
         <div className="page-container mx-auto max-w-5xl">
           {/* Hero Banner */}
           <div className="relative mb-16 overflow-hidden rounded-3xl bg-gradient-to-br from-primary/20 via-rose-500/10 to-violet-500/10 p-8 md:p-12">
@@ -725,7 +733,7 @@ export default function Profile() {
           </Tabs>
         </div>
       </main>
-      <Footer />
+      {!isWorkspaceMode && <Footer />}
     </div>
   )
 }

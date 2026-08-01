@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BookOpen, CheckCircle2, Gavel, Loader2, Search, X, XCircle, ClipboardList, Image as ImageIcon, Trophy, History, Pencil, Upload, Library, RefreshCcw } from "lucide-react";
 import SidebarNav from "@/components/layout/SidebarNav.jsx";
-import WorkspaceTopBar from "@/components/layout/WorkspaceTopBar.jsx";
+import Profile from "../Profile/Profile.jsx";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -310,6 +310,8 @@ export default function Eb() {
         activeId={tab}
         onSelect={setTab}
         onLogout={user ? handleLogout : undefined}
+        user={user}
+        onProfile={() => setTab("profile")}
         accentClass="bg-emerald-600 text-white"
       />
 
@@ -418,20 +420,13 @@ export default function Eb() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <WorkspaceTopBar
-          user={user}
-          onLogout={user ? handleLogout : undefined}
-          titleSlot={
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">{LABEL_EDITOR_BOARD} · Hội đồng</p>
-              <h1 className="text-base font-bold tracking-tight">
-                Xin chào{user?.name ? `, ${user.name}` : ""}
-              </h1>
-            </div>
-          }
-        />
-
         <main className="flex-1 overflow-y-auto p-8">
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">{LABEL_EDITOR_BOARD} · Hội đồng</p>
+            <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Xin chào{user?.name ? `, ${user.name}` : ""}
+            </h1>
+          </div>
           {tab === "queue" && (
           <div className="space-y-6">
               <Card>
@@ -1339,6 +1334,10 @@ export default function Eb() {
                 </CardContent>
               </Card>
             </div>
+          )}
+
+          {tab === "profile" && (
+            <Profile isWorkspaceMode={true} />
           )}
         </main>
       </div>

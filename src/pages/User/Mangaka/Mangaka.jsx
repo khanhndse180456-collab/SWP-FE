@@ -24,7 +24,7 @@ import {
   Workflow,
 } from 'lucide-react'
 import SidebarNav from '@/components/layout/SidebarNav.jsx'
-import WorkspaceTopBar from '@/components/layout/WorkspaceTopBar.jsx'
+import Profile from '../Profile/Profile.jsx'
 import { WorkspaceHero } from '@/components/layout/WorkspaceHero.jsx'
 import {
   LayoutDashboard,
@@ -1695,15 +1695,12 @@ export default function Mangaka() {
         activeId={tab}
         onSelect={setTab}
         onLogout={handleLogout}
+        user={user}
+        onProfile={() => setTab('profile')}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-
-        <WorkspaceTopBar
-          user={user}
-          onLogout={handleLogout}
-        />
 
         {/* Body Container */}
         <main className="flex-1 overflow-y-auto p-8 bg-zinc-50/50 dark:bg-zinc-950/20">
@@ -1815,6 +1812,10 @@ export default function Mangaka() {
 
           {tab === 'settings' && (
             <SettingsView />
+          )}
+
+          {tab === 'profile' && (
+            <Profile isWorkspaceMode={true} />
           )}
         </main>
       </div>

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BookOpen, Calendar, Clock, Loader2, Sparkles, Ban, X } from 'lucide-react'
 import SidebarNav from '@/components/layout/SidebarNav.jsx'
-import WorkspaceTopBar from '@/components/layout/WorkspaceTopBar.jsx'
+import Profile from '../Profile/Profile.jsx'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -197,23 +197,19 @@ export default function TantouEditor() {
         activeId={tab}
         onSelect={setTab}
         onLogout={user ? handleLogout : undefined}
+        user={user}
+        onProfile={() => setTab('profile')}
         accentClass="bg-sky-600 text-white"
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <WorkspaceTopBar
-          user={user}
-          onLogout={user ? handleLogout : undefined}
-          titleSlot={
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-sky-600">{LABEL_TANTOU_EDITOR}</p>
-              <h1 className="text-base font-bold tracking-tight">
-                Xin chào{user?.name ? `, ${user.name}` : ''}
-              </h1>
-            </div>
-          }
-        />
         <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-8 dark:bg-zinc-950/20">
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-sky-600">{LABEL_TANTOU_EDITOR}</p>
+            <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Xin chào{user?.name ? `, ${user.name}` : ''}
+            </h1>
+          </div>
           <Tabs value={tab} onValueChange={setTab} className="space-y-6">
           {/* ── Tab: Duyệt Series ── */}
           <TabsContent value="debut">
@@ -657,6 +653,10 @@ export default function TantouEditor() {
               ))
             )}
 
+            </TabsContent>
+
+            <TabsContent value="profile">
+              <Profile isWorkspaceMode={true} />
             </TabsContent>
         </Tabs>
 
