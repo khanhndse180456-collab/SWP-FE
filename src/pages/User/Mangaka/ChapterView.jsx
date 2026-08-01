@@ -44,13 +44,28 @@ export default function ChapterView({
   onDeleteChapter,
   onViewChapterDetail,
   STATUS_BADGE,
+  initialSeriesTitle,
 }) {
   const [selectedSeriesId, setSelectedSeriesId] = useState(() => {
+    if (initialSeriesTitle && seriesList && seriesList.length > 0) {
+      const found = seriesList.find(s => String(s.title).toLowerCase() === String(initialSeriesTitle).toLowerCase())
+      if (found) return String(found.id)
+    }
     if (seriesList && seriesList.length > 0) {
       return String(seriesList[0].id)
     }
     return 'all'
   })
+
+  React.useEffect(() => {
+    if (initialSeriesTitle && seriesList && seriesList.length > 0) {
+      const found = seriesList.find(s => String(s.title).toLowerCase() === String(initialSeriesTitle).toLowerCase())
+      if (found) {
+        setSelectedSeriesId(String(found.id))
+      }
+    }
+  }, [initialSeriesTitle, seriesList])
+
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [reviewChapter, setReviewChapter] = useState(null)

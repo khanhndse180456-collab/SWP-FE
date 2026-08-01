@@ -11,6 +11,8 @@ import {
   Trash2,
   Upload,
   X,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { LABEL_EDITOR_BOARD, LABEL_TANTOU_EDITOR } from '@/constants/roleTerminology.js'
 import { NOTE_TASK_TYPES, noteTaskLabel } from '@/constants/workspaceTasks.js'
@@ -35,7 +37,8 @@ import {
   useUpdatePageIssue,
   useDeletePageIssue,
   useUpdateSeriesStatus,
-  useAssignTantouEditor
+  useAssignTantouEditor,
+  useDeletePage
 } from '@/api/hooks'
 import { pagesService } from '@/api'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -178,6 +181,7 @@ export default function ChapterAnnotator({
   const [selectedNoteId, setSelectedNoteId] = useState(null)
   const [tool, setTool] = useState('draw')
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showSentNotes, setShowSentNotes] = useState(true)
   const [uploadUi, setUploadUi] = useState(null)
   const [uploadRejectMessage, setUploadRejectMessage] = useState(null)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -234,6 +238,7 @@ export default function ChapterAnnotator({
   const createPageIssue = useCreatePageIssue()
   const updatePageIssue = useUpdatePageIssue()
   const deletePageIssue = useDeletePageIssue()
+  const deletePage = useDeletePage()
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -1070,15 +1075,25 @@ export default function ChapterAnnotator({
     setSelectedNoteId(null)
   }
 
-  const removeCurrentPage = useCallback(() => {
+  const removeCurrentPage = useCallback(async () => {
     if (!activeChapterId || !activeChapter) return
     const chId = activeChapterId
     const idx = pageIndex
-    const oldPages = activeChapter.pages
+    const oldPages = pages
     if (oldPages.length === 0) return
 
     const removed = oldPages[idx]
-    if (removed?.url?.startsWith('blob:')) URL.revokeObjectURL(removed.url)
+    if (removed && removed.serverPageId) {
+      try {
+        await deletePage.mutateAsync(Number(removed.serverPageId))
+        toast.success('Đã gỡ trang thành công.')
+      } catch (err) {
+        toast.error('Gỡ trang thất bại: ' + (err?.response?.data?.message ?? err.message))
+        return
+      }
+    } else {
+      if (removed?.url?.startsWith('blob:')) URL.revokeObjectURL(removed.url)
+    }
 
     const newPages = oldPages.filter((_, i) => i !== idx)
     const chapterRemoved = newPages.length === 0
@@ -1114,7 +1129,7 @@ export default function ChapterAnnotator({
       const max = newPages.length - 1
       return pi > max ? max : pi
     })
-  }, [activeChapter, activeChapterId, pageIndex, chapters, setChapters, setNotes, setActiveChapterId, setPageIndex])
+  }, [activeChapter, activeChapterId, pageIndex, chapters, setChapters, setNotes, setActiveChapterId, setPageIndex, deletePage, pages])
 
   const draftRect = drawStart && drawCurrent ? {
     x: Math.min(drawStart.x, drawCurrent.x),
@@ -1160,6 +1175,15 @@ export default function ChapterAnnotator({
         >
           <Eraser className="size-3.5" />
           Gỡ ô
+        </Button>
+        <Button
+          size="sm"
+          variant={showSentNotes ? 'default' : 'outline'}
+          onClick={() => setShowSentNotes(prev => !prev)}
+          title={showSentNotes ? "Ẩn các ô ghi chú đã gửi lên server" : "Hiện các ô ghi chú đã gửi lên server"}
+        >
+          {showSentNotes ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+          {showSentNotes ? "Ẩn ô đã gửi" : "Hiện ô đã gửi"}
         </Button>
       </div>
     )
@@ -1300,42 +1324,54 @@ export default function ChapterAnnotator({
         })}
 
         {/* Server-side PageIssue overlays from Assistant/Editor */}
-        {(() => {
-          // Filter issues theo page đang xem (BE trả về tất cả issues của chapter).
-          // Nếu page hiện tại chưa có serverPageId (mới upload, chưa sync lên BE),
-          // thì tạm thời không hiển thị server issue nào (issue chỉ tồn tại trên server).
-          const currentPageServerId = pages[pageIndex]?.serverPageId ?? pages[pageIndex]?.apiPageId
-          const currentPageIdNum = currentPageServerId != null ? Number(currentPageServerId) : null
-          const issuesForCurrentPageFiltered = (currentPageIdNum != null && Number.isFinite(currentPageIdNum))
-            ? serverPageIssues.filter(issue => {
-              const issuePageId = issue.pageid ?? issue.pageId ?? issue.Pageid
-              return issuePageId != null && Number(issuePageId) === currentPageIdNum
-            })
-            : []
-          return issuesForCurrentPageFiltered.map((issue, idx) => {
-            const boxX = issue.boxX ?? issue.Boxx ?? issue.boxx ?? 0
-            const boxY = issue.boxY ?? issue.Boxy ?? issue.boxy ?? 0
-            const boxW = issue.boxWidth ?? issue.Boxwidth ?? 0
-            const boxH = issue.boxHeight ?? issue.Boxheight ?? 0
-            return (
-              <div
-                key={issue.issueid ?? issue.Issueid ?? `srv-issue-${idx}`}
-                className="mk-issue-overlay"
-                style={{
-                  left: `${boxX}%`,
-                  top: `${boxY}%`,
-                  width: `${boxW}%`,
-                  height: `${boxH}%`,
-                }}
-                title={`[${issue.issueType ?? issue.Issuetype ?? 'Issue'}] ${issue.description ?? ''}`}
-              >
-                <span className="mk-issue-overlay__type">
-                  {issue.issueType ?? issue.Issuetype ?? '?'}
+        {showSentNotes && issuesForCurrentPage.map((issue, idx) => {
+          const boxX = issue.boxX ?? issue.Boxx ?? issue.boxx ?? 0
+          const boxY = issue.boxY ?? issue.Boxy ?? issue.boxy ?? 0
+          const boxW = issue.boxWidth ?? issue.Boxwidth ?? 0
+          const boxH = issue.boxHeight ?? issue.Boxheight ?? 0
+          const serverId = String(issue.issueid ?? issue.Issueid ?? issue.id)
+          const isSelected = selectedNoteId === serverId
+
+          return (
+            <div
+              key={serverId}
+              className={cn(
+                'mk-note-box srv-note-box',
+                isSelected && 'selected',
+                tool === 'delete' && 'mk-note-box--target',
+              )}
+              style={{
+                left: `${boxX}%`,
+                top: `${boxY}%`,
+                width: `${boxW}%`,
+                height: `${boxH}%`,
+                border: isSelected ? '2px solid #10b981' : '2px dashed #10b981',
+                background: isSelected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)',
+              }}
+              onClick={e => {
+                e.stopPropagation()
+                setSelectedNoteId(serverId)
+              }}
+            >
+              <span className="mk-note-box__num bg-emerald-600 text-white font-bold">{idx + 1}</span>
+              {issue.workCategory && (
+                <span className="mk-note-box__task bg-emerald-500 text-white text-[10px]">
+                  {noteTaskLabel(issue.workCategory.toLowerCase())}
                 </span>
-              </div>
-            )
-          })
-        })()}
+              )}
+              {(isSelected || tool === 'delete') && (
+                <button
+                  type="button"
+                  className="mk-note-box__delete bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={e => { e.stopPropagation(); deleteNote(serverId) }}
+                  aria-label={`Gỡ ô ghi chú server ${idx + 1}`}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          )
+        })}
 
         {draftRect ? (
           <div

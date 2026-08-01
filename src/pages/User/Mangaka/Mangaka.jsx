@@ -22,6 +22,7 @@ import {
   Upload,
   UserPlus,
   Workflow,
+  Loader2,
 } from 'lucide-react'
 import SidebarNav from '@/components/layout/SidebarNav.jsx'
 import Profile from '../Profile/Profile.jsx'
@@ -508,6 +509,8 @@ export default function Mangaka() {
   const [localSeriesList, setLocalSeriesList] = useState([])
   const [addSeriesOpen, setAddSeriesOpen] = useState(false)
   const [editingSeries, setEditingSeries] = useState(null)
+  const [viewingSeriesDetail, setViewingSeriesDetail] = useState(null)
+  const [viewingChapterDetail, setViewingChapterDetail] = useState(null)
   const [localChapterRows, setLocalChapterRows] = useState([])
 
   // Clear local data when API data is available (only use real API data)
@@ -1777,8 +1780,7 @@ export default function Mangaka() {
               onOpenEdit={openEditSeriesModal}
               onDelete={deleteSeriesById}
               onViewSeries={(s) => {
-                setAnnotateSeries(s.title)
-                setTab('chapter')
+                setViewingSeriesDetail(s)
               }}
               onSendSeriesForReview={(series) => {
                 setSelectedSeriesForReview(series)
@@ -1801,11 +1803,10 @@ export default function Mangaka() {
               onOpenEditChapter={openEditChapterModal}
               onDeleteChapter={deleteChapterById}
               onViewChapterDetail={(chapter) => {
-                setAnnotateSeries(chapter.series)
-                setAnnotatorActiveChapterId(chapter.id)
-                setTab('page')
+                setViewingChapterDetail(chapter)
               }}
               STATUS_BADGE={STATUS_BADGE}
+              initialSeriesTitle={annotateSeries}
             />
           )}
 
@@ -1883,6 +1884,208 @@ export default function Mangaka() {
         authorName={user?.name}
         existingTitles={existingSeriesTitles}
       />
+
+      {/* Series Detail Dialog */}
+      <Dialog open={!!viewingSeriesDetail} onOpenChange={(open) => !open && setViewingSeriesDetail(null)}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <BookOpen className="size-4 text-primary" />
+              Chi tiết Series
+            </DialogTitle>
+          </DialogHeader>
+
+          {viewingSeriesDetail && (
+            <div className="space-y-3 py-1 text-sm">
+              <div className="flex gap-3">
+                {viewingSeriesDetail.coverImage ? (
+                  <img src={viewingSeriesDetail.coverImage} alt={viewingSeriesDetail.title} className="w-20 h-28 object-cover rounded-md border shadow-sm shrink-0" />
+                ) : (
+                  <div
+                    className="w-20 h-28 flex items-center justify-center rounded-md font-bold text-white text-sm shrink-0 shadow-sm"
+                    style={{ background: `linear-gradient(135deg, ${viewingSeriesDetail.color || '#6366f1'}, ${viewingSeriesDetail.color || '#6366f1'}88)` }}
+                  >
+                    {(viewingSeriesDetail.title.length >= 2 ? viewingSeriesDetail.title : `${viewingSeriesDetail.title}●`).slice(0, 2)}
+                  </div>
+                )}
+                <div className="space-y-1 min-w-0 flex-1">
+                  <h3 className="text-base font-bold truncate text-foreground">{viewingSeriesDetail.title}</h3>
+                  {viewingSeriesDetail.altTitle && (
+                    <p className="text-[11px] text-muted-foreground truncate">Tên khác: {viewingSeriesDetail.altTitle}</p>
+                  )}
+                  <div className="flex flex-wrap gap-1">
+                    {viewingSeriesDetail.genres?.slice(0, 3).map((g, idx) => (
+                      <Badge key={idx} variant="secondary" className="text-[9px] py-0 px-1 font-normal">
+                        {g}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {viewingSeriesDetail.tags?.slice(0, 4).map((t, idx) => (
+                      <Badge key={idx} variant="outline" className="text-[9px] py-0 px-1 font-normal">
+                        {t}
+                      </Badge>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Trạng thái: <Badge variant="outline" className="text-[9px] ml-1 py-0 px-1">{viewingSeriesDetail.statusLabel || viewingSeriesDetail.status}</Badge>
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tóm tắt / Giới thiệu</h4>
+                <p className="text-xs leading-relaxed text-muted-foreground bg-muted/20 p-2.5 rounded-md border line-clamp-3">
+                  {viewingSeriesDetail.synopsis || "Chưa có tóm tắt."}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2 text-[11px] border-t border-b py-2">
+                <div className="space-y-0.5">
+                  <span className="text-muted-foreground block text-[9px] uppercase font-semibold">Đối tượng</span>
+                  <p className="font-medium capitalize text-foreground">{viewingSeriesDetail.demographic}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-muted-foreground block text-[9px] uppercase font-semibold">Định dạng</span>
+                  <p className="font-medium capitalize text-foreground">{viewingSeriesDetail.format}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-muted-foreground block text-[9px] uppercase font-semibold">Ngôn ngữ</span>
+                  <p className="font-medium capitalize text-foreground">{viewingSeriesDetail.language}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-muted-foreground block text-[9px] uppercase font-semibold">Độ tuổi</span>
+                  <p className="font-medium text-foreground">{viewingSeriesDetail.contentRating}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs pt-1">
+                <span className="text-muted-foreground text-[11px]">Cập nhật cuối: <strong className="text-foreground font-medium">{viewingSeriesDetail.updated || '—'}</strong></span>
+                {viewingSeriesDetail.proposalFileUrl && (
+                  <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-md text-[11px] border border-emerald-500/20">
+                    <FileText className="size-3.5 text-emerald-600 shrink-0" />
+                    <a
+                      href={viewingSeriesDetail.proposalFileUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-emerald-600 hover:text-emerald-700 font-semibold underline"
+                    >
+                      Bản đề xuất (PDF)
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setViewingSeriesDetail(null)}>
+              Đóng
+            </Button>
+            {viewingSeriesDetail && (
+              <Button
+                size="sm"
+                className="bg-primary text-primary-foreground font-semibold gap-1.5"
+                onClick={() => {
+                  setAnnotateSeries(viewingSeriesDetail.title)
+                  setTab('chapter')
+                  setViewingSeriesDetail(null)
+                }}
+              >
+                Quản lý Chapters
+                <ChevronRight className="size-3.5" />
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Chapter Detail Dialog */}
+      <Dialog open={!!viewingChapterDetail} onOpenChange={(open) => !open && setViewingChapterDetail(null)}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <FileText className="size-5 text-primary" />
+              Chi tiết Chapter
+            </DialogTitle>
+            <DialogDescription>
+              Thông tin chi tiết của chương truyện này.
+            </DialogDescription>
+          </DialogHeader>
+
+          {viewingChapterDetail && (
+            <div className="space-y-5 py-4">
+              <div className="flex gap-4">
+                {viewingChapterDetail.coverimageurl || viewingChapterDetail.coverImageUrl || viewingChapterDetail.CoverImageUrl ? (
+                  <img
+                    src={viewingChapterDetail.coverimageurl ?? viewingChapterDetail.coverImageUrl ?? viewingChapterDetail.CoverImageUrl}
+                    alt={viewingChapterDetail.title}
+                    className="w-24 h-32 object-cover rounded-lg border shadow-sm shrink-0"
+                  />
+                ) : (
+                  <div className="w-24 h-32 flex items-center justify-center rounded-lg bg-zinc-100 border text-zinc-400 shrink-0">
+                    <ImageIcon className="size-8" />
+                  </div>
+                )}
+                <div className="space-y-2 min-w-0">
+                  <h3 className="text-lg font-bold text-foreground truncate">{viewingChapterDetail.title || `Chapter #${viewingChapterDetail.id}`}</h3>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Chương thứ: {viewingChapterDetail.chapternumber ?? viewingChapterDetail.chapterNumber ?? '—'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Series: <span className="font-semibold text-foreground">{viewingChapterDetail.series}</span>
+                  </p>
+                  <div>
+                    <Badge variant="outline" className="text-xs mt-1">
+                      {viewingChapterDetail.status || 'Draft'}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-xs border-t pt-4">
+                <div className="space-y-1">
+                  <span className="text-muted-foreground">Số trang:</span>
+                  <p className="font-medium text-sm">{viewingChapterDetail.pages ?? 0} trang</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-muted-foreground">Hạn nộp bản thảo:</span>
+                  <p className="font-medium text-sm">
+                    {viewingChapterDetail.deadline ? new Date(viewingChapterDetail.deadline).toLocaleDateString('vi-VN') : '—'}
+                  </p>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <span className="text-muted-foreground">Cập nhật cuối:</span>
+                  <p className="font-medium">
+                    {viewingChapterDetail.updatedat ?? viewingChapterDetail.updatedAt ? new Date(viewingChapterDetail.updatedat ?? viewingChapterDetail.updatedAt).toLocaleString('vi-VN') : '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setViewingChapterDetail(null)}>
+              Đóng
+            </Button>
+            {viewingChapterDetail && (
+              <Button
+                size="sm"
+                className="bg-primary text-primary-foreground font-semibold gap-1.5"
+                onClick={() => {
+                  setAnnotateSeries(viewingChapterDetail.series)
+                  setAnnotatorActiveChapterId(viewingChapterDetail.id)
+                  setTab('page')
+                  setViewingChapterDetail(null)
+                }}
+              >
+                Soạn thảo trang truyện
+                <ChevronRight className="size-3.5" />
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent className="sm:max-w-[480px]">
