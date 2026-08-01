@@ -44,12 +44,11 @@ import LayerEditor from '@/components/layer/LayerEditor.jsx'
 import CollaborationRequestsDialog from '@/components/CollaborationRequestsDialog.jsx'
 
 const SIDEBAR_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'dashboard', label: 'Workspace', icon: LayoutDashboard },
   { id: 'tasks', label: 'Chapter của tôi', icon: Briefcase },
   { id: 'submit', label: 'Đã gửi Mangaka', icon: Send },
   { id: 'history', label: 'Lịch sử', icon: HistoryIcon },
   { id: 'stats', label: 'Thống kê', icon: BarChart3 },
-  { id: 'profile', label: 'Hồ sơ', icon: User },
   { id: 'settings', label: 'Cài đặt', icon: SettingsIcon },
 ]
 
