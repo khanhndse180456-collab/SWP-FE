@@ -255,42 +255,9 @@ export default function Assistant() {
       <div className="flex flex-1 flex-col min-w-0">
         <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-8 dark:bg-zinc-950/20">
           <Tabs value={tab} onValueChange={setTab} className="space-y-6">
-            <TabsList className="h-auto flex-wrap">
-              {SIDEBAR_ITEMS.slice(0, 5).map(item => {
-                const Icon = item.icon
-                return (
-                  <TabsTrigger key={item.id} value={item.id} className="gap-2">
-                    <Icon className="size-4" />
-                    {item.label}
-                  </TabsTrigger>
-                )
-              })}
-            </TabsList>
 
             {/* DASHBOARD TAB */}
             <TabsContent value="dashboard" className="space-y-6">
-              {/* Banner: cần sửa — dựa trên page_issues thật, không dựa chapter.status */}
-              {revisionChapters.length > 0 && (
-                <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-500/30 dark:bg-red-500/10">
-                  <AlertTriangle className="size-5 shrink-0 text-red-500" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                      {revisionChapters.length} chapter có {totalOpenRevisionIssues} note cần sửa
-                    </p>
-                    <p className="text-xs text-red-600/80 dark:text-red-400/70">
-                      Xem ghi chú ở dưới editor, upload layer sửa rồi gộp & gửi lại.
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 border-red-300 text-red-600 hover:bg-red-100"
-                    onClick={handleGoToRevisions}
-                  >
-                    Xem ngay
-                  </Button>
-                </div>
-              )}
 
               {/* Banner: có yêu cầu hợp tác */}
               {pendingCount > 0 && (
@@ -370,7 +337,7 @@ export default function Assistant() {
                       ) : filteredChapters.length === 0 ? (
                         <div className="p-6 text-center text-xs text-muted-foreground">Không có chapter nào.</div>
                       ) : (
-                        <ScrollArea className="max-h-[calc(100vh-320px)]">
+                        <div className="h-[480px] overflow-y-auto pr-1">
                           <ul className="space-y-1 p-3 pt-0">
                             {filteredChapters.map(ch => {
                               const badge = STATUS_BADGE[(ch.status ?? '').toLowerCase()] ?? STATUS_BADGE.pending
@@ -428,7 +395,7 @@ export default function Assistant() {
                               )
                             })}
                           </ul>
-                        </ScrollArea>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
