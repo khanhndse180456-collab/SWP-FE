@@ -13,6 +13,7 @@ import axiosClient from '@/api/axiosClient.js'
 import { getSession, logout } from '@/lib/auth.js'
 import { LABEL_EDITOR_BOARD, LABEL_TANTOU_EDITOR } from '@/constants/roleTerminology.js'
 import { useTantouWorkspace } from '@/hooks/Usetantouworkspace.js'
+import { useChapters } from '@/api/hooks'
 import { normalizeStatus, isDebutStatus, isEbStatus, statusLabel } from './TantouEditor.helpers.jsx'
 import { CoverThumb } from '@/components/User/Tantou/CoverThumb.jsx'
 import { SeriesSlideCard } from '@/components/User/Tantou/SeriesSlideCard.jsx'
@@ -77,6 +78,32 @@ export default function TantouEditor() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [rejectBusy, setRejectBusy] = useState(false)
+
+  // Xem nhanh chapter của series chờ duyệt
+  const [viewingChapter, setViewingChapter] = useState(null)
+  const [viewingPages, setViewingPages] = useState([])
+  const [viewingPagesLoading, setViewingPagesLoading] = useState(false)
+
+  const { data: debutChapters = [], isLoading: debutChaptersLoading } = useChapters(selectedSeriesId)
+
+  async function openViewingChapter(chapter) {
+    setViewingChapter(chapter)
+    setViewingPagesLoading(true)
+    const chapterId = chapter.chapterid ?? chapter.id
+    try {
+      const res = await axiosClient.get('/Pages', { params: { chapterId } })
+      const pages = Array.isArray(res.data) ? res.data : (res.data?.data ?? [])
+      const sortedPages = pages
+        .filter(p => p && (p.pageimageurl ?? p.Pageimageurl))
+        .sort((a, b) => (a.pagenumber ?? a.Pagenumber ?? 0) - (b.pagenumber ?? b.Pagenumber ?? 0))
+      setViewingPages(sortedPages)
+    } catch (err) {
+      console.error('[TantouEditor] viewing pages fetch error:', err)
+      setViewingPages([])
+    } finally {
+      setViewingPagesLoading(false)
+    }
+  }
 
   // Studio 2-panel
   const [selectedSeriesIdForChapters, setSelectedSeriesIdForChapters] = useState(null)
@@ -292,6 +319,34 @@ export default function TantouEditor() {
                                     <Ban className="mr-1 size-4" />
                                     Từ chối series
                                   </Button>
+                                </div>
+
+                                <div className="mt-4 border-t pt-4">
+                                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
+                                    <BookOpen className="size-4 text-sky-600" />
+                                    Danh sách chapters trong series:
+                                  </h4>
+                                  {debutChaptersLoading ? (
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                                      <Loader2 className="size-3 animate-spin text-sky-600" /> Đang tải chapters...
+                                    </div>
+                                  ) : debutChapters.length === 0 ? (
+                                    <p className="text-xs text-muted-foreground py-2">Chưa có chapter nào được tạo.</p>
+                                  ) : (
+                                    <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
+                                      {debutChapters.map(ch => (
+                                        <Button
+                                          key={ch.chapterid || ch.id}
+                                          variant="outline"
+                                          size="sm"
+                                          className="justify-start truncate text-xs hover:border-sky-400 hover:bg-sky-50/50 dark:hover:bg-sky-950/20"
+                                          onClick={() => openViewingChapter(ch)}
+                                        >
+                                          Ch.{ch.chapternumber ?? ch.chapterNumber ?? '?'} - {ch.title || 'Không tiêu đề'}
+                                        </Button>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </CardContent>
@@ -729,6 +784,51 @@ export default function TantouEditor() {
                   {rejectBusy ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
                   Xác nhận từ chối
                 </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Dialog xem nhanh chapter trong series chờ duyệt */}
+          <Dialog open={!!viewingChapter} onOpenChange={(v) => !v && setViewingChapter(null)}>
+            <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-6">
+              <DialogHeader className="pb-2 border-b">
+                <DialogTitle className="flex items-center gap-2">
+                  <BookOpen className="size-5 text-sky-600" />
+                  Chương {viewingChapter?.chapternumber ?? viewingChapter?.chapterNumber ?? '?'} - {viewingChapter?.title || 'Không có tiêu đề'}
+                </DialogTitle>
+                <DialogDescription>
+                  Xem trước nội dung các trang truyện của chương này.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="flex-1 overflow-y-auto min-h-[300px] py-4 flex flex-col items-center gap-6 bg-slate-900/5 dark:bg-zinc-950/20 rounded-md">
+                {viewingPagesLoading ? (
+                  <div className="flex flex-col items-center justify-center gap-2 py-20 text-muted-foreground">
+                    <Loader2 className="size-6 animate-spin text-sky-500" />
+                    <span>Đang tải các trang truyện...</span>
+                  </div>
+                ) : viewingPages.length === 0 ? (
+                  <div className="flex items-center justify-center py-20 text-muted-foreground">
+                    Chương này chưa có trang nào.
+                  </div>
+                ) : (
+                  viewingPages.map((page, idx) => (
+                    <div key={page.pageid || idx} className="relative max-w-lg w-full border rounded shadow-sm bg-background p-2">
+                      <img
+                        src={page.pageimageurl ?? page.Pageimageurl}
+                        alt={`Trang ${page.pagenumber ?? idx + 1}`}
+                        className="w-full h-auto object-contain rounded"
+                      />
+                      <div className="absolute bottom-4 right-4 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                        Trang {page.pagenumber ?? idx + 1}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <DialogFooter className="pt-2 border-t">
+                <Button onClick={() => setViewingChapter(null)}>Đóng</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
