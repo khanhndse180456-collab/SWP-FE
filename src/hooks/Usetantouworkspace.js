@@ -63,7 +63,9 @@ export function useTantouWorkspace() {
         return (
           seriesMap.has(ch.seriesid) &&
           st !== 'cancelled' &&
-          st !== 'published'
+          st !== 'published' &&
+          st !== 'inproduction' &&
+          st !== 'draft'
         )
       })
       setStudioChapters(active)
@@ -347,10 +349,13 @@ export function useTantouWorkspace() {
       toast.success('Đã gửi yêu cầu sửa cho Mangaka.')
       await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
       await queryClient.invalidateQueries({ queryKey: ['chapters'] })
-    } catch { /* interceptor toast */ }
+      return true
+    } catch {
+      return false
+    }
   }
 
-async function handleChapterApprove(chapterId, currentStatus) {
+  async function handleChapterApprove(chapterId, currentStatus) {
     try {
       const st = normalizeStatus(currentStatus)
       // BE không cho InProduction -> Published thẳng, phải qua Ready trước
@@ -361,7 +366,10 @@ async function handleChapterApprove(chapterId, currentStatus) {
       toast.success('Đã duyệt chapter thành công.')
       await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
       await queryClient.invalidateQueries({ queryKey: ['chapters'] })
-    } catch { /* interceptor toast */ }
+      return true
+    } catch {
+      return false
+    }
   }
 
   function handleRefreshStudio() {
@@ -377,6 +385,7 @@ async function handleChapterApprove(chapterId, currentStatus) {
   return {
     // series
     loading,
+    series,
     debutQueue,
     ebQueue,
     scheduleSeries,

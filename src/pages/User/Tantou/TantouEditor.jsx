@@ -48,6 +48,7 @@ export default function TantouEditor() {
 
   const {
     loading,
+    series: mySeries = [],
     debutQueue,
     scheduleSeries,
     studioLoading,
@@ -431,8 +432,15 @@ export default function TantouEditor() {
                           onRequestRevision={undefined}
                           onApproveRecurring={undefined}
                           actionsMode="studio"
-                          onChapterRequestRevision={(comment) => handleChapterRequestRevision(selectedChapter.chapterid ?? selectedChapter.id, comment)}
-                          onChapterApprove={() => handleChapterApprove(selectedChapter.chapterid ?? selectedChapter.id, selectedChapter.status)} pages={selectedChapterPages}
+                          onChapterRequestRevision={async (comment) => {
+                             const ok = await handleChapterRequestRevision(selectedChapter.chapterid ?? selectedChapter.id, comment)
+                             if (ok) closeChapter()
+                           }}
+                           onChapterApprove={async () => {
+                             const ok = await handleChapterApprove(selectedChapter.chapterid ?? selectedChapter.id, selectedChapter.status)
+                             if (ok) closeChapter()
+                           }}
+                          pages={selectedChapterPages}
                           pagesLoading={selectedChapterPagesLoading}
                           pageIndex={selectedChapterPageIndex}
                           onPageIndexChange={setSelectedChapterPageIndex}
@@ -678,7 +686,6 @@ export default function TantouEditor() {
                 }}
               />
             </TabsContent>
-        </Tabs>
           </Tabs>
 
           {/* Modal từ chối series */}
