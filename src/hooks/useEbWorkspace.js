@@ -32,6 +32,7 @@ const REQUIRED_COUNCIL_MEMBERS = 5;
 export function useEbWorkspace() {
   // ── Server state ──────────────────────────────────────────────────────────
   const [pending, setPending] = useState([]); // Series chờ EB chấm điểm
+  const [allEvaluations, setAllEvaluations] = useState([]); // Tất cả các bản chấm điểm của hệ thống
   const [members, setMembers] = useState([]);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -246,11 +247,20 @@ export function useEbWorkspace() {
   const loadQueue = useCallback(async () => {
     setLoadingQueue(true);
     try {
-      const seriesRes = await axiosClient.get("/Series");
+      const [seriesRes, evalsRes] = await Promise.all([
+        axiosClient.get("/Series"),
+        axiosClient.get("/BoardEvaluation")
+      ]);
       const raw = seriesRes.data;
       const all = Array.isArray(raw) ? raw : (raw?.data ?? []);
-      // Lọc series chờ EB chấm điểm (dùng cả 2 status để tương thích)
-      const ebData = all.filter(s => isAwaitingEbScore(s.status) || isEbStatus(s.status));
+      // Lọc series chờ EB chấm điểm + series đã được quyết định phát hành/từ chối để tiếp tục quản lý
+      const ebData = all.filter(s => 
+        isAwaitingEbScore(s.status) || 
+        isEbStatus(s.status) || 
+        s.status === "Publishing" || 
+        s.status === "Cancelled" || 
+        s.status === "Completed"
+      );
 
       if (process.env.NODE_ENV !== 'production') {
         console.log('[EbWorkspace] DEBUG: total=%d, awaiting-eb=%d', all.length, ebData.length);
@@ -261,6 +271,9 @@ export function useEbWorkspace() {
         _resolvedId: String(item.series_id ?? item.seriesid ?? item.id),
       }));
 
+      const rawEvals = evalsRes.data;
+      const evalsList = Array.isArray(rawEvals) ? rawEvals : (rawEvals?.data ?? []);
+      setAllEvaluations(evalsList);
       setPending(normalized);
 
       setSelectedId(prev => {
@@ -304,6 +317,7 @@ export function useEbWorkspace() {
       if (evalsRes.status === "fulfilled") {
         const raw = evalsRes.value.data;
         const all = Array.isArray(raw) ? raw : (raw?.data ?? []);
+        setAllEvaluations(all);
         evalList = all.filter(e =>
           String(e.seriesid ?? e.Seriesid) === String(seriesId)
         );
@@ -724,15 +738,18 @@ export function useEbWorkspace() {
   }
 
   function getQueueAssessment(seriesId) {
-    if (String(seriesId) !== String(selectedId)) {
-      return { scoredCount: 0, total: REQUIRED_COUNCIL_MEMBERS, classification: null, councilAverage: 0, isSelected: false };
-    }
+    const seriesEvals = allEvaluations.filter(e =>
+      String(e.seriesid ?? e.Seriesid ?? e.series_id) === String(seriesId)
+    );
+    const { councilAverage, scoredCount } = computeCouncilAverageForSeries(seriesEvals, scoreFields);
+    const classification = scoredCount > 0 ? getClassification(councilAverage) : null;
+    
     return {
-      scoredCount: councilAggregate.scoredCount,
+      scoredCount,
       total: REQUIRED_COUNCIL_MEMBERS,
-      classification: councilAggregate.scoredCount > 0 ? councilClassification : null,
-      councilAverage: councilAggregate.councilAverage,
-      isSelected: true,
+      classification,
+      councilAverage,
+      isSelected: String(seriesId) === String(selectedId),
     };
   }
 

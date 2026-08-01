@@ -153,7 +153,7 @@ export default function Eb() {
   // ── Quản lý Series: tìm kiếm / lọc / sửa ──────────────────────────────────
   const [seriesMgmtSearch, setSeriesMgmtSearch] = useState("");
   const [seriesStatusFilter, setSeriesStatusFilter] = useState("all");
-  const [seriesGroupTab, setSeriesGroupTab] = useState("pending");
+  const [seriesGroupTab, setSeriesGroupTab] = useState("all");
   const [editingSeries, setEditingSeries] = useState(null); // series object đang sửa
   const [lastEditedSeriesId, setLastEditedSeriesId] = useState(null); // ID series vừa sửa để giữ lại trong tab hiện tại
 
@@ -326,7 +326,12 @@ export default function Eb() {
               Hàng chờ duyệt
             </h2>
           </div>
-          <Badge variant="secondary" className="text-[11px]">{pending.length}</Badge>
+          <Badge variant="secondary" className="text-[11px]">
+            {pending.filter(p => {
+              const st = p.status ?? p.Status ?? "";
+              return st === "EBReview" || st === "EditorReview" || st === "PendingReview";
+            }).length}
+          </Badge>
         </div>
 
         {!loadingQueue && pending.length > 0 && (
