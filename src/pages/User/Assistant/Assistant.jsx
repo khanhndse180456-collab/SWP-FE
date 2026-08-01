@@ -94,6 +94,7 @@ export default function Assistant() {
   const { assignments, loading: assignmentsLoading, refresh } = useAssistantAssignments()
   const { pendingCount } = useCollaborationRequests()
   const [selectedChapterId, setSelectedChapterId] = useState(null)
+  const [selectedPageId, setSelectedPageId] = useState(null)
   const [taskFilter, setTaskFilter] = useState('all')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [collabDialogOpen, setCollabDialogOpen] = useState(false)
@@ -101,18 +102,39 @@ export default function Assistant() {
   const [studioSearch, setStudioSearch] = useState('')
 
   useEffect(() => {
+    let hasChanges = false
+    const newState = { ...location.state }
+
     if (location.state?.openCollab) {
       setCollabDialogOpen(true)
+      delete newState.openCollab
+      hasChanges = true
     }
     if (location.state?.tab) {
       setTab(location.state.tab)
+      delete newState.tab
+      hasChanges = true
     }
-  }, [location.state])
+    if (location.state?.chapterId) {
+      setSelectedChapterId(location.state.chapterId)
+      delete newState.chapterId
+      hasChanges = true
+    }
+    if (location.state?.pageId) {
+      setSelectedPageId(location.state.pageId)
+      delete newState.pageId
+      hasChanges = true
+    }
+
+    if (hasChanges) {
+      navigate(location.pathname, { replace: true, state: newState })
+    }
+  }, [location.state, location.pathname, navigate])
 
   const selectedAssignment = useMemo(
     () => {
       if (selectedChapterId) {
-        const found = assignments.find(a => (a.chapterId ?? a.id) === selectedChapterId)
+        const found = assignments.find(a => String(a.chapterId ?? a.id) === String(selectedChapterId))
         if (found) return found
       }
       return assignments[0] ?? null
@@ -126,7 +148,7 @@ export default function Assistant() {
       setSelectedChapterId(null)
       return
     }
-    if (!assignments.some(a => (a.chapterId ?? a.id) === selectedChapterId)) {
+    if (!assignments.some(a => String(a.chapterId ?? a.id) === String(selectedChapterId))) {
       setSelectedChapterId(assignments[0]?.chapterId ?? assignments[0]?.id ?? null)
     }
   }, [assignments, selectedChapterId])
@@ -191,6 +213,7 @@ export default function Assistant() {
     // Submissions have id but no chapterId; use id for selection
     const key = chapter.chapterId ?? chapter.id ?? null
     setSelectedChapterId(key)
+    setSelectedPageId(null)
   }
 
   function handleGoToRevisions() {
@@ -326,7 +349,7 @@ export default function Assistant() {
                               const source = ch._source ?? (ch.id ? 'submission' : ch.contractId ? 'contract' : 'chapter')
                               const itemKey = `${source}:${ch.id ?? ch.contractId ?? ch.chapterId}`
                               const displayChapterId = ch.chapterId ?? ch.id
-                              const isSelected = displayChapterId === selectedChapterId
+                              const isSelected = String(displayChapterId) === String(selectedChapterId)
                               return (
                                 <li key={itemKey}>
                                   <button
@@ -454,7 +477,7 @@ export default function Assistant() {
                               chapterId: selectedAssignment.chapterId,
                               pages,
                             }}
-                            pageId={isSubmission ? undefined : selectedAssignment.pages?.[0]?.id}
+                            pageId={isSubmission ? undefined : (selectedPageId ?? selectedAssignment.pages?.[0]?.id)}
                             pageIssues={isSubmission ? (selectedAssignment.notes ?? []) : undefined}
                             onSubmitted={() => {
                               void refresh()
@@ -543,7 +566,7 @@ export default function Assistant() {
                             const source = ch._source ?? (ch.id ? 'submission' : ch.contractId ? 'contract' : 'chapter')
                             const itemKey = `${source}:${ch.id ?? ch.contractId ?? ch.chapterId}`
                             const displayChapterId = ch.chapterId ?? ch.id
-                            const isSelected = displayChapterId === selectedChapterId
+                            const isSelected = String(displayChapterId) === String(selectedChapterId)
                             return (
                               <li key={itemKey}>
                                 <button

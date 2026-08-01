@@ -53,6 +53,16 @@ export default function LayerEditor({ chapter, pageId: pageIdProp, onSubmitted, 
       .catch(() => null)
   }, [])
 
+  // Đồng bộ pageIdProp từ props vào state pageIdx
+  useEffect(() => {
+    if (pageIdProp && pages.length > 0) {
+      const idx = pages.findIndex(p => String(p.id) === String(pageIdProp))
+      if (idx !== -1) {
+        setPageIdx(idx)
+      }
+    }
+  }, [pageIdProp, pages])
+
   const layersApi = usePageLayers(activePageId, { uploaderId: user?.userid ?? user?.id ?? null })
   const {
     layers,

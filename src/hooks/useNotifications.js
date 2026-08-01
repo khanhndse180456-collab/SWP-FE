@@ -83,16 +83,33 @@ function normalize(raw, role) {
 
   if (referenceType === 'Issue') {
     if (seriesTitle && chapterId && pageId) {
-      const slug = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-      link = `/mangaka/series/${slug}/chapter/${chapterId}/page/${pageId}`
+      if (role === 'ASSISTANT') {
+        link = '/assistant'
+        linkState = {
+          tab: 'dashboard',
+          chapterId: String(chapterId),
+          pageId: String(pageId)
+        }
+      } else {
+        const slug = seriesTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+        link = `/mangaka/series/${slug}/chapter/${chapterId}/page/${pageId}`
+      }
     }
   } else if (referenceType === 'Chapter') {
-    link = '/mangaka'
-    linkState = {
-      tab: 'page',
-      series: seriesTitle,
-      seriesId: seriesId,
-      chapterId: chapterId ? String(chapterId) : null
+    if (role === 'ASSISTANT') {
+      link = '/assistant'
+      linkState = {
+        tab: 'dashboard',
+        chapterId: chapterId ? String(chapterId) : null
+      }
+    } else {
+      link = '/mangaka'
+      linkState = {
+        tab: 'page',
+        series: seriesTitle,
+        seriesId: seriesId,
+        chapterId: chapterId ? String(chapterId) : null
+      }
     }
   } else if (referenceType === 'Contract') {
     if (role === 'ASSISTANT') {
@@ -103,8 +120,13 @@ function normalize(raw, role) {
       linkState = { tab: 'contract' }
     }
   } else if (referenceType === 'Evaluation') {
-    link = '/mangaka'
-    linkState = { tab: 'history' }
+    if (role === 'ASSISTANT') {
+      link = '/assistant'
+      linkState = { tab: 'history' }
+    } else {
+      link = '/mangaka'
+      linkState = { tab: 'history' }
+    }
   }
 
   return {
