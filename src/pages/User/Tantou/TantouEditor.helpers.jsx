@@ -41,6 +41,8 @@ export function statusVariant(raw) {
   return 'outline'
 }
 
+// 'ready' = Mangaka vừa gửi, Tantou chưa xử lý (không phải "chờ EB").
+// 'delayed' = Tantou đã yêu cầu sửa (không phải trễ deadline).
 export function statusLabel(raw) {
   const map = {
     draft:          'Bản nháp',
@@ -51,9 +53,9 @@ export function statusLabel(raw) {
     rejected:     'Đã từ chối',
     cancelled:    'Đã huỷ',
     inproduction: 'Đang thực hiện',
-    ready:        'Sẵn sàng — chờ EB',
+    ready:        'Mới nhận — chờ bạn duyệt',
     published:    'Đã phát hành',
-    delayed:      'Trễ deadline',
+    delayed:      'Bạn đã yêu cầu sửa',
   }
   return map[normalizeStatus(raw)] ?? raw
 }
@@ -397,7 +399,7 @@ export default function TantouEditor() {
               <div>
                 <h2 className="text-xl font-semibold">Tiến độ studio</h2>
                 <p className="text-sm text-muted-foreground">
-                  Theo dõi trạng thái chapter. Duyệt Ready → Published là quyền của {LABEL_EDITOR_BOARD}.
+                  Theo dõi trạng thái chapter. Yêu cầu sửa hoặc duyệt xuất bản thẳng cho chapter.
                 </p>
               </div>
               <Button
@@ -438,8 +440,8 @@ export default function TantouEditor() {
                   {[
                     { value: 'all',          label: 'Tất cả' },
                     { value: 'inproduction', label: 'Đang làm' },
-                    { value: 'delayed',      label: 'Trễ' },
-                    { value: 'ready',        label: 'Sẵn sàng' },
+                    { value: 'delayed',      label: 'Đã yêu cầu sửa' },
+                    { value: 'ready',        label: 'Mới nhận' },
                     { value: 'published',    label: 'Đã phát' },
                   ].map(opt => (
                     <Button

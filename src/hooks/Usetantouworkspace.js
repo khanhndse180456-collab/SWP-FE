@@ -343,15 +343,20 @@ export function useTantouWorkspace() {
   // bản (Published) thẳng — không còn bước trung gian "gửi cho EB xem".
   async function handleChapterRequestRevision(chapterId, comment) {
     try {
-      await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Delayed')
+      await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Ready')
       toast.success('Đã gửi yêu cầu sửa cho Mangaka.')
       await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
       await queryClient.invalidateQueries({ queryKey: ['chapters'] })
     } catch { /* interceptor toast */ }
   }
 
-  async function handleChapterApprove(chapterId) {
+async function handleChapterApprove(chapterId, currentStatus) {
     try {
+      const st = normalizeStatus(currentStatus)
+      // BE không cho InProduction -> Published thẳng, phải qua Ready trước
+      if (st === 'inproduction') {
+        await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Ready')
+      }
       await axiosClient.patch(`/Chapters/${chapterId}/status`, 'Published')
       toast.success('Đã duyệt chapter thành công.')
       await loadStudioChapters(new Map(series.map(s => [s.seriesid, s])))
