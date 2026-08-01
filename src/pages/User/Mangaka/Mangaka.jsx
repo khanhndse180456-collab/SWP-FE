@@ -775,16 +775,27 @@ export default function Mangaka() {
             : new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString())
 
         return pageIssuesService.create({
+          Pageid: Number(effectivePageId),
           pageId: Number(effectivePageId),
+          CreatedById: user.id,
           createdById: user.id,
+          AssignedToId: assistantId ? Number(assistantId) : null,
           assignedToId: assistantId ? Number(assistantId) : null,
-          issueType,
-          workCategory,
+          IssueType: issueType,
+          issueType: issueType,
+          WorkCategory: workCategory,
+          workCategory: workCategory,
+          BoxX: Math.round(note.x),
           boxX: Math.round(note.x),
+          BoxY: Math.round(note.y),
           boxY: Math.round(note.y),
+          BoxWidth: Math.round(note.w),
           boxWidth: Math.round(note.w),
+          BoxHeight: Math.round(note.h),
           boxHeight: Math.round(note.h),
+          Description: (note.text ?? note.content ?? '').trim() || 'Ghi chú mới',
           description: (note.text ?? note.content ?? '').trim() || 'Ghi chú mới',
+          Deadline: deadline,
           deadline: deadline,
         }).then(r => console.log('[Mangaka] pageIssuesService.create OK →', { noteClientKey: note.clientKey, response: JSON.stringify(r?.data) }))
           .catch(e => console.error('[Mangaka] pageIssuesService.create FAILED →', { noteClientKey: note.clientKey, error: e?.response?.data ?? e.message }))

@@ -486,6 +486,14 @@ export default function PageLayerWorkspace() {
   }, [allLayers.length])
 
   function handleUploadLayer({ name, layerType, dataUrl, file }) {
+    const maxZ = allLayers.reduce((max, l) => {
+      const idx = Number(l.index)
+      return Number.isFinite(idx) ? Math.max(max, idx) : max
+    }, 1)
+    const nextZ = Math.max(2, maxZ + 1)
+
+    console.log('[DEBUG] handleUploadLayer:', { name, allLayers, maxZ, nextZ })
+
     const newLayer = {
       localId: localId(),
       name,
@@ -493,6 +501,7 @@ export default function PageLayerWorkspace() {
       dataUrl,
       file,
       visible: true,
+      index: nextZ,
     }
 
     // Nếu page đã có server ID → upload lên server ngay
@@ -502,6 +511,9 @@ export default function PageLayerWorkspace() {
       fd.append('uploaderId', user?.id ?? 0)
       fd.append('layerName', name)
       fd.append('opacity', '1.0')
+      fd.append('zIndex', String(nextZ))
+      fd.append('Zindex', String(nextZ))
+      fd.append('zindex', String(nextZ))
       fd.append('layerFile', file)
       createLayer.mutate(fd, {
         onSuccess: () => {

@@ -428,10 +428,12 @@ export default function ChapterAnnotator({
 
   const issuesForCurrentPage = useMemo(() => {
     if (currentPageServerId == null || !Number.isFinite(Number(currentPageServerId)) || !Array.isArray(serverPageIssues)) return []
-    return serverPageIssues.filter(issue => {
+    const filtered = serverPageIssues.filter(issue => {
       const issuePageId = issue.pageid ?? issue.pageId ?? issue.Pageid
       return issuePageId != null && Number(issuePageId) === Number(currentPageServerId)
     })
+    console.log('[DEBUG] issuesForCurrentPage:', filtered)
+    return filtered
   }, [serverPageIssues, currentPageServerId])
   const { data: currentPageLayers = [] } = usePageLayers(currentPageServerId)
   const fallbackLayerUrl = useMemo(() => {
@@ -554,16 +556,27 @@ export default function ChapterAnnotator({
       id: Number(stableKey),
       data: {
         pageId: originalIssue.pageid ?? originalIssue.pageId ?? originalIssue.Pageid,
+        Pageid: originalIssue.pageid ?? originalIssue.pageId ?? originalIssue.Pageid,
         createdById: originalIssue.createdById ?? originalIssue.Createdbyid ?? user?.id ?? 0,
+        CreatedById: originalIssue.createdById ?? originalIssue.Createdbyid ?? user?.id ?? 0,
         assignedToId: originalIssue.assignedToId ?? originalIssue.Assignedtoid ?? null,
+        AssignedToId: originalIssue.assignedToId ?? originalIssue.Assignedtoid ?? null,
         issueType,
+        IssueType: issueType,
         workCategory,
-        boxX: originalIssue.boxX ?? originalIssue.Boxx ?? 0,
-        boxY: originalIssue.boxY ?? originalIssue.Boxy ?? 0,
-        boxWidth: originalIssue.boxWidth ?? originalIssue.Boxwidth ?? 0,
-        boxHeight: originalIssue.boxHeight ?? originalIssue.Boxheight ?? 0,
+        WorkCategory: workCategory,
+        boxX: originalIssue.boxX ?? originalIssue.BoxX ?? originalIssue.box_x ?? originalIssue.Boxx ?? 0,
+        BoxX: originalIssue.boxX ?? originalIssue.BoxX ?? originalIssue.box_x ?? originalIssue.Boxx ?? 0,
+        boxY: originalIssue.boxY ?? originalIssue.BoxY ?? originalIssue.box_y ?? originalIssue.Boxy ?? 0,
+        BoxY: originalIssue.boxY ?? originalIssue.BoxY ?? originalIssue.box_y ?? originalIssue.Boxy ?? 0,
+        boxWidth: originalIssue.boxWidth ?? originalIssue.BoxWidth ?? originalIssue.box_width ?? originalIssue.Boxwidth ?? 0,
+        BoxWidth: originalIssue.boxWidth ?? originalIssue.BoxWidth ?? originalIssue.box_width ?? originalIssue.Boxwidth ?? 0,
+        boxHeight: originalIssue.boxHeight ?? originalIssue.BoxHeight ?? originalIssue.box_height ?? originalIssue.Boxheight ?? 0,
+        BoxHeight: originalIssue.boxHeight ?? originalIssue.BoxHeight ?? originalIssue.box_height ?? originalIssue.Boxheight ?? 0,
         description,
+        Description: description,
         deadline,
+        Deadline: deadline,
       }
     }, {
       onSuccess: () => {
@@ -1325,10 +1338,10 @@ export default function ChapterAnnotator({
 
         {/* Server-side PageIssue overlays from Assistant/Editor */}
         {showSentNotes && issuesForCurrentPage.map((issue, idx) => {
-          const boxX = issue.boxX ?? issue.Boxx ?? issue.boxx ?? 0
-          const boxY = issue.boxY ?? issue.Boxy ?? issue.boxy ?? 0
-          const boxW = issue.boxWidth ?? issue.Boxwidth ?? 0
-          const boxH = issue.boxHeight ?? issue.Boxheight ?? 0
+          const boxX = issue.boxX ?? issue.BoxX ?? issue.box_x ?? issue.Boxx ?? issue.boxx ?? 0
+          const boxY = issue.boxY ?? issue.BoxY ?? issue.box_y ?? issue.Boxy ?? issue.boxy ?? 0
+          const boxW = issue.boxWidth ?? issue.BoxWidth ?? issue.box_width ?? issue.Boxwidth ?? issue.boxwidth ?? 0
+          const boxH = issue.boxHeight ?? issue.BoxHeight ?? issue.box_height ?? issue.Boxheight ?? issue.boxheight ?? 0
           const serverId = String(issue.issueid ?? issue.Issueid ?? issue.id)
           const isSelected = selectedNoteId === serverId
 
@@ -1404,7 +1417,7 @@ export default function ChapterAnnotator({
       >
         <div className="mb-2 flex items-center justify-between">
           <Badge variant={note.isServer ? 'secondary' : 'outline'} className={cn(note.isServer && 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300')}>
-            {note.isServer ? `Đã gửi #${index + 1}` : `Nháp #${index + 1}`}
+            {note.isServer ? `Đã gửi #${index + 1} (${Math.round(note.x)}, ${Math.round(note.y)}, ${Math.round(note.w)}, ${Math.round(note.h)})` : `Nháp #${index + 1}`}
           </Badge>
           <Button size="xs" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => onDelete(stableKey)}>
             <Trash2 className="size-3" />
@@ -1525,6 +1538,10 @@ export default function ChapterAnnotator({
                           text: issue.description ?? issue.Description ?? '',
                           deadline: issue.deadline ? String(issue.deadline).substring(0, 10) : '',
                           isServer: true,
+                          x: issue.boxX ?? issue.BoxX ?? issue.box_x ?? issue.Boxx ?? issue.boxx ?? 0,
+                          y: issue.boxY ?? issue.BoxY ?? issue.box_y ?? issue.Boxy ?? issue.boxy ?? 0,
+                          w: issue.boxWidth ?? issue.BoxWidth ?? issue.box_width ?? issue.Boxwidth ?? issue.boxwidth ?? 0,
+                          h: issue.boxHeight ?? issue.BoxHeight ?? issue.box_height ?? issue.Boxheight ?? issue.boxheight ?? 0,
                         }
 
                         return (

@@ -51,7 +51,7 @@ function apiLayerToUi(raw) {
     visible: raw.is_visible ?? raw.isvisible ?? raw.isVisible ?? raw.IsVisible ?? true,
     opacity: opacityVal,
     blendMode: BLEND_OPTIONS.includes(raw.blendMode) ? raw.blendMode : "normal",
-    index: Number(raw.z_index ?? raw.index ?? raw.zIndex ?? raw.ZIndex ?? 0),
+    index: Number(raw.z_index ?? raw.zindex ?? raw.Zindex ?? raw.index ?? raw.zIndex ?? raw.ZIndex ?? 0),
     currentVersionNo:
       raw.version_number ?? raw.versionnumber ?? raw.versionNumber ?? raw.VersionNumber ?? raw.currentVersionNo ?? 1,
   };
@@ -187,8 +187,8 @@ export function usePageLayers(pageId, { uploaderId } = {}) {
       if (!pageId) return null;
       setUploading(true);
       try {
-        const maxIdx = layers.reduce((max, l) => Math.max(max, l.index ?? 0), 0);
-        const nextIdx = index ?? (maxIdx + 1);
+        const maxIdx = layers.reduce((max, l) => Math.max(max, l.index ?? 0), 1);
+        const nextIdx = index ?? Math.max(2, maxIdx + 1);
         const customCount = layers.filter((l) => String(l.name || '').toLowerCase() !== 'default').length;
         const defaultName = `Layer ${customCount + 1}`;
         const res = await layersService.uploadLayer(pageId, {
