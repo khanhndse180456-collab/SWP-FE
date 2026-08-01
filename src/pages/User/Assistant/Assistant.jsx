@@ -20,6 +20,7 @@ import {
   BarChart3,
   History as HistoryIcon,
   User,
+  BookOpen,
 } from 'lucide-react'
 import SidebarNav from '@/components/layout/SidebarNav.jsx'
 import Profile from '../Profile/Profile.jsx'
