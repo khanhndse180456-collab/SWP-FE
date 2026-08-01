@@ -408,7 +408,7 @@ export default function Eb() {
                       <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
                         {p.status ?? p.Status ?? "EBReview"}
                       </Badge>
-                      {assessment.isSelected && assessment.scoredCount > 0 ? (
+                      {assessment.scoredCount > 0 ? (
                         <Badge variant="secondary" className={`border px-1.5 py-0 text-[10px] ${assessment.classification.className}`}>
                           {assessment.scoredCount}/{assessment.total} · {assessment.classification.label}
                         </Badge>
