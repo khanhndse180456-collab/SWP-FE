@@ -155,6 +155,7 @@ export default function Eb() {
   const [seriesStatusFilter, setSeriesStatusFilter] = useState("all");
   const [seriesGroupTab, setSeriesGroupTab] = useState("pending");
   const [editingSeries, setEditingSeries] = useState(null); // series object đang sửa
+  const [lastEditedSeriesId, setLastEditedSeriesId] = useState(null); // ID series vừa sửa để giữ lại trong tab hiện tại
 
   const handleImportClick = () => {
     const issueNumber = Number(importIssueNumber);
@@ -256,12 +257,13 @@ export default function Eb() {
       const author = (s.authorname ?? s.author ?? "").toLowerCase();
       const status = s.status ?? s.Status ?? "";
       const matchesQuery = !q || title.includes(q) || author.includes(q);
-      const matchesGroup = !activeGroup?.statuses || activeGroup.statuses.includes(status);
+      const isLastEdited = s._resolvedId != null && String(s._resolvedId) === String(lastEditedSeriesId);
+      const matchesGroup = isLastEdited || !activeGroup?.statuses || activeGroup.statuses.includes(status);
       // Dropdown lọc chi tiết chỉ áp dụng thêm khi đang ở Tab "Tất cả".
       const matchesStatus = seriesGroupTab !== "all" || seriesStatusFilter === "all" || status === seriesStatusFilter;
       return matchesQuery && matchesGroup && matchesStatus;
     });
-  }, [allSeries, seriesMgmtSearch, seriesStatusFilter, seriesGroupTab]);
+  }, [allSeries, seriesMgmtSearch, seriesStatusFilter, seriesGroupTab, lastEditedSeriesId]);
 
   function seriesStatusBadgeClass(status) {
     if (status === "Publishing") return "border-blue-200 bg-blue-50 text-blue-700";
@@ -708,7 +710,7 @@ export default function Eb() {
                         <button
                           key={g.id}
                           type="button"
-                          onClick={() => setSeriesGroupTab(g.id)}
+                          onClick={() => { setSeriesGroupTab(g.id); setLastEditedSeriesId(null); }}
                           className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                             isActive
                               ? "border-primary bg-primary/10 text-primary"
@@ -804,10 +806,10 @@ export default function Eb() {
                             const cover = s.coverimageurl ?? s.cover_image_url ?? s.coverImageUrl;
                             const isCancelled = status === "Cancelled";
                             const isCompleted = status === "Completed";
-                            const isLocked = isCancelled || isCompleted;
+                            const isLocked = false; // Luôn mở để EB có thể điều chỉnh trạng thái bất cứ lúc nào
                             const isPublishing = status === "Publishing";
                             return (
-                              <tr key={sid} className="border-t align-top dark:border-zinc-800">
+                              <tr key={sid} className={`border-t align-top dark:border-zinc-800 ${lastEditedSeriesId === sid ? 'bg-primary/5' : ''}`}>
                                 <td className="px-3 py-3">
                                   <div className="flex items-center gap-2.5">
                                     {cover ? (
@@ -833,77 +835,64 @@ export default function Eb() {
                                 <td className="px-3 py-3 text-muted-foreground">{author}</td>
                                 <td className="px-3 py-3 text-muted-foreground">{genre}</td>
                                 <td className="px-3 py-3 text-center">
-                                  {isLocked ? (
-                                    <Badge variant="secondary" className={`border text-[11px] ${seriesStatusBadgeClass(status)}`}>
-                                      {status}
-                                    </Badge>
-                                  ) : (
-                                    <Select
-                                      value={status}
-                                      onValueChange={(v) => updateSeriesStatus(sid, v)}
-                                    >
-                                      <SelectTrigger className={`h-7 w-auto min-w-[110px] border px-2 text-[11px] ${seriesStatusBadgeClass(status)}`}>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {Array.from(new Set([status, ...seriesStatusOptions])).map(st => (
-                                          <SelectItem key={st} value={st}>{st}</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
+                                  <Select
+                                    value={status}
+                                    onValueChange={(v) => {
+                                      setLastEditedSeriesId(sid);
+                                      updateSeriesStatus(sid, v);
+                                    }}
+                                  >
+                                    <SelectTrigger className={`h-7 w-auto min-w-[110px] border px-2 text-[11px] ${seriesStatusBadgeClass(status)}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {Array.from(new Set([status, ...seriesStatusOptions])).map(st => (
+                                        <SelectItem key={st} value={st}>{st}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </td>
                                 <td className="px-3 py-3 text-center">
-                                  {isLocked ? (
-                                    <span className="text-[11px] text-muted-foreground">{format !== "—" ? format : "—"}</span>
-                                  ) : (
-                                    <Select
-                                      value={format !== "—" ? format : ""}
-                                      onValueChange={(v) => updateSeriesFormat(sid, v)}
-                                    >
-                                      <SelectTrigger className="h-7 w-auto min-w-[110px] px-2 text-[11px]">
-                                        <SelectValue placeholder="Chưa đặt" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {FORMAT_OPTIONS.map(opt => (
-                                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
+                                  <Select
+                                    value={format !== "—" ? format : ""}
+                                    onValueChange={(v) => {
+                                      setLastEditedSeriesId(sid);
+                                      updateSeriesFormat(sid, v);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 w-auto min-w-[110px] px-2 text-[11px]">
+                                      <SelectValue placeholder="Chưa đặt" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {FORMAT_OPTIONS.map(opt => (
+                                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </td>
                                 <td className="px-3 py-3 text-right">
-                                  {isCancelled ? (
-                                    <span className="text-[11px] text-muted-foreground italic">Đã hủy — không thể sửa</span>
-                                  ) : (
-                                    <div className="flex items-center justify-end gap-2">
-                                      {isPublishing && (
-                                        <Button
-                                          size="sm"
-                                          className="gap-1 bg-emerald-600 hover:bg-emerald-700"
-                                          onClick={() => handleMarkCompleted(sid, title)}
-                                          title="Đánh dấu series đã đăng xong lên web"
-                                        >
-                                          <CheckCircle2 className="size-3.5" />
-                                          Hoàn tất
-                                        </Button>
-                                      )}
-                                      {!isCompleted && (
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="gap-1"
-                                          onClick={() => setEditingSeries(s)}
-                                        >
-                                          <Pencil className="size-3.5" />
-                                          Sửa
-                                        </Button>
-                                      )}
-                                      {isCompleted && (
-                                        <span className="text-[11px] text-muted-foreground italic">Đã hoàn tất</span>
-                                      )}
-                                    </div>
-                                  )}
+                                  <div className="flex items-center justify-end gap-2">
+                                    {isPublishing && (
+                                      <Button
+                                        size="sm"
+                                        className="gap-1 bg-emerald-600 hover:bg-emerald-700"
+                                        onClick={() => handleMarkCompleted(sid, title)}
+                                        title="Đánh dấu series đã đăng xong lên web"
+                                      >
+                                        <CheckCircle2 className="size-3.5" />
+                                        Hoàn tất
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="gap-1"
+                                      onClick={() => setEditingSeries(s)}
+                                    >
+                                      <Pencil className="size-3.5" />
+                                      Sửa
+                                    </Button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1386,7 +1375,17 @@ export default function Eb() {
         onClose={() => setEditingSeries(null)}
         onSave={async (payload) => {
           const sid = editingSeries._resolvedId;
-          const ok = await updateSeriesInfo(sid, payload);
+          setLastEditedSeriesId(sid);
+          const currentStatus = editingSeries.status ?? editingSeries.Status ?? "";
+          const currentFormat = editingSeries.publishformat ?? editingSeries.Publishformat ?? "";
+          
+          let ok = true;
+          if (payload.status !== currentStatus) {
+            ok = await updateSeriesStatus(sid, payload.status);
+          }
+          if (ok && payload.publishformat !== currentFormat) {
+            ok = await updateSeriesFormat(sid, payload.publishformat);
+          }
           if (ok) setEditingSeries(null);
         }}
       />
@@ -1476,24 +1475,20 @@ function ChangeFormatDialog({ dialog }) {
   );
 }
 
-// ── Dialog sửa thông tin series (mở từ tab Quản lý Series) ────────────────
-// LƯU Ý: gửi PUT /Series/{id} với các field bên dưới — hãy đối chiếu tên field
-// với DTO Update thực tế ở backend (ASP.NET Core) nếu API trả lỗi 400.
 function SeriesEditDialog({ series, saving, onClose, onSave }) {
-  const [form, setForm] = useState({ title: "", genre: "", authorname: "", coverimageurl: "", synopsis: "" });
+  const [form, setForm] = useState({ status: "", publishformat: "" });
 
   useEffect(() => {
     if (!series) return;
     setForm({
-      title: series.title ?? series.series_title ?? "",
-      genre: series.genre ?? series.Genre ?? "",
-      authorname: series.authorname ?? series.author ?? "",
-      coverimageurl: series.coverimageurl ?? series.cover_image_url ?? "",
-      synopsis: series.synopsis ?? "",
+      status: series.status ?? series.Status ?? "",
+      publishformat: series.publishformat ?? series.Publishformat ?? "",
     });
   }, [series]);
 
   if (!series) return null;
+
+  const title = series.title ?? series.series_title ?? series.Title ?? `Series #${series._resolvedId}`;
 
   function update(key, value) {
     setForm(cur => ({ ...cur, [key]: value }));
@@ -1501,44 +1496,59 @@ function SeriesEditDialog({ series, saving, onClose, onSave }) {
 
   return (
     <Dialog open={!!series} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Sửa thông tin series</DialogTitle>
-          <DialogDescription>Series #{series._resolvedId}</DialogDescription>
+          <DialogTitle>Cấu hình xuất bản Series</DialogTitle>
+          <DialogDescription>
+            {title} (ID: #{series._resolvedId})
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="series-title">Tên series</Label>
-            <Input id="series-title" value={form.title} onChange={e => update("title", e.target.value)} />
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="series-status">Trạng thái xuất bản</Label>
+            <Select
+              value={form.status}
+              onValueChange={v => update("status", v)}
+            >
+              <SelectTrigger id="series-status" className="w-full">
+                <SelectValue placeholder="Chọn trạng thái" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Publishing">Cho phép xuất bản (Publishing)</SelectItem>
+                <SelectItem value="Cancelled">Từ chối / Ngừng xuất bản (Cancelled)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Quyết định việc tác phẩm có được tiếp tục hiển thị và xuất bản các chương mới hay không.
+            </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="series-genre">Thể loại</Label>
-              <Input id="series-genre" value={form.genre} onChange={e => update("genre", e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="series-author">Tác giả</Label>
-              <Input id="series-author" value={form.authorname} onChange={e => update("authorname", e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="series-cover">Link ảnh bìa</Label>
-            <Input id="series-cover" value={form.coverimageurl} onChange={e => update("coverimageurl", e.target.value)} placeholder="https://..." />
-            {form.coverimageurl && (
-              <img src={form.coverimageurl} alt="" className="mt-2 h-24 w-18 rounded object-cover border" />
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="series-synopsis">Mô tả / Synopsis</Label>
-            <Textarea id="series-synopsis" value={form.synopsis} onChange={e => update("synopsis", e.target.value)} className="min-h-24" />
+
+          <div className="space-y-2">
+            <Label htmlFor="series-format">Định dạng phát hành (Chu kỳ)</Label>
+            <Select
+              value={form.publishformat}
+              onValueChange={v => update("publishformat", v)}
+            >
+              <SelectTrigger id="series-format" className="w-full">
+                <SelectValue placeholder="Chọn định dạng" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Pending">Chưa đặt (Pending)</SelectItem>
+                <SelectItem value="Weekly">Theo tuần (Weekly)</SelectItem>
+                <SelectItem value="Monthly">Theo tháng (Monthly)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Chu kỳ cập nhật chương mới dự kiến cho series này.
+            </p>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex justify-end gap-2 pt-2 border-t">
           <Button variant="outline" onClick={onClose} disabled={saving}>Huỷ</Button>
           <Button onClick={() => onSave(form)} disabled={saving}>
-            {saving && <Loader2 className="size-4 animate-spin" />}
+            {saving && <Loader2 className="size-4 animate-spin mr-1" />}
             Lưu thay đổi
           </Button>
         </div>

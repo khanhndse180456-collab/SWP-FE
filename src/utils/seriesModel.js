@@ -424,7 +424,7 @@ export function mapApiSeriesToLocal(raw, index = 0) {
     tantoueditorid: raw.tantoueditorid ?? raw.tantou_editor_id ?? raw.tantouEditorId,
     chapters: 0,
     marks: 0,
-    status: (status === 'publishing') ? 'publishing' : (status === 'approved') ? 'done' : (status === 'pending' || status === 'editorreview' || status === 'editorreviewing' || status === 'submittedtoeditor') ? 'review' : 'draft',
+    status: (status === 'publishing') ? 'publishing' : (status === 'approved' || status === 'completed') ? 'done' : (status === 'cancelled') ? 'cancelled' : (status === 'pending' || status === 'editorreview' || status === 'editorreviewing' || status === 'submittedtoeditor' || status === 'ebreview') ? 'review' : 'draft',
     updated: (() => {
       const dateStr = raw.updatedat ?? raw.updated_at ?? raw.updatedAt ?? raw.createdat ?? raw.created_at ?? raw.createdAt;
       if (!dateStr) return 'Chưa cập nhật';
