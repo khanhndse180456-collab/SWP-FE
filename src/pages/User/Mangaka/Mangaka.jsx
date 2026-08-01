@@ -588,6 +588,7 @@ export default function Mangaka() {
           num: c.chapternumber ?? c.Chapternumber ?? 1,
           title: c.title ?? `Chapter ${c.chapternumber}`,
           pages: c.pageCount ?? c.pagecount ?? c.PageCount ?? c.Pagecount ?? c.pages?.length ?? 0,
+          coverimageurl: c.coverimageurl ?? c.coverImageUrl ?? c.CoverImageUrl,
           createdAt: (() => {
             if (!c.createdat) return ''
             const d = new Date(c.createdat)

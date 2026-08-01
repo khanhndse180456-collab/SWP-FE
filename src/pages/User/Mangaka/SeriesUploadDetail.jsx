@@ -465,17 +465,17 @@ export default function SeriesUploadDetail() {
   }
 
   const chapterCards = useMemo(() => chapterRows.map(row => {
-    const rowChapterId = row.apiChapterId ?? null
+    const rowChapterId = row.apiChapterId ?? row.chapterid ?? row.id ?? null
     const rowServerPages = rawServerPages.filter(p => {
       const pid = p.pageid ?? p.Pageid ?? p.id
       return String(pid) === String(rowChapterId)
     })
-    const serverPageCover = rowServerPages.length > 0 && rowServerPages[0]?.pageImageUrl
-      ? { url: rowServerPages[0].pageImageUrl, name: 'cover' }
-      : null
-    const cover = serverPageCover
-      ?? rowServerPages.find(p => p?.pageImageUrl ?? p?.compositeImageUrl ?? p?.imageUrl)
-      ?? null
+    const coverUrl = row.coverimageurl ?? row.coverImageUrl ?? row.CoverImageUrl
+    const cover = coverUrl
+      ? { url: coverUrl, name: 'cover' }
+      : rowServerPages.length > 0 && rowServerPages[0]?.pageImageUrl
+        ? { url: rowServerPages[0].pageImageUrl, name: 'cover' }
+        : null
     const uploaded = row.pages ?? rowServerPages.length ?? 0
     return { row, cover, uploaded, serverPages: rowServerPages }
   }), [chapterRows, rawServerPages])
