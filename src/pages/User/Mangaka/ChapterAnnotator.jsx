@@ -787,9 +787,12 @@ export default function ChapterAnnotator({
     }
 
     const fileList = Array.from(files).filter(
-      f => f.type.startsWith('image/') || f.name.match(/\.(png|jpe?g|webp)$/i),
+      f => f.type?.startsWith('image/') || f.name.match(/\.(png|jpe?g|webp)$/i),
     )
-    if (!fileList.length) return
+    if (fileList.length !== files.length) {
+      toast.error('Chỉ hỗ trợ tải lên các tệp tin hình ảnh (png, jpg, jpeg, webp).')
+      if (fileList.length === 0) return
+    }
 
     try {
       setUploadUi({ series: trimmedSeries, chapter: target.num, pct: 5 })
@@ -901,8 +904,9 @@ export default function ChapterAnnotator({
 
   const handleCoverFile = useCallback(async (file) => {
     if (!file || !activeChapterId) return
-    const ok = file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)
+    const ok = file.type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)
     if (!ok) {
+      toast.error('Ảnh bìa chapter phải là định dạng hình ảnh (png, jpg, jpeg, webp).')
       setUploadRejectMessage('Ảnh bìa cần là PNG/JPG/WEBP.')
       return
     }

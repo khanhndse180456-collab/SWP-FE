@@ -174,6 +174,13 @@ export default function Eb() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (ext !== '.xlsx' && ext !== '.xls' && ext !== '.csv') {
+      toast.error('File import phải là định dạng Excel hoặc CSV (.xlsx, .xls, .csv).');
+      e.target.value = '';
+      return;
+    }
+
     const issueNumber = Number(importIssueNumber);
     const issueYear = Number(importIssueYear);
 

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { Eye, EyeOff, GripVertical, ImagePlus, Loader2, Trash2, Upload } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -185,6 +186,11 @@ export default function LayerStackPanel({
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+    const isImg = file.type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)
+    if (!isImg) {
+      toast.error('Layer phải là định dạng hình ảnh (png, jpg, jpeg, webp).')
+      return
+    }
     await onAddLayer?.(file)
   }
 

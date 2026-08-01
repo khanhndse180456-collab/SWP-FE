@@ -240,6 +240,12 @@ function UploadLayerDialog({ open, onClose, onUpload }) {
   function handleFileChange(e) {
     const f = e.target.files?.[0]
     if (!f) return
+    const isImg = f.type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(f.name)
+    if (!isImg) {
+      toast.error('Layer phải là định dạng hình ảnh (png, jpg, jpeg, webp).')
+      e.target.value = ''
+      return
+    }
     setFile(f)
     fileToDataUrl(f).then(url => setPreview(url))
     if (!layerName) {
@@ -251,13 +257,17 @@ function UploadLayerDialog({ open, onClose, onUpload }) {
   function handleDrop(e) {
     e.preventDefault()
     const f = e.dataTransfer.files?.[0]
-    if (f && (f.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(f.name))) {
-      setFile(f)
-      fileToDataUrl(f).then(url => setPreview(url))
-      if (!layerName) {
-        const name = f.name.replace(/\.[^.]+$/, '')
-        setLayerName(name)
-      }
+    if (!f) return
+    const isImg = f.type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(f.name)
+    if (!isImg) {
+      toast.error('Layer phải là định dạng hình ảnh (png, jpg, jpeg, webp).')
+      return
+    }
+    setFile(f)
+    fileToDataUrl(f).then(url => setPreview(url))
+    if (!layerName) {
+      const name = f.name.replace(/\.[^.]+$/, '')
+      setLayerName(name)
     }
   }
 
