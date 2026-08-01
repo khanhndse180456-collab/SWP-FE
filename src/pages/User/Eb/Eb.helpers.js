@@ -81,7 +81,7 @@ export function mapEvalDetailToScores(detail) {
   if (!detail) return buildInitialScores();
   // BE trả về snake_case: story_score / art_score / character_score / commercial_score / pacing_score.
   // Fallback camelCase cho dữ liệu local (form state) đã normalize.
-  const v = (snake, camel) => detail[snake] ?? detail[camel] ?? 0;
+  const v = (snake, camel) => detail[snake] ?? detail[camel] ?? detail[camel.charAt(0).toUpperCase() + camel.slice(1)] ?? 0;
   return {
     plotDialogue: String(v("story_score", "storyScore")),
     artDesign: String(v("art_score", "artScore")),
