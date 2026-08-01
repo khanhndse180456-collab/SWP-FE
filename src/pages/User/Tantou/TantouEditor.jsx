@@ -656,7 +656,20 @@ export default function TantouEditor() {
             </TabsContent>
 
             <TabsContent value="profile">
-              <Profile isWorkspaceMode={true} />
+              <Profile
+                isWorkspaceMode={true}
+                stats={{
+                  seriesCount: mySeries.length,
+                  chaptersCount: debutQueue.length,
+                  rating: '5.0',
+                  recentActivities: mySeries.slice(0, 4).map(s => ({
+                    icon: BookOpen,
+                    action: 'Được phân công Series',
+                    detail: s.title || `Series #${s.seriesid}`,
+                    time: 'Đang theo dõi'
+                  }))
+                }}
+              />
             </TabsContent>
         </Tabs>
 

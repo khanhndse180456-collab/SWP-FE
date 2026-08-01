@@ -61,6 +61,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { logout as authLogout } from '@/lib/auth.js'
 import { useAuth } from '@/lib/providers'
@@ -132,7 +133,6 @@ const SIDEBAR_ITEMS = [
   { id: 'chapter',       label: 'Chapter',           icon: FileText },
   { id: 'page',          label: 'Workspace',         icon: Layers },
   { id: 'assistants',    label: 'Assistant',         icon: UserPlus },
-  { id: 'contract',      label: 'Hợp đồng',          icon: FileSignature },
   { id: 'stats',         label: 'Thống kê',          icon: BarChart3 },
   { id: 'settings',      label: 'Cài đặt',           icon: SettingsIcon },
 ]
@@ -394,6 +394,8 @@ export default function Mangaka() {
   const [seriesToDelete, setSeriesToDelete] = useState(null)
   const [deleteChapterConfirmOpen, setDeleteChapterConfirmOpen] = useState(false)
   const [chapterToDelete, setChapterToDelete] = useState(null)
+  const [editingChapter, setEditingChapter] = useState(null)
+  const [editChapterOpen, setEditChapterOpen] = useState(false)
 
   const [tab, setTab] = useState('dashboard')
   // annotateSeries must read from location.state first (navigation carries the correct series),
@@ -1580,6 +1582,49 @@ export default function Mangaka() {
     setAnnotateSeries((cur) => (cur !== title ? cur : remainingSeries[0]?.title ?? ''))
   }
 
+  function openEditChapterModal(chapter) {
+    setEditingChapter(chapter)
+    setEditChapterOpen(true)
+  }
+
+  function handleConfirmUpdateChapter(form) {
+    if (!editingChapter) return
+    const chapterId = editingChapter.chapterid ?? editingChapter.id
+    const payload = {
+      chapternumber: Number(form.chapternumber),
+      title: form.title.trim(),
+      deadline: new Date(form.deadline).toISOString(),
+    }
+
+    updateChapter.mutate({ id: Number(chapterId), data: payload }, {
+      onSuccess: () => {
+        toast.success('Cập nhật thông tin chapter thành công!', {
+          style: {
+            background: '#f0fdf4',
+            color: '#15803d',
+            border: '1px solid #bbf7d0',
+            borderRadius: '12px',
+            fontWeight: '500',
+          }
+        })
+        qc.invalidateQueries({ queryKey: ['chapters'] })
+        setEditChapterOpen(false)
+        setEditingChapter(null)
+      },
+      onError: (err) => {
+        toast.error('Cập nhật thất bại: ' + (err?.response?.data?.message ?? err.message), {
+          style: {
+            background: '#fef2f2',
+            color: '#b91c1c',
+            border: '1px solid #fecaca',
+            borderRadius: '12px',
+            fontWeight: '500',
+          }
+        })
+      }
+    })
+  }
+
   function deleteChapterById(chapterId) {
     const target = chapterRows.find(x => String(x.id) === String(chapterId))
     if (!target) {
@@ -1752,12 +1797,7 @@ export default function Mangaka() {
                   setTab('page')
                 }
               }}
-              onOpenEditChapter={(chapter) => {
-                const matchedSeries = seriesList.find(s => s.title === chapter.series)
-                if (matchedSeries) {
-                  openEditSeriesModal(matchedSeries)
-                }
-              }}
+              onOpenEditChapter={openEditChapterModal}
               onDeleteChapter={deleteChapterById}
               onViewChapterDetail={(chapter) => {
                 setAnnotateSeries(chapter.series)
@@ -1807,7 +1847,7 @@ export default function Mangaka() {
           )}
 
           {tab === 'stats' && (
-            <StatsView />
+            <StatsView seriesList={seriesList} chapterRows={chapterRows} />
           )}
 
           {tab === 'settings' && (
@@ -1815,7 +1855,20 @@ export default function Mangaka() {
           )}
 
           {tab === 'profile' && (
-            <Profile isWorkspaceMode={true} />
+            <Profile
+              isWorkspaceMode={true}
+              stats={{
+                seriesCount: seriesList.length,
+                chaptersCount: chapterRows.length,
+                rating: '5.0',
+                recentActivities: chapterRows.slice(0, 4).map(c => ({
+                  icon: BookOpen,
+                  action: c.status === 'Published' ? 'Chapter đã xuất bản' : 'Cập nhật bản thảo',
+                  detail: `${c.series} - ${c.title || `Chapter #${c.id}`}`,
+                  time: c.status === 'Published' ? 'Đã phát hành' : 'Bản nháp'
+                }))
+              }}
+            />
           )}
         </main>
       </div>
@@ -1950,6 +2003,86 @@ export default function Mangaka() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Chapter Dialog */}
+      <EditChapterDialog
+        open={editChapterOpen}
+        chapter={editingChapter}
+        onClose={() => { setEditChapterOpen(false); setEditingChapter(null); }}
+        onSave={handleConfirmUpdateChapter}
+        busy={updateChapter.isPending}
+      />
     </div>
+  )
+}
+
+function EditChapterDialog({ open, chapter, onClose, onSave, busy }) {
+  const [form, setForm] = useState({ title: '', chapternumber: 1, deadline: '' })
+
+  useEffect(() => {
+    if (!chapter) return
+    setForm({
+      title: chapter.title ?? '',
+      chapternumber: chapter.num ?? chapter.chapternumber ?? 1,
+      deadline: chapter.deadline ? new Date(chapter.deadline).toISOString().substring(0, 10) : '',
+    })
+  }, [chapter])
+
+  if (!chapter) return null
+
+  function update(key, value) {
+    setForm(cur => ({ ...cur, [key]: value }))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md bg-card border">
+        <DialogHeader>
+          <DialogTitle className="font-bold text-lg">Chỉnh sửa Chapter</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">Cập nhật thông tin chi tiết chương truyện.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="chapter-num">Số thứ tự chương (Chapter Number) *</Label>
+            <Input
+              id="chapter-num"
+              type="number"
+              min={1}
+              value={form.chapternumber}
+              onChange={e => update("chapternumber", Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="chapter-title">Tiêu đề chương *</Label>
+            <Input
+              id="chapter-title"
+              value={form.title}
+              onChange={e => update("title", e.target.value)}
+              placeholder="Nhập tiêu đề chương..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="chapter-deadline">Hạn nộp bản thảo *</Label>
+            <Input
+              id="chapter-deadline"
+              type="date"
+              value={form.deadline}
+              onChange={e => update("deadline", e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-0 flex justify-end">
+          <Button variant="ghost" onClick={onClose} disabled={busy} className="hover:bg-muted font-medium text-xs">
+            Hủy
+          </Button>
+          <Button onClick={() => onSave(form)} disabled={busy || !form.title.trim() || !form.deadline} className="bg-primary text-primary-foreground font-semibold text-xs">
+            {busy && <Loader2 className="size-4 animate-spin mr-1" />}
+            Lưu thay đổi
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

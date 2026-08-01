@@ -1337,7 +1337,20 @@ export default function Eb() {
           )}
 
           {tab === "profile" && (
-            <Profile isWorkspaceMode={true} />
+            <Profile
+              isWorkspaceMode={true}
+              stats={{
+                seriesCount: pending.length,
+                chaptersCount: history.length,
+                rating: '5.0',
+                recentActivities: history.slice(0, 4).map(h => ({
+                  icon: BookOpen,
+                  action: h.action === 'approve' ? 'Duyệt tác phẩm' : 'Từ chối tác phẩm',
+                  detail: h.seriesTitle || `Series #${h.seriesId}`,
+                  time: h.at ? new Date(h.at).toLocaleDateString('vi-VN') : 'Gần đây'
+                }))
+              }}
+            />
           )}
         </main>
       </div>

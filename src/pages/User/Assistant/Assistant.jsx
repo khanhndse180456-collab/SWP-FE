@@ -747,7 +747,20 @@ export default function Assistant() {
             </TabsContent>
 
             <TabsContent value="profile">
-              <Profile isWorkspaceMode={true} />
+              <Profile
+                isWorkspaceMode={true}
+                stats={{
+                  seriesCount: 0,
+                  chaptersCount: revisionChapters.length,
+                  rating: '5.0',
+                  recentActivities: revisionChapters.slice(0, 4).map(c => ({
+                    icon: BookOpen,
+                    action: 'Nhận yêu cầu sửa layer',
+                    detail: `Chapter #${c.chapterId || c.id}`,
+                    time: 'Đang thực hiện'
+                  }))
+                }}
+              />
             </TabsContent>
           </Tabs>
         </main>
