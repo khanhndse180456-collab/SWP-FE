@@ -55,7 +55,7 @@ function timeAgo(iso) {
 
 const TICK_MS = 500
 
-function TopBarBell({ userId }) {
+export function TopBarBell({ userId, isSidebar }) {
   const navigate = useNavigate()
   const { items, unreadCount, loading, refresh, markAllRead, markRead } = useNotifications({
     enabled: true,
@@ -98,7 +98,12 @@ function TopBarBell({ userId }) {
         <button
           type="button"
           aria-label="Thông báo"
-          className="relative flex size-10 cursor-pointer items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-white"
+          className={cn(
+            "relative flex size-10 cursor-pointer items-center justify-center rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40",
+            isSidebar 
+              ? "size-8.5 rounded-lg border-zinc-800 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+              : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-white"
+          )}
         >
           <Bell className="size-4" />
           {scopedBadge > 0 ? (
@@ -113,8 +118,9 @@ function TopBarBell({ userId }) {
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        align="end"
-        sideOffset={8}
+        align={isSidebar ? "start" : "end"}
+        side={isSidebar ? "top" : "bottom"}
+        sideOffset={isSidebar ? 8 : 8}
         className="flex max-h-[min(80vh,520px)] w-80 flex-col overflow-hidden p-0"
       >
         <div className="sticky top-0 z-10 -mx-1 flex shrink-0 items-center justify-between border-b bg-popover px-3 py-2.5 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.08)]">
@@ -198,7 +204,7 @@ function TopBarBell({ userId }) {
   )
 }
 
-function TopBarUserMenu({ user, onLogout }) {
+export function TopBarUserMenu({ user, onLogout, onProfile, isSidebar }) {
   const navigate = useNavigate()
   const initials = getInitials(user?.name)
   const roleLabel = ROLE_LABEL[user?.role] ?? user?.role ?? 'Thành viên'
@@ -210,15 +216,20 @@ function TopBarUserMenu({ user, onLogout }) {
         <button
           type="button"
           aria-label="Tài khoản"
-          className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-zinc-200 bg-white px-2.5 py-1.5 pl-1.5 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
+          className={cn(
+            "flex cursor-pointer items-center gap-2.5 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 min-w-0 flex-1",
+            isSidebar
+              ? "border-transparent bg-transparent text-white hover:bg-zinc-900 px-1 py-1"
+              : "border-zinc-200 bg-white px-2.5 py-1.5 pl-1.5 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
+          )}
           title={user?.name ? `Tài khoản ${user.name}` : 'Tài khoản'}
         >
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-xs font-bold text-white shadow-xs">
             {initials}
           </span>
-          <span className="hidden min-w-0 sm:flex sm:flex-col">
-            <span className="truncate text-xs font-semibold text-foreground">{user?.name || 'Tài khoản'}</span>
-            <span className="truncate text-[10px] uppercase tracking-wider text-muted-foreground">
+          <span className="flex min-w-0 flex-col flex-1">
+            <span className={cn("truncate text-xs font-semibold text-left", isSidebar ? "text-white" : "text-foreground")}>{user?.name || 'Tài khoản'}</span>
+            <span className="truncate text-[10px] uppercase tracking-wider text-muted-foreground text-left">
               {roleLabel}
             </span>
           </span>
@@ -243,11 +254,15 @@ function TopBarUserMenu({ user, onLogout }) {
           </DropdownMenuItem>
         ) : null}
 
-        <DropdownMenuItem asChild>
-          <Link to="/profile" className="flex w-full cursor-pointer items-center gap-2">
-            <UserIcon className="size-4" />
-            Hồ sơ cá nhân
-          </Link>
+        <DropdownMenuItem
+          onSelect={() => {
+            if (typeof onProfile === 'function') onProfile()
+            else navigate('/profile')
+          }}
+          className="cursor-pointer flex w-full items-center gap-2"
+        >
+          <UserIcon className="size-4" />
+          Hồ sơ cá nhân
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Check, Loader2, Plus, X } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   Dialog,
   DialogContent,
@@ -159,8 +160,25 @@ export default function AddSeriesModal({
     const synopsis = String(form.synopsis ?? '').trim()
     if (synopsis.length < 1) errors.synopsis = 'Vui lòng nhập tóm tắt.'
     if (selectedGenreIds.length === 0) errors.genres = 'Chọn ít nhất một thể loại.'
-    if (!isEdit && !form.coverImage) errors.coverImage = 'Vui lòng chọn ảnh bìa.'
-    if (!isEdit && !form.proposalFile) errors.proposalFile = 'Vui lòng đính kèm file bản đề xuất.'
+    if (!isEdit && !form.coverImage) {
+      errors.coverImage = 'Vui lòng chọn ảnh bìa.'
+    } else if (form.coverImage) {
+      const isImg = form.coverImage.type?.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(form.coverImage.name)
+      if (!isImg) {
+        errors.coverImage = 'Ảnh bìa phải là định dạng hình ảnh (png, jpg, jpeg, webp, gif).'
+      }
+    }
+    if (!isEdit && !form.proposalFile) {
+      errors.proposalFile = 'Vui lòng đính kèm file bản đề xuất.'
+    } else if (form.proposalFile) {
+      const isPdfOrDoc = form.proposalFile.type === 'application/pdf' || 
+                         form.proposalFile.type === 'application/msword' ||
+                         form.proposalFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                         /\.(pdf|doc|docx)$/i.test(form.proposalFile.name)
+      if (!isPdfOrDoc) {
+        errors.proposalFile = 'File đề xuất phải là định dạng PDF hoặc Word (.doc, .docx).'
+      }
+    }
     return { ok: Object.keys(errors).length === 0, errors }
   }, [form, titlesForValidation, selectedGenreIds, isEdit])
 
@@ -247,7 +265,15 @@ export default function AddSeriesModal({
     setTouched(false)
   }
 
-  const err = (key) => (touched ? validation.errors[key] : null)
+  const err = (key) => {
+    const error = validation.errors[key]
+    if (!error) return null
+    if (touched) return error
+    // Show format/type errors immediately if a file has been selected
+    if (key === 'coverImage' && form.coverImage && error.includes('định dạng')) return error
+    if (key === 'proposalFile' && form.proposalFile && error.includes('định dạng')) return error
+    return null
+  }
 
   // Tra ve selected genre/tag names (hien thi tren chip)
   const selectedGenreNames = useMemo(() => {
@@ -464,7 +490,19 @@ export default function AddSeriesModal({
                   className="asm-input"
                   type="file"
                   accept="image/*"
-                  onChange={e => patch({ coverImage: e.target.files?.[0] ?? null })}
+                  onChange={e => {
+                    const file = e.target.files?.[0] ?? null
+                    if (file) {
+                      const isImg = file.type?.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(file.name)
+                      if (!isImg) {
+                        toast.error('Ảnh bìa phải là định dạng hình ảnh (png, jpg, jpeg, webp, gif).')
+                        e.target.value = ''
+                        patch({ coverImage: null })
+                        return
+                      }
+                    }
+                    patch({ coverImage: file })
+                  }}
                 />
                 {form.coverImage ? (
                   <p className="text-xs text-muted-foreground mt-1">
@@ -487,7 +525,22 @@ export default function AddSeriesModal({
                   className="asm-input"
                   type="file"
                   accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={e => patch({ proposalFile: e.target.files?.[0] ?? null })}
+                  onChange={e => {
+                    const file = e.target.files?.[0] ?? null
+                    if (file) {
+                      const isPdfOrDoc = file.type === 'application/pdf' || 
+                                         file.type === 'application/msword' ||
+                                         file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                                         /\.(pdf|doc|docx)$/i.test(file.name)
+                      if (!isPdfOrDoc) {
+                        toast.error('File đề xuất phải là định dạng PDF hoặc Word (.pdf, .doc, .docx).')
+                        e.target.value = ''
+                        patch({ proposalFile: null })
+                        return
+                      }
+                    }
+                    patch({ proposalFile: file })
+                  }}
                 />
                 {form.proposalFile ? (
                   <p className="text-xs text-muted-foreground mt-1">

@@ -49,7 +49,7 @@ const STATS = [
   { label: 'Đánh giá', value: '4.9', icon: Star },
 ]
 
-export default function Profile() {
+export default function Profile({ isWorkspaceMode = false, stats }) {
   const navigate = useNavigate()
   const { data: profile, isLoading } = useProfile()
 
@@ -158,6 +158,14 @@ export default function Profile() {
   }
 
   if (isLoading) {
+    if (isWorkspaceMode) {
+      return (
+        <div className="animate-pulse space-y-6">
+          <div className="h-32 rounded-2xl bg-muted" />
+          <div className="h-48 rounded-2xl bg-muted" />
+        </div>
+      )
+    }
     return (
       <div className="flex min-h-screen flex-col">
         <Header links={NAV_LINKS} />
@@ -175,10 +183,10 @@ export default function Profile() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <Header links={NAV_LINKS} />
+    <div className={cn("flex flex-col bg-background", !isWorkspaceMode && "min-h-screen")}>
+      {!isWorkspaceMode && <Header links={NAV_LINKS} />}
 
-      <main className="flex-1 py-8">
+      <main className={cn("flex-1", !isWorkspaceMode && "py-8")}>
         <div className="page-container mx-auto max-w-5xl">
           {/* Hero Banner */}
           <div className="relative mb-16 overflow-hidden rounded-3xl bg-gradient-to-br from-primary/20 via-rose-500/10 to-violet-500/10 p-8 md:p-12">
@@ -216,7 +224,11 @@ export default function Profile() {
                 {/* Stats — chỉ có ý nghĩa với Mangaka/Assistant (số liệu sáng tác) */}
                 {editable && (
                   <div className="mt-6 flex flex-wrap justify-center gap-6 md:justify-start">
-                    {STATS.map(s => {
+                    {[
+                      { label: 'Series', value: stats?.seriesCount ?? 0, icon: BookOpen },
+                      { label: 'Chapter', value: stats?.chaptersCount ?? 0, icon: Layers },
+                      { label: 'Đánh giá', value: stats?.rating ?? '5.0', icon: Star },
+                    ].map(s => {
                       const Icon = s.icon
                       return (
                         <div key={s.label} className="flex items-center gap-2">
@@ -379,26 +391,28 @@ export default function Profile() {
                           )}
                         </div>
 
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="skills">Kỹ năng</Label>
-                            <Input
-                              id="skills"
-                              value={form.skills}
-                              onChange={e => handleChange('skills', e.target.value)}
-                              placeholder="Sketching, Inking..."
-                            />
+                        {roleKey === 'ASSISTANT' && (
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="skills">Kỹ năng</Label>
+                              <Input
+                                id="skills"
+                                value={form.skills}
+                                onChange={e => handleChange('skills', e.target.value)}
+                                placeholder="Sketching, Inking..."
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="softwareUsed">Phần mềm</Label>
+                              <Input
+                                id="softwareUsed"
+                                value={form.softwareUsed}
+                                onChange={e => handleChange('softwareUsed', e.target.value)}
+                                placeholder="Photoshop, Krita..."
+                              />
+                            </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="softwareUsed">Phần mềm</Label>
-                            <Input
-                              id="softwareUsed"
-                              value={form.softwareUsed}
-                              onChange={e => handleChange('softwareUsed', e.target.value)}
-                              placeholder="Photoshop, Krita..."
-                            />
-                          </div>
-                        </div>
+                        )}
 
                         {roleKey === 'ASSISTANT' && (
                           <div className="flex items-center gap-3 rounded-lg border p-4">
@@ -534,54 +548,55 @@ export default function Profile() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3 rounded-lg border p-4">
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-violet-500/10">
-                              <Layers className="size-5 text-violet-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Kỹ năng</p>
-                              <p className="font-medium">{profile?.skills || profile?.Skills || 'Chưa cập nhật'}</p>
-                            </div>
-                          </div>
-
                           {roleKey === 'ASSISTANT' && (
-                            <div className="flex items-center gap-3 rounded-lg border p-4">
-                              <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-500/10">
-                                <Star className="size-5 text-emerald-600" />
-                              </div>
-                              <div>
-                                <p className="text-sm text-muted-foreground">Sẵn sàng nhận việc</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <div
-                                    className={cn(
-                                      'flex h-6 w-11 items-center rounded-full px-0.5 transition-colors cursor-pointer',
-                                      form.isAvailable
-                                        ? 'bg-emerald-500 justify-end'
-                                        : 'bg-muted justify-start',
-                                    )}
-                                  >
-                                    <div className="size-5 rounded-full bg-white shadow transition-all" />
-                                  </div>
-                                  <span className={cn(
-                                    'text-sm font-medium',
-                                    form.isAvailable ? 'text-emerald-600' : 'text-muted-foreground',
-                                  )}>
-                                    {form.isAvailable ? '● Đang bật' : '○ Đang tắt'}
-                                  </span>
+                            <>
+                              <div className="flex items-center gap-3 rounded-lg border p-4">
+                                <div className="flex size-10 items-center justify-center rounded-lg bg-violet-500/10">
+                                  <Layers className="size-5 text-violet-600" />
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Kỹ năng</p>
+                                  <p className="font-medium">{profile?.skills || profile?.Skills || 'Chưa cập nhật'}</p>
                                 </div>
                               </div>
-                            </div>
-                          )}
 
-                          <div className="flex items-center gap-3 rounded-lg border p-4">
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-rose-500/10">
-                              <BookOpen className="size-5 text-rose-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Phần mềm</p>
-                              <p className="font-medium">{profile?.softwareUsed || profile?.softwareused || profile?.software_used || 'Chưa cập nhật'}</p>
-                            </div>
-                          </div>
+                              <div className="flex items-center gap-3 rounded-lg border p-4">
+                                <div className="flex size-10 items-center justify-center rounded-lg bg-rose-500/10">
+                                  <BookOpen className="size-5 text-rose-600" />
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Phần mềm sử dụng</p>
+                                  <p className="font-medium">{profile?.softwareUsed || profile?.softwareused || profile?.software_used || 'Chưa cập nhật'}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 rounded-lg border p-4">
+                                <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-500/10">
+                                  <Star className="size-5 text-emerald-600" />
+                                </div>
+                                <div>
+                                  <p className="text-sm text-muted-foreground">Sẵn sàng nhận việc</p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <div
+                                      className={cn(
+                                        'flex h-6 w-11 items-center rounded-full px-0.5 transition-colors cursor-pointer',
+                                        form.isAvailable
+                                          ? 'bg-emerald-500 justify-end'
+                                          : 'bg-muted justify-start',
+                                      )}
+                                    >
+                                      <div className="size-5 rounded-full bg-white shadow transition-all" />
+                                    </div>
+                                    <span className={cn(
+                                      'text-sm font-medium',
+                                      form.isAvailable ? 'text-emerald-600' : 'text-muted-foreground',
+                                    )}>
+                                      {form.isAvailable ? '● Đang bật' : '○ Đang tắt'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
 
@@ -647,13 +662,10 @@ export default function Profile() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {[
-                        { icon: BookOpen, action: 'Upload chapter mới', detail: 'One Thorn - Chapter 15', time: '2 giờ trước' },
-                        { icon: CheckCircle2, action: 'Duyệt bản tổng hợp', detail: 'One Thorn - Chapter 14', time: '1 ngày trước' },
-                        { icon: Layers, action: 'Gửi cho Assistant', detail: 'Ma Đạo - Chapter 3', time: '3 ngày trước' },
-                        { icon: Star, action: 'Đánh giá chapter', detail: 'Vô Lượng - Chapter 5', time: '1 tuần trước' },
-                      ].map((item, i) => {
-                        const Icon = item.icon
+                      {(stats?.recentActivities && stats.recentActivities.length > 0 ? stats.recentActivities : [
+                        { icon: BookOpen, action: 'Khởi tạo tài khoản', detail: 'Tài khoản hoạt động bình thường', time: 'Hệ thống' }
+                      ]).map((item, i) => {
+                        const Icon = item.icon || BookOpen
                         return (
                           <div key={i} className="flex items-start gap-4 rounded-lg border p-4 transition-colors hover:bg-muted/50">
                             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -725,7 +737,7 @@ export default function Profile() {
           </Tabs>
         </div>
       </main>
-      <Footer />
+      {!isWorkspaceMode && <Footer />}
     </div>
   )
 }

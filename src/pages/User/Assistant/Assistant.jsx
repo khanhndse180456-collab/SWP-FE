@@ -22,7 +22,7 @@ import {
   User,
 } from 'lucide-react'
 import SidebarNav from '@/components/layout/SidebarNav.jsx'
-import WorkspaceTopBar from '@/components/layout/WorkspaceTopBar.jsx'
+import Profile from '../Profile/Profile.jsx'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -231,14 +231,12 @@ export default function Assistant() {
         activeId={tab}
         onSelect={setTab}
         onLogout={user ? handleLogout : undefined}
+        user={user}
+        onProfile={() => setTab('profile')}
         accentClass="bg-violet-600 text-white"
       />
 
       <div className="flex flex-1 flex-col min-w-0">
-        <WorkspaceTopBar
-          user={user}
-          onLogout={user ? handleLogout : undefined}
-        />
         <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-8 dark:bg-zinc-950/20">
           <Tabs value={tab} onValueChange={setTab} className="space-y-6">
             <TabsList className="h-auto flex-wrap">
@@ -769,6 +767,23 @@ export default function Assistant() {
                   Các tùy chọn sẽ được bổ sung trong phiên bản tiếp theo.
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="profile">
+              <Profile
+                isWorkspaceMode={true}
+                stats={{
+                  seriesCount: 0,
+                  chaptersCount: revisionChapters.length,
+                  rating: '5.0',
+                  recentActivities: revisionChapters.slice(0, 4).map(c => ({
+                    icon: BookOpen,
+                    action: 'Nhận yêu cầu sửa layer',
+                    detail: `Chapter #${c.chapterId || c.id}`,
+                    time: 'Đang thực hiện'
+                  }))
+                }}
+              />
             </TabsContent>
           </Tabs>
         </main>

@@ -26,6 +26,12 @@ export default function ProfileView({ user }) {
   const handleAvatarChange = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
+      const isImg = file.type?.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(file.name)
+      if (!isImg) {
+        toast.error('Ảnh đại diện phải là định dạng hình ảnh (png, jpg, jpeg, webp, gif).')
+        e.target.value = ''
+        return
+      }
       setAvatar(URL.createObjectURL(file))
       toast.success('Đã chọn ảnh đại diện mới!')
     }

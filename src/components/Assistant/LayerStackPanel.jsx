@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { Eye, EyeOff, GripVertical, ImagePlus, Layers, MoreVertical, RotateCcw, Trash2, Upload, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -56,6 +57,12 @@ export default function LayerStackPanel({
   function handleAddFile(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    const isImg = file.type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)
+    if (!isImg) {
+      toast.error('Layer phải là định dạng hình ảnh (png, jpg, jpeg, webp).')
+      e.target.value = ''
+      return
+    }
     const nextIdx = layers.length
     onAddLayer?.({ file, index: nextIdx })
     e.target.value = ''
@@ -73,11 +80,17 @@ export default function LayerStackPanel({
     setDragId(null)
   }
 
-  function handleFileReplace(layerId) {
-    const file = fileRef.current?.files?.[0]
+  function handleFileReplace(e) {
+    const file = e.target.files?.[0]
     if (!file) return
-    onAddLayer?.({ file, index: layers.findIndex(l => l.id === layerId) })
-    fileRef.current.value = ''
+    const isImg = file.type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)
+    if (!isImg) {
+      toast.error('Layer phải là định dạng hình ảnh (png, jpg, jpeg, webp).')
+      e.target.value = ''
+      return
+    }
+    onAddLayer?.({ file, index: layers.length })
+    e.target.value = ''
   }
 
   return (
@@ -169,7 +182,14 @@ export default function LayerStackPanel({
                         input.accept = 'image/*'
                         input.onchange = (e) => {
                           const f = e.target.files?.[0]
-                          if (f) onAddLayer?.({ file: f, index: layers.findIndex(l => l.id === layer.id) })
+                          if (f) {
+                            const isImg = f.type?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(f.name)
+                            if (!isImg) {
+                              toast.error('Layer phải là định dạng hình ảnh (png, jpg, jpeg, webp).')
+                              return
+                            }
+                            onAddLayer?.({ file: f, index: layers.findIndex(l => l.id === layer.id) })
+                          }
                         }
                         input.click()
                       }}

@@ -1,5 +1,6 @@
 import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TopBarBell, TopBarUserMenu } from "./WorkspaceTopBar.jsx";
 
 /**
  * Sidebar layout dùng chung cho các workspace (Mangaka / Tantou / EB).
@@ -25,6 +26,7 @@ export default function SidebarNav({
   activeId,
   onSelect,
   onLogout,
+  onProfile,
   user,
   footerSlot,
   accentClass = "bg-primary text-primary-foreground",
@@ -82,12 +84,43 @@ export default function SidebarNav({
       </nav>
 
       {/* Footer */}
-      <div className="space-y-2 border-t border-zinc-800 p-4">
+      <div className="space-y-3 border-t border-zinc-800 p-4">
+        {user ? (
+          <div className="flex items-center justify-between gap-2 bg-zinc-900/60 p-1.5 rounded-xl border border-zinc-800/80">
+            <button
+              type="button"
+              onClick={onProfile}
+              className="flex cursor-pointer items-center gap-2.5 rounded-lg p-1 text-left hover:bg-zinc-800 transition-colors min-w-0 flex-1 focus:outline-none"
+              title="Xem hồ sơ cá nhân"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-xs font-bold text-white shadow-xs">
+                {(() => {
+                  const parts = (user?.name ?? '').trim().split(/\s+/).filter(Boolean)
+                  if (parts.length === 0) return '?'
+                  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+                  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+                })()}
+              </span>
+              <span className="flex min-w-0 flex-col flex-1">
+                <span className="truncate text-xs font-semibold text-white text-left">{user?.name || 'Tài khoản'}</span>
+                <span className="truncate text-[10px] uppercase tracking-wider text-zinc-550 text-left">
+                  {user?.role === 'MANGAKA' ? 'Mangaka' : 
+                   user?.role === 'ASSISTANT' ? 'Assistant' : 
+                   user?.role === 'TANTOU' ? 'Tantou Editor' : 
+                   user?.role === 'EDITOR_BOARD' ? 'EB' : 
+                   user?.role === 'ADMIN' ? 'Admin' : (user?.role ?? 'Thành viên')}
+                </span>
+              </span>
+            </button>
+            <TopBarBell userId={user.id ?? user.userId ?? user.userid ?? null} isSidebar={true} />
+          </div>
+        ) : null}
+
         {footerSlot}
         {onLogout ? (
           <button
             onClick={onLogout}
-            className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-4 py-2.5 text-left text-sm font-semibold text-zinc-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-4 py-2 text-left text-sm font-semibold text-zinc-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
             title={user?.name ? `Đăng xuất ${user.name}` : "Đăng xuất"}
           >
             <LogOut className="size-4" />
