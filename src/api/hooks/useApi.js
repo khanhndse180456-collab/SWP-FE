@@ -26,6 +26,7 @@ import {
   genresService,
   tagsService,
   contractsService,
+  rankingsService,
 } from '@/api'
 import { notificationsService } from '@/api/notificationsService'
 import { getSession } from '@/lib/auth'
@@ -682,5 +683,17 @@ export function useDeleteNotification() {
   return useMutation({
     mutationFn: (id) => notificationsService.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['notifications'] }) },
+  })
+}
+
+export function useSeriesRankingHistory(seriesId) {
+  return useQuery({
+    queryKey: ['rankings', 'series', seriesId],
+    queryFn: async () => {
+      if (!seriesId) return []
+      const res = await rankingsService.getHistoryBySeries(seriesId)
+      return Array.isArray(res?.data) ? res.data : (res?.data?.data ?? [])
+    },
+    enabled: !!seriesId,
   })
 }

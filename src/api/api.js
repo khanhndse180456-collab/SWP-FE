@@ -404,6 +404,18 @@ export const pageIssuesApi = {
   },
 }
 
+// ── RANKINGS ──────────────────────────────────────────────────────────────────
+export const rankingsService = {
+  getByIssue: (issueYear, issueNumber) => {
+    console.log('[API] GET /Rankings/:issueYear/:issueNumber', issueYear, issueNumber)
+    return axios.get(`/Rankings/${issueYear}/${issueNumber}`)
+  },
+  getHistoryBySeries: (seriesId) => {
+    console.log('[API] GET /Rankings/series/:seriesId', seriesId)
+    return axios.get(`/Rankings/series/${seriesId}`)
+  },
+}
+
 // ── ERROR HELPER ──────────────────────────────────────────────────────────────
 export function getApiErrorMessage(err, fallback) {
   const data = err?.response?.data
