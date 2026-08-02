@@ -61,6 +61,31 @@ const SERIES_GROUPS = [
   { id: "all",         label: "Tất cả",        statuses: null },
 ];
 
+function getWeekRangeString(year, weekNumber) {
+  if (!year || !weekNumber) return "";
+  const y = Number(year);
+  const w = Number(weekNumber);
+  if (Number.isNaN(y) || Number.isNaN(w)) return "";
+
+  const simple = new Date(y, 0, 1 + (w - 1) * 7);
+  const dayOfWeek = simple.getDay();
+  const monday = new Date(simple);
+  if (dayOfWeek === 0) {
+    monday.setDate(simple.getDate() - 6);
+  } else {
+    monday.setDate(simple.getDate() - (dayOfWeek - 1));
+  }
+  
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  
+  const options = { day: '2-digit', month: '2-digit', year: 'numeric' };
+  const mondayStr = monday.toLocaleDateString('vi-VN', options);
+  const sundayStr = sunday.toLocaleDateString('vi-VN', options);
+  
+  return `(Từ ${mondayStr} đến ${sundayStr})`;
+}
+
 export default function Eb() {
   const navigate = useNavigate();
   const user = getSession();
@@ -1007,6 +1032,11 @@ export default function Eb() {
                           className="h-9 w-24 text-sm"
                         />
                       </div>
+                      {importIssueNumber && importIssueYear && (
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium whitespace-nowrap">
+                          {getWeekRangeString(importIssueYear, importIssueNumber)}
+                        </span>
+                      )}
                       <Button size="sm" variant="outline" onClick={handleImportClick} disabled={importing}>
                         {importing ? <Loader2 className="size-4" /> : <Upload className="size-4" />}
                         {importing ? 'Đang import...' : 'Import Excel'}
@@ -1033,7 +1063,7 @@ export default function Eb() {
                       <CardTitle className="text-base">Xếp hạng theo kỳ (vote độc giả)</CardTitle>
                       <CardDescription>
                         {currentIssue
-                          ? <>Kỳ {currentIssue.issueNumber}/{currentIssue.issueYear} — dữ liệu vote đã import.</>
+                          ? <>Kỳ {currentIssue.issueNumber}/{currentIssue.issueYear} {getWeekRangeString(currentIssue.issueYear, currentIssue.issueNumber)} — dữ liệu vote đã import.</>
                           : "Chưa có dữ liệu — import Excel hoặc nhập Kỳ/Năm rồi bấm Xem."}
                       </CardDescription>
                     </div>

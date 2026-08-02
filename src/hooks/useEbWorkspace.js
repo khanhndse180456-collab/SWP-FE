@@ -253,13 +253,10 @@ export function useEbWorkspace() {
       ]);
       const raw = seriesRes.data;
       const all = Array.isArray(raw) ? raw : (raw?.data ?? []);
-      // Lọc series chờ EB chấm điểm + series đã được quyết định phát hành/từ chối để tiếp tục quản lý
+      // Lọc series chờ EB chấm điểm: Chỉ những series nào ở trạng thái eb review hoặc awaiting eb score mới hiển thị để chấm
       const ebData = all.filter(s => 
         isAwaitingEbScore(s.status) || 
-        isEbStatus(s.status) || 
-        s.status === "Publishing" || 
-        s.status === "Cancelled" || 
-        s.status === "Completed"
+        isEbStatus(s.status)
       );
 
       if (process.env.NODE_ENV !== 'production') {
