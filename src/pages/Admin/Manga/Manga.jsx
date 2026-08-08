@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import {
   Edit,
   Eye,
@@ -34,54 +35,180 @@ import {
 import { cn } from '@/lib/utils'
 
 const STATUS_LABEL = {
+  draft: { label: 'Nháp', class: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-500/15 dark:text-zinc-400' },
+  editorreview: { label: 'Chờ duyệt biên tập', class: 'bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400' },
+  ebreview: { label: 'Chờ duyệt ban biên tập', class: 'bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400' },
+  publishing: { label: 'Đang ra', class: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-400' },
   ongoing: { label: 'Đang ra', class: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-400' },
   completed: { label: 'Hoàn thành', class: 'bg-sky-100 text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-400' },
+  cancelled: { label: 'Tạm dừng/Hủy', class: 'bg-rose-100 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/15 dark:text-rose-400' },
   hiatus: { label: 'Tạm dừng', class: 'bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/15 dark:text-amber-400' },
 }
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Tất cả trạng thái' },
-  { value: 'ongoing', label: 'Đang ra' },
+  { value: 'draft', label: 'Nháp' },
+  { value: 'editorreview', label: 'Chờ duyệt biên tập' },
+  { value: 'ebreview', label: 'Chờ duyệt ban biên tập' },
+  { value: 'publishing', label: 'Đang ra' },
   { value: 'completed', label: 'Hoàn thành' },
-  { value: 'hiatus', label: 'Tạm dừng' },
+  { value: 'cancelled', label: 'Tạm dừng/Hủy' },
 ]
 
 function MangaDialog({ manga, open, onClose, onSave }) {
   const isEdit = !!manga?.id
-  const [form, setForm] = useState({ title: '', author: '', genre: '', status: 'ongoing' })
+  const [form, setForm] = useState({
+    title: '',
+    synopsis: '',
+    ageRating: 'G',
+    mangakaId: '',
+    genreIds: [],
+    tagIds: [],
+    status: 'draft',
+    publishFormat: 'Pending',
+    coverImage: null,
+    proposalFile: null,
+  })
+  const [genres, setGenres] = useState([])
+  const [tags, setTags] = useState([])
+  const [mangakas, setMangakas] = useState([])
   const [saving, setSaving] = useState(false)
+
+  const getGenreId = g => g.genreId ?? g.genre_id ?? g.genreid ?? g.id
+  const getGenreName = g => g.genreName ?? g.genrename ?? g.name
+  const getTagId = t => t.tagId ?? t.tag_id ?? t.tagid ?? t.id
+  const getTagName = t => t.tagName ?? t.tagname ?? t.name
 
   useEffect(() => {
     if (open) {
-      setForm({
-        title: manga?.title ?? '',
-        author: manga?.author ?? '',
-        genre: manga?.genre?.join(', ') ?? '',
-        status: manga?.status ?? 'ongoing',
-      })
+      api.getGenres().then(setGenres).catch(console.error)
+      api.getTags().then(setTags).catch(console.error)
+      api.getUsers().then(users => {
+        setMangakas(users.filter(u => u.role === 'mangaka'))
+      }).catch(console.error)
+
+      if (isEdit) {
+        const gIds = (manga?.genreList ?? []).map(getGenreId).filter(Boolean)
+        const tIds = (manga?.tagList ?? []).map(getTagId).filter(Boolean)
+        setForm({
+          title: manga?.title ?? '',
+          synopsis: manga?.synopsis ?? '',
+          ageRating: manga?.ageRating ?? manga?.agerating ?? 'G',
+          mangakaId: manga?.mangakaId ?? manga?.mangakaid ?? '',
+          genreIds: gIds,
+          tagIds: tIds,
+          status: manga?.status ?? 'draft',
+          publishFormat: manga?.publishFormat ?? manga?.publishformat ?? 'Pending',
+          coverImage: null,
+          proposalFile: null,
+        })
+      } else {
+        setForm({
+          title: '',
+          synopsis: '',
+          ageRating: 'G',
+          mangakaId: '',
+          genreIds: [],
+          tagIds: [],
+          status: 'draft',
+          publishFormat: 'Pending',
+          coverImage: null,
+          proposalFile: null,
+        })
+      }
     }
-  }, [open, manga])
+  }, [open, manga, isEdit])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const toggleGenre = (id) => {
+    setForm(f => {
+      const exists = f.genreIds.includes(id)
+      return {
+        ...f,
+        genreIds: exists ? f.genreIds.filter(x => x !== id) : [...f.genreIds, id]
+      }
+    })
+  }
+
+  const toggleTag = (id) => {
+    setForm(f => {
+      const exists = f.tagIds.includes(id)
+      return {
+        ...f,
+        tagIds: exists ? f.tagIds.filter(x => x !== id) : [...f.tagIds, id]
+      }
+    })
+  }
+
   async function handleSave() {
     if (!form.title.trim()) return
+    if (!isEdit && !form.mangakaId) {
+      toast.error('Vui lòng chọn tác giả!')
+      return
+    }
+    if (!isEdit && !form.coverImage) {
+      toast.error('Vui lòng tải lên ảnh bìa!')
+      return
+    }
+    if (!isEdit && !form.proposalFile) {
+      toast.error('Vui lòng tải lên bản đề xuất!')
+      return
+    }
+
     try {
       setSaving(true)
-      const payload = {
-        title: form.title,
-        author: form.author,
-        genre: form.genre.split(',').map(s => s.trim()).filter(Boolean),
-        status: form.status,
+      const formData = new FormData()
+      formData.append('Title', form.title)
+      formData.append('Synopsis', form.synopsis)
+      formData.append('Agerating', form.ageRating)
+      
+      if (!isEdit) {
+        formData.append('Mangakaid', form.mangakaId)
       }
+
+      form.genreIds.forEach(id => formData.append('GenreIds', id))
+      form.tagIds.forEach(id => formData.append('TagIds', id))
+
+      if (form.coverImage) {
+        formData.append('coverImage', form.coverImage)
+      }
+      if (form.proposalFile) {
+        formData.append('proposalFile', form.proposalFile)
+      }
+
       if (isEdit) {
-        await api.updateManga(manga.id, payload)
+        await api.updateManga(manga.id, formData)
+        
+        // Cập nhật trạng thái nếu thay đổi
+        if (form.status !== manga.status) {
+          await api.updateMangaStatus(manga.id, form.status)
+        }
+        
+        // Cập nhật hình thức xuất bản nếu thay đổi
+        if (form.publishFormat !== manga.publishFormat) {
+          await api.updateMangaPublishFormat(manga.id, form.publishFormat)
+        }
       } else {
-        await api.createManga(payload)
+        const res = await api.createManga(formData)
+        const newId = res?.Id ?? res?.id
+        
+        if (newId && form.status !== 'draft') {
+          await api.updateMangaStatus(newId, form.status)
+        }
+        if (newId && form.publishFormat !== 'Pending') {
+          await api.updateMangaPublishFormat(newId, form.publishFormat)
+        }
       }
       onSave()
+      toast.success(isEdit ? 'Cập nhật truyện thành công!' : 'Thêm truyện thành công!')
     } catch (err) {
       console.error('Save error:', err)
+      const errorMsg = err.response?.data?.message 
+        || (typeof err.response?.data === 'string' ? err.response.data : null)
+        || err.message 
+        || 'Lỗi không xác định khi lưu'
+      toast.error(errorMsg)
     } finally {
       setSaving(false)
     }
@@ -89,39 +216,148 @@ function MangaDialog({ manga, open, onClose, onSave }) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Sửa truyện' : 'Thêm truyện mới'}</DialogTitle>
           <DialogDescription>
-            {isEdit ? 'Cập nhật thông tin bộ truyện' : 'Tạo bộ truyện mới trong hệ thống'}
+            {isEdit ? 'Cập nhật thông tin chi tiết bộ truyện' : 'Tạo hồ sơ bộ truyện mới trong hệ thống'}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
           <div className="space-y-2">
             <Label>Tên truyện *</Label>
             <Input value={form.title} onChange={e => set('title', e.target.value)} placeholder="Nhập tên truyện..." />
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Tác giả</Label>
-              <Input value={form.author} onChange={e => set('author', e.target.value)} placeholder="Tên tác giả" />
+              <Label>Tác giả (Mangaka) *</Label>
+              {isEdit ? (
+                <Input value={manga?.author || ''} disabled className="bg-muted text-muted-foreground" />
+              ) : (
+                <Select value={form.mangakaId ? String(form.mangakaId) : ''} onValueChange={v => set('mangakaId', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn tác giả..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mangakas.map(m => (
+                      <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
+            <div className="space-y-2">
+              <Label>Giới hạn độ tuổi *</Label>
+              <Select value={form.ageRating} onValueChange={v => set('ageRating', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="G">G (Mọi lứa tuổi)</SelectItem>
+                  <SelectItem value="PG-13">PG-13 (Trên 13 tuổi)</SelectItem>
+                  <SelectItem value="R-16">R-16 (Trên 16 tuổi)</SelectItem>
+                  <SelectItem value="R-18">R-18 (Trên 18 tuổi)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Trạng thái</Label>
               <Select value={form.status} onValueChange={v => set('status', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ongoing">Đang ra</SelectItem>
-                  <SelectItem value="completed">Hoàn thành</SelectItem>
-                  <SelectItem value="hiatus">Tạm dừng</SelectItem>
+                  <SelectItem value="draft">Nháp (Draft)</SelectItem>
+                  <SelectItem value="editorreview">Chờ duyệt biên tập (EditorReview)</SelectItem>
+                  <SelectItem value="ebreview">Chờ duyệt ban biên tập (EBReview)</SelectItem>
+                  <SelectItem value="publishing">Đang phát hành (Publishing)</SelectItem>
+                  <SelectItem value="completed">Hoàn thành (Completed)</SelectItem>
+                  <SelectItem value="cancelled">Tạm dừng/Hủy (Cancelled)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Hình thức xuất bản</Label>
+              <Select value={form.publishFormat} onValueChange={v => set('publishFormat', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Pending">Chờ duyệt (Pending)</SelectItem>
+                  <SelectItem value="Weekly">Hàng tuần (Weekly)</SelectItem>
+                  <SelectItem value="Monthly">Hàng tháng (Monthly)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
+
           <div className="space-y-2">
-            <Label>Thể loại</Label>
-            <Input value={form.genre} onChange={e => set('genre', e.target.value)} placeholder="Hành động, Isekai..." />
-            <p className="text-xs text-muted-foreground">Phân cách bằng dấu phẩy</p>
+            <Label>Tóm tắt / Mô tả truyện</Label>
+            <textarea
+              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 min-h-[100px]"
+              value={form.synopsis}
+              onChange={e => set('synopsis', e.target.value)}
+              placeholder="Nhập mô tả tóm tắt nội dung truyện..."
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="block">Thể loại (Genres)</Label>
+            <div className="grid grid-cols-3 gap-2 border p-3 rounded-md max-h-[150px] overflow-y-auto">
+              {genres.map(g => {
+                const id = getGenreId(g)
+                const name = getGenreName(g)
+                return (
+                  <label key={id} className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={form.genreIds.includes(id)}
+                      onChange={() => toggleGenre(id)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>{name}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="block">Nhãn (Tags)</Label>
+            <div className="grid grid-cols-3 gap-2 border p-3 rounded-md max-h-[150px] overflow-y-auto">
+              {tags.map(t => {
+                const id = getTagId(t)
+                const name = getTagName(t)
+                return (
+                  <label key={id} className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={form.tagIds.includes(id)}
+                      onChange={() => toggleTag(id)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>{name}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Ảnh bìa {isEdit && '(Để trống nếu giữ nguyên)'}</Label>
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={e => set('coverImage', e.target.files?.[0] ?? null)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Bản đề xuất {isEdit && '(Để trống nếu giữ nguyên)'}</Label>
+              <Input
+                type="file"
+                accept=".pdf,.doc,.docx"
+                onChange={e => set('proposalFile', e.target.files?.[0] ?? null)}
+              />
+            </div>
           </div>
         </div>
         <DialogFooter>
@@ -149,11 +385,17 @@ function MangaDrawer({ manga, onClose, onEdit, onDelete }) {
           </Button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
-          <div
-            className="mb-5 flex aspect-[3/4] items-center justify-center rounded-xl text-5xl font-bold text-white shadow-lg"
-            style={{ background: manga.bg }}
-          >
-            {manga.initials}
+          <div className="mb-5 aspect-[3/4] overflow-hidden rounded-xl bg-muted shadow-lg flex items-center justify-center">
+            {manga.cover ? (
+              <img src={manga.cover} alt={manga.title} className="h-full w-full object-cover" />
+            ) : (
+              <div
+                className="flex h-full w-full items-center justify-center text-5xl font-bold text-white"
+                style={{ background: manga.bg }}
+              >
+                {manga.initials}
+              </div>
+            )}
           </div>
           <h2 className="mb-1 text-xl font-bold">{manga.title}</h2>
           <p className="mb-4 text-sm text-muted-foreground">bởi {manga.author}</p>
@@ -161,19 +403,48 @@ function MangaDrawer({ manga, onClose, onEdit, onDelete }) {
             {(manga.genre ?? []).map(g => (
               <Badge key={g} variant="outline">{g}</Badge>
             ))}
+            {(manga.tags ?? []).map(t => (
+              <Badge key={t} variant="secondary" className="text-[11px] font-normal">#{t}</Badge>
+            ))}
           </div>
           <div className="space-y-3 text-sm">
+            <div className="flex justify-between border-b py-2">
+              <span className="text-muted-foreground">Tác giả (Mangaka)</span>
+              <span className="font-medium">{manga.author}</span>
+            </div>
             <div className="flex justify-between border-b py-2">
               <span className="text-muted-foreground">Trạng thái</span>
               <Badge className={st.class} variant="secondary">{st.label}</Badge>
             </div>
             <div className="flex justify-between border-b py-2">
+              <span className="text-muted-foreground">Hình thức</span>
+              <span className="font-medium">{manga.publishFormat}</span>
+            </div>
+            <div className="flex justify-between border-b py-2">
+              <span className="text-muted-foreground">Độ tuổi</span>
+              <span className="font-medium">{manga.ageRating}</span>
+            </div>
+            <div className="flex justify-between border-b py-2">
+              <span className="text-muted-foreground">BTV phụ trách</span>
+              <span className="font-medium">{manga.editor}</span>
+            </div>
+            <div className="flex justify-between border-b py-2">
               <span className="text-muted-foreground">Số chương</span>
               <span className="font-medium">{manga.chapters}</span>
             </div>
-            <div className="flex justify-between py-2">
+            <div className="flex justify-between border-b py-2">
               <span className="text-muted-foreground">Ngày tạo</span>
               <span className="font-medium">{manga.createdAt}</span>
+            </div>
+            {manga.approvedAt && (
+              <div className="flex justify-between border-b py-2">
+                <span className="text-muted-foreground">Ngày duyệt/xuất bản</span>
+                <span className="font-medium">{manga.approvedAt}</span>
+              </div>
+            )}
+            <div className="py-2">
+              <span className="text-muted-foreground block mb-1">Tóm tắt</span>
+              <p className="text-xs text-muted-foreground leading-relaxed bg-muted/40 p-2.5 rounded-md border">{manga.synopsis}</p>
             </div>
           </div>
         </div>
@@ -201,6 +472,7 @@ export default function Manga() {
   const [view, setView] = useState('table')
   const [selected, setSelected] = useState(null)
   const [modal, setModal] = useState(null)
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -223,14 +495,22 @@ export default function Manga() {
     await loadData()
   }
 
-  async function handleDelete(id) {
-    if (!confirm('Xoá truyện này?')) return
+  function handleDelete(id) {
+    setDeleteConfirmId(id)
+  }
+
+  async function confirmDelete() {
+    if (!deleteConfirmId) return
     try {
-      await api.deleteManga(id)
+      await api.deleteManga(deleteConfirmId)
       setSelected(null)
-      setList(l => l.filter(m => m.id !== id))
+      setList(l => l.filter(m => m.id !== deleteConfirmId))
+      toast.success('Xoá truyện thành công!')
     } catch (err) {
       console.error('Delete error:', err)
+      toast.error('Xoá truyện thất bại!')
+    } finally {
+      setDeleteConfirmId(null)
     }
   }
 
@@ -304,8 +584,14 @@ export default function Manga() {
             const st = STATUS_LABEL[m.status] ?? STATUS_LABEL.ongoing
             return (
               <Card key={m.id} onClick={() => setSelected(m)} className="group cursor-pointer gap-0 overflow-hidden p-0 transition-all hover:-translate-y-1 hover:shadow-lg">
-                <div className="flex aspect-[3/4] items-center justify-center text-4xl font-bold text-white" style={{ background: m.bg }}>
-                  {m.initials}
+                <div className="aspect-[3/4] overflow-hidden bg-muted flex items-center justify-center">
+                  {m.cover ? (
+                    <img src={m.cover} alt={m.title} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-4xl font-bold text-white" style={{ background: m.bg }}>
+                      {m.initials}
+                    </div>
+                  )}
                 </div>
                 <CardContent className="p-3">
                   <div className="truncate text-sm font-semibold">{m.title}</div>
@@ -338,8 +624,14 @@ export default function Manga() {
                   return (
                     <tr key={m.id} className="hover:bg-muted/30">
                       <td className="px-4 py-2">
-                        <div className="flex size-9 items-center justify-center rounded-md text-xs font-bold text-white" style={{ background: m.bg }}>
-                          {m.initials}
+                        <div className="size-9 overflow-hidden rounded-md bg-muted flex items-center justify-center">
+                          {m.cover ? (
+                            <img src={m.cover} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-xs font-bold text-white" style={{ background: m.bg }}>
+                              {m.initials}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-2">
@@ -348,7 +640,7 @@ export default function Manga() {
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex flex-wrap gap-1">
-                          {(m.genre ?? []).slice(0, 2).map(g => (
+                          {(m.genre ?? []).map(g => (
                             <Badge key={g} variant="outline" className="text-[10px]">{g}</Badge>
                           ))}
                         </div>
@@ -395,6 +687,21 @@ export default function Manga() {
       ) : null}
 
       <MangaDialog manga={modal?.id ? modal : null} open={modal !== null} onClose={() => setModal(null)} onSave={handleSave} />
+
+      <Dialog open={deleteConfirmId !== null} onOpenChange={(o) => !o && setDeleteConfirmId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xác nhận xoá</DialogTitle>
+            <DialogDescription>
+              Bạn có chắc chắn muốn xoá bộ truyện này? Hành động này không thể hoàn tác.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Huỷ</Button>
+            <Button variant="destructive" onClick={confirmDelete}>Xoá</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

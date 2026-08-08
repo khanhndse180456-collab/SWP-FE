@@ -23,11 +23,15 @@ import {
 import { cn } from '@/lib/utils'
 
 const STATUS_LABEL = {
-  Approved:    { label: 'Đã duyệt',   class: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
-  Rejected:    { label: 'Từ chối',    class: 'bg-red-100 text-red-700 hover:bg-red-100' },
-  Pending:     { label: 'Chờ duyệt',  class: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
-  UnderReview: { label: 'Đang xét',   class: 'bg-sky-100 text-sky-700 hover:bg-sky-100' },
-  Submitted:   { label: 'Đã nộp',     class: 'bg-purple-100 text-purple-700 hover:bg-purple-100' },
+  Approved:    { label: 'Đang xuất bản', class: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+  Publishing:  { label: 'Đang xuất bản', class: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+  publishing:  { label: 'Đang xuất bản', class: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+  ongoing:     { label: 'Đang xuất bản', class: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+  Ongoing:     { label: 'Đang xuất bản', class: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+  Rejected:    { label: 'Từ chối',       class: 'bg-red-100 text-red-700 hover:bg-red-100' },
+  Pending:     { label: 'Chờ duyệt',     class: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
+  UnderReview: { label: 'Đang xét',      class: 'bg-sky-100 text-sky-700 hover:bg-sky-100' },
+  Submitted:   { label: 'Đã nộp',        class: 'bg-purple-100 text-purple-700 hover:bg-purple-100' },
 }
 
 const SERIES_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#14b8a6', '#8b5cf6']
@@ -55,9 +59,9 @@ function StatCard({ label, value, icon: Icon, colorClass }) {
 function SeriesStatsPanel({ stats }) {
   const items = [
     { label: 'Chờ duyệt',  value: stats.pending_series   ?? stats.pendingSeries,   color: 'text-amber-600',   icon: Clock },
-    { label: 'Đã duyệt',   value: stats.approved_series  ?? stats.approvedSeries,  color: 'text-emerald-600', icon: CheckCircle2 },
+    { label: 'Đang xuất bản',   value: stats.approved_series  ?? stats.approvedSeries,  color: 'text-emerald-600', icon: CheckCircle2 },
     { label: 'Từ chối',    value: stats.rejected_series  ?? stats.rejectedSeries,  color: 'text-red-600',     icon: XCircle },
-    { label: 'Đang ra',    value: stats.ongoing_series   ?? stats.ongoingSeries,   color: 'text-sky-600',     icon: TrendingUp },
+    { label: 'Đang xuất bản (Đang ra)',    value: stats.ongoing_series   ?? stats.ongoingSeries,   color: 'text-sky-600',     icon: TrendingUp },
     { label: 'Hoàn thành', value: stats.completed_series ?? stats.completedSeries, color: 'text-purple-600',  icon: BookOpen },
   ]
   return (
@@ -90,7 +94,7 @@ function TopSeriesTable({ series }) {
       <Card className="col-span-2">
         <CardHeader>
           <CardTitle className="text-base">Series nổi bật</CardTitle>
-          <CardDescription>Các series đã được duyệt</CardDescription>
+          <CardDescription>Các series đang xuất bản</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="py-8 text-center text-sm text-muted-foreground">Chưa có series nào được duyệt.</p>
@@ -102,7 +106,7 @@ function TopSeriesTable({ series }) {
     <Card className="col-span-2">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Series nổi bật</CardTitle>
-        <CardDescription>Các series đã được duyệt trong hệ thống</CardDescription>
+        <CardDescription>Các series đang xuất bản trong hệ thống</CardDescription>
       </CardHeader>
       <CardContent className="p-0">
         <div className="divide-y border-t">
@@ -113,12 +117,16 @@ function TopSeriesTable({ series }) {
             const genreNames = s.genres?.map(g => g?.genrename ?? g?.genre_name ?? g?.name ?? '').filter(Boolean).join(', ') || '—'
             return (
               <div key={id ?? idx} className="flex items-center gap-4 px-6 py-3 transition-colors hover:bg-muted/50">
-                <div
-                  className="flex size-10 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white shadow-sm"
-                  style={{ background: SERIES_COLORS[idx % SERIES_COLORS.length] }}
-                >
-                  {initials(title)}
-                </div>
+                {s.coverimageurl ? (
+                  <img src={s.coverimageurl} alt={title} className="size-10 shrink-0 rounded-lg object-cover shadow-sm" />
+                ) : (
+                  <div
+                    className="flex size-10 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white shadow-sm"
+                    style={{ background: SERIES_COLORS[idx % SERIES_COLORS.length] }}
+                  >
+                    {initials(title)}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{title}</div>
                   <div className="text-xs text-muted-foreground">{genreNames}</div>
@@ -144,14 +152,27 @@ export default function Dashboard() {
   const [error, setError]             = useState(null)
 
   useEffect(() => {
-    api.getDashboardData()
-      .then(({ overview, seriesStats, topSeries }) => {
-        setOverview(overview)
-        setSeriesStats(seriesStats)
-        setTopSeries(topSeries)
+    Promise.all([
+      api.getDashboardData(),
+      api.getMangaList()
+    ]).then(([{ overview, seriesStats, topSeries }, mangaList]) => {
+      const hydratedTopSeries = topSeries.map(ts => {
+        const tsId = ts.seriesid ?? ts.series_id ?? ts.id
+        const fullManga = mangaList.find(m => String(m.id) === String(tsId))
+        return {
+          ...ts,
+          publishformat: ts.publishformat ?? fullManga?.publishFormat ?? '—',
+          genres: ts.genres?.length ? ts.genres : (fullManga?.genreList ?? []),
+          coverimageurl: ts.coverimageurl ?? ts.cover_image_url ?? fullManga?.cover ?? null
+        }
       })
-      .catch(() => setError('Không thể tải dữ liệu dashboard.'))
-      .finally(() => setLoading(false))
+
+      setOverview(overview)
+      setSeriesStats(seriesStats)
+      setTopSeries(hydratedTopSeries)
+    })
+    .catch(() => setError('Không thể tải dữ liệu dashboard.'))
+    .finally(() => setLoading(false))
   }, [])
 
   if (loading) {

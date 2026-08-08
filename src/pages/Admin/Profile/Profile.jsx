@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Edit, Key, Loader2, Mail, Shield, ShieldCheck } from 'lucide-react'
-import { api } from '@/api/index.js'
+import { api } from '@/api/adminApi.js'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

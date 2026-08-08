@@ -11,8 +11,9 @@ import AdminManga from '@/pages/Admin/Manga/Manga.jsx'
 import Chapters from '@/pages/Admin/Chapters/Chapters.jsx'
 import Users from '@/pages/Admin/Users/Users.jsx'
 import Stats from '@/pages/Admin/Stats/Stats.jsx'
-import Settings from '@/pages/Admin/Settings/Settings.jsx'
 import Profile from '@/pages/Admin/Profile/Profile.jsx'
+import Tags from '@/pages/Admin/Tags/Tags.jsx'
+import Genres from '@/pages/Admin/Genres/Genres.jsx'
 import Home from '@/pages/User/Home/Home.jsx'
 import Login from '@/pages/User/Login/Login.jsx'
 import Register from '@/pages/User/Register/Register.jsx'
@@ -80,8 +81,9 @@ export default function App() {
                 <Route path="manga" element={<AdminManga />} />
                 <Route path="chapters" element={<Chapters />} />
                 <Route path="users" element={<Users />} />
+                <Route path="genres" element={<Genres />} />
+                <Route path="tags" element={<Tags />} />
                 <Route path="stats" element={<Stats />} />
-                <Route path="settings" element={<Settings />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="*" element={<Navigate to="dashboard" replace />} />
               </Route>

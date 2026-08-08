@@ -106,7 +106,14 @@ export default function Chapters() {
   useEffect(() => {
     if (!selectedManga) return
     setLoading(true)
-    api.getChaptersByManga(selectedManga.id).then(d => { setChapters(d); setLoading(false) })
+    api.getChaptersByManga(selectedManga.id).then(d => {
+      const mapped = d.map(c => ({
+        ...c,
+        uploadedBy: c.uploadedBy === '—' || !c.uploadedBy ? selectedManga.author : c.uploadedBy
+      }))
+      setChapters(mapped)
+      setLoading(false)
+    })
   }, [selectedManga])
 
   async function handleDelete(id) {
@@ -119,7 +126,11 @@ export default function Chapters() {
     setModal(false)
     setLoading(true)
     const d = await api.getChaptersByManga(selectedManga.id)
-    setChapters(d)
+    const mapped = d.map(c => ({
+      ...c,
+      uploadedBy: c.uploadedBy === '—' || !c.uploadedBy ? selectedManga.author : c.uploadedBy
+    }))
+    setChapters(mapped)
     setLoading(false)
   }
 
@@ -139,11 +150,17 @@ export default function Chapters() {
       {selectedManga ? (
         <Card>
           <CardContent className="flex flex-wrap items-center gap-4 p-4">
-            <div
-              className="flex size-14 items-center justify-center rounded-lg text-sm font-bold text-white shadow"
-              style={{ background: selectedManga.bg }}
-            >
-              {selectedManga.initials}
+            <div className="size-14 overflow-hidden rounded-lg bg-muted shadow flex items-center justify-center">
+              {selectedManga.cover ? (
+                <img src={selectedManga.cover} alt={selectedManga.title} className="h-full w-full object-cover" />
+              ) : (
+                <div
+                  className="flex h-full w-full items-center justify-center text-sm font-bold text-white"
+                  style={{ background: selectedManga.bg }}
+                >
+                  {selectedManga.initials}
+                </div>
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="font-semibold">{selectedManga.title}</div>

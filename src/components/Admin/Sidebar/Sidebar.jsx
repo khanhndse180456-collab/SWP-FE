@@ -6,10 +6,24 @@ import {
   LogOut,
   Settings as SettingsIcon,
   Users as UsersIcon,
+  Tag as TagIcon,
+  Layers as LayersIcon,
+  ChevronDown,
+  User,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const NAV_ITEMS = [
   {
@@ -21,16 +35,22 @@ const NAV_ITEMS = [
     ],
   },
   {
+    section: 'Danh mục',
+    links: [
+      { id: 'genres', label: 'Thể loại', icon: LayersIcon },
+      { id: 'tags', label: 'Tags', icon: TagIcon },
+    ],
+  },
+  {
     section: 'Cộng đồng',
     links: [
-      { id: 'users', label: 'Độc giả', icon: UsersIcon },
+      { id: 'users', label: 'Người dùng', icon: UsersIcon },
     ],
   },
   {
     section: 'Hệ thống',
     links: [
       { id: 'stats', label: 'Thống kê', icon: BarChart3 },
-      { id: 'settings', label: 'Cài đặt', icon: SettingsIcon },
     ],
   },
 ]
@@ -52,7 +72,7 @@ export default function Sidebar({ activePage = 'dashboard', onNavigate }) {
   }
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r bg-card">
+    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col border-r bg-card">
       <div className="border-b px-6 py-5">
         <div className="flex items-center gap-2.5">
           <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
@@ -99,14 +119,47 @@ export default function Sidebar({ activePage = 'dashboard', onNavigate }) {
       </nav>
 
       <div className="border-t p-3">
-        <Button
-          variant="ghost"
-          className="w-full justify-start text-muted-foreground hover:text-destructive"
-          onClick={handleLogout}
-        >
-          <LogOut className="size-4" />
-          Đăng xuất
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="w-full h-12 justify-start gap-3 px-2 hover:bg-accent">
+              <Avatar className="size-8">
+                <AvatarFallback className="bg-gradient-to-br from-primary to-rose-500 text-xs font-bold text-primary-foreground">
+                  AD
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 text-left text-xs min-w-0">
+                <div className="font-semibold truncate">Admin</div>
+                <div className="text-[10px] text-muted-foreground truncate">Super Admin</div>
+              </div>
+              <ChevronDown className="size-3.5 text-muted-foreground shrink-0" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="right" className="w-56 mb-2">
+            <DropdownMenuLabel>
+              <div className="flex items-center gap-2">
+                <Avatar className="size-9">
+                  <AvatarFallback className="bg-gradient-to-br from-primary to-rose-500 text-xs font-bold text-primary-foreground">
+                    AD
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <div className="text-sm font-semibold">Admin</div>
+                  <Badge variant="outline" className="mt-0.5 h-4 text-[10px]">Super Admin</Badge>
+                </div>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onNavigate?.('profile')} className="cursor-pointer">
+              <User className="size-4 mr-2" />
+              Hồ sơ
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
+              <LogOut className="size-4 mr-2" />
+              Đăng xuất
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </aside>
   )
